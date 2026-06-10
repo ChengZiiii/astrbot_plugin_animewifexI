@@ -1,4 +1,13 @@
 {
+    "admins": {
+        "description": "管理员用户 ID 列表",
+        "type": "list",
+        "default": [],
+        "hint": "拥有管理员命令权限（切换NTR开关、无条件重置他人次数）的用户 ID（QQ号），每行一个",
+        "items": {
+            "type": "string"
+        }
+    },
     "need_prefix": {
         "description": "启用触发前缀",
         "type": "bool",
