@@ -1,16 +1,18 @@
+import asyncio
+import json
+import os
+import random
+import time
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+import aiohttp
+
 from astrbot.api import logger, AstrBotConfig
 from astrbot.api.star import Star, Context, StarTools
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.event.filter import EventMessageType
 from astrbot.api.message_components import At, Plain, Image
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
-import random
-import os
-import json
-import aiohttp
-import asyncio
-import time
 
 # IANA 时区数据由 requirements.txt 声明的 tzdata 保证
 DEFAULT_TIMEZONE = "Asia/Shanghai"
@@ -39,7 +41,7 @@ def load_json(path: str) -> dict:
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, UnicodeDecodeError):
         logger.error(f"JSON 文件解析失败，可能已损坏，将以空数据载入: {path}")
         return {}
     except OSError:
@@ -70,6 +72,31 @@ def save_json(path: str, data: dict) -> None:
             except OSError:
                 pass
         raise
+
+
+def sanitize_group_records(data, desc: str) -> dict:
+    """校验 {群: {用户: 记录字典}} 两层嵌套结构，被外部改坏的非法条目记 error 后丢弃
+
+    load_json 只保证顶层是字典；内层结构损坏若不在加载时过滤，
+    会在启动清理或命令处理中抛 AttributeError 导致插件加载失败。
+    """
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        logger.error(f"{desc} 不是字典，可能被外部修改，已丢弃")
+        return {}
+    cleaned = {}
+    for gid, grp in data.items():
+        if not isinstance(grp, dict):
+            logger.error(f"{desc} 中群 {gid} 的数据不是字典，可能被外部修改，已丢弃")
+            continue
+        for uid, rec in grp.items():
+            if not isinstance(rec, dict):
+                logger.error(
+                    f"{desc} 中群 {gid} 用户 {uid} 的记录不是字典，可能被外部修改，已丢弃"
+                )
+        cleaned[gid] = {uid: rec for uid, rec in grp.items() if isinstance(rec, dict)}
+    return cleaned
 
 
 def migrate_wife_data(data) -> dict | None:
@@ -180,11 +207,12 @@ class WifePlugin(Star):
         raw = load_json(self.records_file)
         # ntr=牛老婆次数 change=换老婆次数 reset=重置机会次数 swap=交换请求次数
         self.records = {
-            key: raw.get(key, {}) for key in ("ntr", "change", "reset", "swap")
+            key: sanitize_group_records(raw.get(key), f"records.json[{key}]")
+            for key in ("ntr", "change", "reset", "swap")
         }
-        # 启动阶段尚无并发，清理无需加锁
+        # 启动阶段尚无并发，清理无需加锁；校验丢弃过非法条目时同样需要落盘
         today = get_today(self.tz)
-        changed = False
+        changed = any(self.records[key] != raw.get(key, {}) for key in self.records)
         for gid in {gid for recs in self.records.values() for gid in recs}:
             changed |= self._prune_group_records(gid, today)
         if changed:
@@ -224,11 +252,12 @@ class WifePlugin(Star):
         return changed
 
     def _load_swap_requests(self) -> dict:
-        """加载交换请求并清理过期数据"""
+        """加载交换请求，过滤结构非法的条目并清理过期数据"""
         raw = load_json(self.swap_requests_file)
+        sanitized = sanitize_group_records(raw, "swap_requests.json")
         today = get_today(self.tz)
         cleaned = {}
-        for gid, reqs in raw.items():
+        for gid, reqs in sanitized.items():
             valid = {uid: rec for uid, rec in reqs.items() if rec.get("date") == today}
             if valid:
                 cleaned[gid] = valid
@@ -258,11 +287,15 @@ class WifePlugin(Star):
     # ==================== 目标解析 ====================
 
     def parse_at_target(self, event: AstrMessageEvent) -> str | None:
-        """解析消息中的@目标用户"""
+        """解析消息中的@目标用户
+
+        跳过所有指向机器人自身的 At，返回第一个有效的目标用户 QQ 号；未找到时返回 None
+        """
         if not event.message_obj or not hasattr(event.message_obj, "message"):
             return None
+        self_id = str(event.get_self_id())
         for comp in event.message_obj.message:
-            if isinstance(comp, At):
+            if isinstance(comp, At) and str(comp.qq) != self_id:
                 return str(comp.qq)
         return None
 
@@ -340,7 +373,7 @@ class WifePlugin(Star):
             return
 
         img = cfg[tid]["img"]
-        owner = cfg[tid]["owner"]
+        owner = cfg[tid].get("owner", "未知用户")
         chara, source = self._parse_wife_name(img)
         if source:
             text = f"{owner}的老婆是来自《{source}》的{chara}，羡慕吗？"
@@ -901,7 +934,8 @@ class WifePlugin(Star):
         cfg = self.load_group_config(gid)
 
         my_req = grp.get(me)
-        sent_targets = [my_req["target"]] if my_req else []
+        my_target = my_req.get("target") if my_req else None
+        sent_targets = [my_target] if my_target else []
         received_from = [uid for uid, rec in grp.items() if rec.get("target") == me]
 
         if not sent_targets and not received_from:
