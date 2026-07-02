@@ -17,14 +17,18 @@ import random
 import time
 from typing import List, Optional
 
-import aiohttp
-
 try:
     from astrbot.api import logger as _logger
     _error = _logger.error
 except Exception:  # pragma: no cover
     import logging
     _error = logging.getLogger("astrbot_plugin_animewifex").error
+
+# aiohttp 延迟导入：本地单测无需安装 aiohttp 也能 import WifeService 类
+try:
+    import aiohttp  # type: ignore[import]
+except ImportError:  # pragma: no cover
+    aiohttp = None  # type: ignore[assignment]
 
 from ..storage.paths import Paths
 from .plugin_config import PluginConfig
@@ -99,6 +103,8 @@ class WifeService:
 
     async def _fetch_remote_list_and_cache(self) -> Optional[str]:
         """请求远程图片列表，成功则写缓存并返回随机一项"""
+        if aiohttp is None:
+            return None  # 未安装 aiohttp（如本地单测环境）
         try:
             timeout = aiohttp.ClientTimeout(total=10)
             async with aiohttp.ClientSession(timeout=timeout) as session:
