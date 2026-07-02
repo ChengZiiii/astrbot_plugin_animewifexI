@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import AsyncGenerator, Optional
 
 from astrbot.api.event import AstrMessageEvent
@@ -12,23 +13,25 @@ from ..api.events import (
     get_sender_uid,
     parse_at_target,
 )
-from ..api.messaging import build_multi_image_chain, build_text_image_chain
+from ..api.messaging import build_multi_image_chain
 from ..storage.stores import OwnershipStore, WivesMasterStore
-from ..utils.image import build_wife_intro_text
 from .context import CommandContext
 
 __all__ = ["handle_view", "find_uid_by_owner_nick"]
 
+# 每页显示数量
+PAGE_SIZE = 10
+
 
 async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGenerator:
-    """``查老婆 [@用户 | 昵称]``：查看自己或他人的所有老婆"""
+    """``查老婆 [@用户 | 昵称] [页码]``：查看自己或他人的老婆（分页）"""
     gid = get_group_id(event)
     if not gid:
         return
 
     sender_uid = get_sender_uid(event)
     at_target = parse_at_target(event)
-    target_uid = _resolve_target(event, ctx)
+    target_uid, page = _resolve_target_and_page(event, ctx)
     if target_uid is None:
         yield event.plain_result("没有找到该昵称的群友老婆哦~")
         return
@@ -48,16 +51,24 @@ async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
             yield event.plain_result(f"{owner}今天还没有老婆哦~")
         return
 
+    # 分页
+    total = len(my_wives)
+    total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * PAGE_SIZE
+    end = start + PAGE_SIZE
+    page_wives = my_wives[start:end]
+
     # 加载老婆元数据
     wives_meta = WivesMasterStore(ctx.paths).load_all()
 
-    # 格式化所有老婆
-    lines = [f"【{owner} 的老婆】共 {len(my_wives)} 位\n"]
+    # 格式化当前页老婆
+    lines = [f"【{owner} 的老婆】共 {total} 位（第 {page}/{total_pages} 页）\n"]
     imgs = []
     seen_imgs = set()
 
     from ..services.ownership_service import OwnershipService
-    for i, o in enumerate(my_wives, 1):
+    for i, o in enumerate(page_wives, start + 1):
         wife = wives_meta.get(o.wid)
         if not wife:
             continue
@@ -68,10 +79,19 @@ async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
         intimacy_str = OwnershipService.intimacy_level_emoji(o.intimacy)
         lines.append(f"{i}. {emoji} {name} (❤️{o.intimacy}{intimacy_str}){lock_icon}{primary_icon}")
 
-        # 收集图片（去重）
+        # 收集当前页图片（去重）
         if wife.img and wife.img not in seen_imgs:
             imgs.append(wife.img)
             seen_imgs.add(wife.img)
+
+    # 翻页提示
+    if total_pages > 1:
+        hints = []
+        if page > 1:
+            hints.append(f"上一页：查老婆 {page - 1}")
+        if page < total_pages:
+            hints.append(f"下一页：查老婆 {page + 1}")
+        lines.append(f"\n💡 {' | '.join(hints)}")
 
     text = "\n".join(lines)
 
@@ -88,23 +108,39 @@ async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
         yield event.plain_result(text)
 
 
-def _resolve_target(event: AstrMessageEvent, ctx: CommandContext) -> Optional[str]:
-    """解析目标用户 ID：@优先 → 文本昵称匹配 → 默认自己"""
+def _resolve_target_and_page(
+    event: AstrMessageEvent, ctx: CommandContext
+) -> tuple[Optional[str], int]:
+    """解析目标用户和页码：@/昵称 + 页码数字"""
     at_target = parse_at_target(event)
-    if at_target:
-        return at_target
-
     msg = (event.message_str or "").strip()
+
+    # 提取页码（消息末尾的数字）
+    page = 1
+    page_match = re.search(r"\s(\d+)\s*$", msg)
+    if page_match:
+        try:
+            page = int(page_match.group(1))
+        except ValueError:
+            pass
+
+    # @目标
+    if at_target:
+        return at_target, page
+
+    # 昵称匹配
     parts = msg.split(maxsplit=1)
     if len(parts) > 1:
-        target_nick = parts[1].strip()
+        rest = parts[1].strip()
+        # 去掉末尾页码
+        rest_no_page = re.sub(r"\s+\d+\s*$", "", rest).strip()
         gid = get_group_id(event)
-        if gid and target_nick:
-            tid = find_uid_by_owner_nick(ctx, gid, target_nick)
+        if gid and rest_no_page:
+            tid = find_uid_by_owner_nick(ctx, gid, rest_no_page)
             if tid:
-                return tid
+                return tid, page
 
-    return get_sender_uid(event)
+    return get_sender_uid(event), page
 
 
 def find_uid_by_owner_nick(
