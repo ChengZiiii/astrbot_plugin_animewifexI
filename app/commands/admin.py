@@ -22,6 +22,11 @@ __all__ = [
     "handle_switch_ntr",
     "handle_help",
     "build_help_text",
+    "handle_admin_reset_group",
+    "handle_admin_reset_draw",
+    "handle_admin_test_draw",
+    "handle_admin_test_intimacy",
+    "handle_admin_test_coins",
 ]
 
 
@@ -185,6 +190,8 @@ def build_help_text() -> str:
 • 老婆 重置本群 - 清空本群所有老婆数据（慎用！）
 • 老婆 重置抽卡 [@某人] - 重置目标的今日抽卡状态
 • 老婆 测试抽卡 [次数] - 模拟抽卡测试概率分布（不写入数据）
+• 老婆 测试亲密度 @某人 <数值> - 设置目标亲密度
+• 老婆 测试币 @某人 <数值> - 设置目标老婆币余额
 
 💡 提示：部分命令有每日使用次数限制和冷却时间
 
@@ -320,3 +327,79 @@ async def handle_admin_test_draw(
     lines.append(f"最大连续非SR: {max_pity}")
 
     yield event.plain_result("\n".join(lines))
+
+
+async def handle_admin_test_intimacy(
+    event: AstrMessageEvent, ctx: CommandContext
+) -> AsyncGenerator:
+    """``老婆 测试亲密度 @某人 <数值>`` — 管理员设置目标亲密度"""
+    gid = get_group_id(event)
+    if not gid:
+        return
+    uid = get_sender_uid(event)
+    nick = get_sender_nick(event)
+    tid = parse_at_target(event)
+
+    if not ctx.config.is_admin(uid):
+        yield event.plain_result(f"{nick}，你没有权限执行此操作~")
+        return
+    if not tid:
+        yield event.plain_result("请@目标用户，如：老婆 测试亲密度 @某人 50")
+        return
+
+    msg = (event.message_str or "").strip()
+    import re
+    numbers = re.findall(r"\d+", msg)
+    value = int(numbers[-1]) if numbers else 0
+
+    from ..storage.stores import OwnershipStore
+    ownership_store = OwnershipStore(ctx.paths, gid)
+    ownerships = ownership_store.load_all()
+    primary = ownership_store.get_primary(tid, ownerships)
+    if not primary:
+        yield event.plain_result("目标用户没有老婆~")
+        return
+
+    primary.intimacy = max(0, min(value, ctx.config.intimacy_max))
+    ownership_store.save_all(ownerships)
+
+    target_nick = tid
+    yield event.plain_result(f"已将 {target_nick} 的亲密度设置为 {primary.intimacy}")
+
+
+async def handle_admin_test_coins(
+    event: AstrMessageEvent, ctx: CommandContext
+) -> AsyncGenerator:
+    """``老婆 测试币 @某人 <数值>`` — 管理员设置目标老婆币余额"""
+    gid = get_group_id(event)
+    if not gid:
+        return
+    uid = get_sender_uid(event)
+    nick = get_sender_nick(event)
+    tid = parse_at_target(event)
+
+    if not ctx.config.is_admin(uid):
+        yield event.plain_result(f"{nick}，你没有权限执行此操作~")
+        return
+    if not tid:
+        yield event.plain_result("请@目标用户，如：老婆 测试币 @某人 999")
+        return
+
+    msg = (event.message_str or "").strip()
+    import re
+    numbers = re.findall(r"\d+", msg)
+    value = int(numbers[-1]) if numbers else 0
+
+    from ..storage.stores import ProfileStore
+    profile_store = ProfileStore(ctx.paths, gid)
+    profiles = profile_store.load_all()
+    target = profiles.get(tid)
+    if not target:
+        yield event.plain_result("目标用户没有老婆数据~")
+        return
+
+    target.coins = max(0, value)
+    profile_store.save_all(profiles)
+
+    target_nick = target.nick or tid
+    yield event.plain_result(f"已将 {target_nick} 的老婆币设置为 {target.coins}")

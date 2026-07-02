@@ -105,3 +105,28 @@ def find_uid_by_owner_nick(
             if ctx.ownership_service.get_primary_wid(gid, uid):
                 return uid
     return None
+
+
+def find_wid_by_index(
+    ctx: CommandContext, gid: str, uid: str, msg: Optional[str]
+) -> Optional[str]:
+    """从消息中解析老婆编号（1-based），返回对应 wid。
+
+    格式：``老婆 求婚 1`` 或 ``老婆 锁 2``
+    """
+    if not msg:
+        return None
+    # 取最后一个数字
+    import re
+    numbers = re.findall(r"\d+", msg)
+    if not numbers:
+        return None
+    idx = int(numbers[-1]) - 1  # 转为 0-based
+
+    from ..storage.stores import OwnershipStore
+    ownership_store = OwnershipStore(ctx.paths, gid)
+    ownerships = ownership_store.load_all()
+    my_wives = ownership_store.list_by_user(uid, ownerships)
+    if 0 <= idx < len(my_wives):
+        return my_wives[idx].wid
+    return None

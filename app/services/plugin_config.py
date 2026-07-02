@@ -59,6 +59,7 @@ class PluginConfig:
     draw_cooldown: int = 0
     swap_cooldown: int = 30
     pk_cooldown: int = 120
+    pk_max_per_day: int = 5
 
     # ---------- NTR ----------
     ntr_max: int = 3
@@ -165,6 +166,7 @@ class PluginConfig:
             draw_cooldown=_as_int(d.get("draw_cooldown"), 0),
             swap_cooldown=_as_int(d.get("swap_cooldown"), 30),
             pk_cooldown=_as_int(d.get("pk_cooldown"), 120),
+            pk_max_per_day=_as_int(d.get("pk_max_per_day"), 5),
             ntr_max=_as_int(d.get("ntr_max"), 3),
             ntr_possibility=_as_float(d.get("ntr_possibility"), 0.20),
             revenge_window_hours=_as_int(d.get("revenge_window_hours"), 24),

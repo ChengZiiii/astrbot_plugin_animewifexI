@@ -20,6 +20,12 @@ Phase 3 注册：
 * ``老婆 商城`` — 商城列表
 * ``老婆 购买 <道具>`` — 购买道具
 * ``老婆 背包`` — 查看背包
+* ``老婆 求婚 <编号>`` — 永久锁定老婆
+* ``老婆 锁 <编号>`` — 限期锁定老婆
+* ``老婆 解锁 <编号>`` — 解锁老婆
+* ``老婆 PK @某人`` — 老婆 PK
+* ``老婆 图鉴`` — 查看图鉴
+* ``老婆 面板`` — 查看个人面板
 """
 
 from __future__ import annotations
@@ -27,7 +33,9 @@ from __future__ import annotations
 from .admin import (
     handle_admin_reset_draw,
     handle_admin_reset_group,
+    handle_admin_test_coins,
     handle_admin_test_draw,
+    handle_admin_test_intimacy,
     handle_help,
     handle_reset_change,
     handle_reset_ntr,
@@ -49,7 +57,10 @@ from .grouped_stubs import (
 )
 from .intimacy import handle_gift, handle_pet
 from .leaderboard import handle_leaderboard
+from .marry import handle_lock, handle_propose, handle_unlock
 from .ntr import handle_ntr
+from .panel import handle_collection, handle_panel
+from .pk import handle_pk
 from .registry import CommandRegistry
 from .revenge import handle_revenge
 from .swap import (
@@ -98,10 +109,20 @@ def build_registry() -> CommandRegistry:
     registry.register_grouped("购买", handle_buy)
     registry.register_grouped("背包", handle_backpack)
 
+    # ---------- Phase 3: 求婚/锁定/PK/图鉴/面板 ----------
+    registry.register_grouped("求婚", handle_propose)
+    registry.register_grouped("锁", handle_lock)
+    registry.register_grouped("解锁", handle_unlock)
+    registry.register_grouped("PK", handle_pk)
+    registry.register_grouped("图鉴", handle_collection)
+    registry.register_grouped("面板", handle_panel)
+
     # ---------- 管理员命令 ----------
     registry.register_grouped("重置本群", handle_admin_reset_group)
     registry.register_grouped("重置抽卡", handle_admin_reset_draw)
     registry.register_grouped("测试抽卡", handle_admin_test_draw)
+    registry.register_grouped("测试亲密度", handle_admin_test_intimacy)
+    registry.register_grouped("测试币", handle_admin_test_coins)
 
     # ---------- Phase 2/3 剩余占位子命令 ----------
     for sub in NOT_IMPLEMENTED_SUBCOMMANDS:

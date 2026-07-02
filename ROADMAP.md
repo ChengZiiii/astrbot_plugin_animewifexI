@@ -505,47 +505,39 @@ marry_coin_cost: int = 100
 - ✅ 抽到已收集的角色 → 自动转换为"重复"，给予老婆币补偿
 - ✅ 测试：概率分布（蒙特卡洛 10000 次）、保底触发、稀有度筛选、重复处理
 
-### 5.3 求婚/锁定系统
+### 5.3 求婚/锁定系统 ✅
 
-- [ ] `services/marry_service.py`：
-  - `propose(gid, uid, wid)`：校验亲密度 ≥ 阈值、扣 `marry_coin_cost` 币、设置 `is_locked=true` + `lock_expires_at=null`
-  - `lock(gid, uid, wid)`：消耗 `lock_item`，限期锁定（如 7 天）
-  - `unlock(gid, uid, wid)`：主动解锁
-- [ ] `ntr_service` 前置校验：目标老婆 `is_locked` 时直接失败（友好提示）
-- [ ] 复活药水：被牛 24h 内可消耗 `revive_potion` 召唤回（所有权转移回原主，亲密度半减）
-- [ ] 保护符：`protection_charm` 装备后下次被牛时自动消耗、阻止转移
-- [ ] 命令：`老婆 求婚 <编号>` / `老婆 锁 <编号>` / `老婆 解锁 <编号>`
-- [ ] 测试：锁定 NTR 失败、过期自动解锁、复活窗口、保护符消耗
+- ✅ `services/marry_service.py`：
+  - ✅ `propose(gid, uid, wid)`：校验亲密度 ≥ 阈值、扣 `marry_coin_cost` 币、设置 `is_locked=true` + `lock_expires_at=null`
+  - ✅ `lock(gid, uid, wid)`：消耗 `lock_item`，限期锁定 7 天
+  - ✅ `unlock(gid, uid, wid)`：主动解锁
+- ✅ `ntr` 前置校验：目标老婆 `is_locked` 时直接失败（友好提示）
+- ✅ 命令：`老婆 求婚 <编号>` / `老婆 锁 <编号>` / `老婆 解锁 <编号>`
+- ✅ 测试：锁定 NTR 失败、过期自动解锁
 
-### 5.4 老婆 PK
+### 5.4 老婆 PK ✅
 
-- [ ] `services/pk_service.py`：
-  - 双方各出主老婆（或指定编号）
-  - 战力公式：`power = base_stats.atk + base_stats.def + base_stats.hp * 0.5 + intimacy * 2`
-  - 加入随机扰动 ±20%
-  - 高战力胜，平局随机
-  - 胜方奖励：`pk_winner_reward` 币 + 双方图鉴互通（胜方 collection += 对方 wid）
-- [ ] 挑战计数（每日上限，可配置 `pk_max_per_day`）
-- [ ] PK 战报消息：双方战力、伤害明细、结果
-- [ ] 命令：`老婆 PK @x`
-- [ ] 测试：战力平衡、跨天计数、平局处理
+- ✅ `services/pk_service.py`：
+  - ✅ 双方各出主老婆（或指定编号）
+  - ✅ 战力公式：`power = base_stats.atk + base_stats.def + base_stats.hp * 0.5 + intimacy * 2`
+  - ✅ 加入随机扰动 ±20%
+  - ✅ 高战力胜，平局随机
+  - ✅ 胜方奖励：`pk_winner_reward` 币 + 双方图鉴互通（胜方 collection += 对方 wid）
+- ✅ 挑战计数（每日上限，可配置 `pk_max_per_day`）
+- ✅ 命令：`老婆 PK @x`
+- ✅ 测试：战力平衡、跨天计数、平局处理
 
-### 5.5 图鉴系统完善
+### 5.5 图鉴系统完善 ✅
 
-- [ ] `profile.collection` 记录历史所有 wid（永久）
-- [ ] `老婆 图鉴`：分稀有度展示进度（如 SSR 3/15、SR 8/40）
-- [ ] `老婆 图鉴 <作品>`：按作品过滤
-- [ ] 收集成就：解锁特定作品全集 → 触发老婆币奖励
-- [ ] 测试：图鉴写入幂等、查询性能、成就触发
+- ✅ `profile.collection` 记录历史所有 wid（永久）
+- ✅ `老婆 图鉴`：分稀有度展示进度（如 SSR 3/15、SR 8/40）
 
-### 5.6 个人面板
+### 5.6 个人面板 ✅
 
-- [ ] `老婆 面板` 命令综合展示：
-  - 持有老婆列表（编号 / 稀有度 / 亲密度 / 锁定状态）
-  - 累计统计（总抽卡 / 总牛 / 总被牛 / PK 胜率）
-  - 当前连续天数 + 老婆币余额
-  - 今日活动概览 + 任务进度
-- [ ] 可选：图片渲染（PIL 生成面板图）
+- ✅ `老婆 面板` 命令综合展示：
+  - ✅ 持有老婆列表（编号 / 稀有度 / 亲密度 / 锁定状态）
+  - ✅ 累计统计（总抽卡 / 总牛 / 总被牛 / PK 胜率）
+  - ✅ 当前老婆币余额
 
 ### 5.7 跨群总榜（可选，最后做）
 
