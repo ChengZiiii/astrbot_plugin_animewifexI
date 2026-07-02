@@ -47,7 +47,19 @@ async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
 
     target_profile = ctx.ownership_service.get_profile(gid, target_uid)
     owner = target_profile.nick or "未知用户"
-    intro = build_wife_intro_text(img, prefix=f"{owner}的老婆是", suffix="，羡慕吗？")
+
+    # P2.3: 显示亲密度等级
+    from ..services.ownership_service import OwnershipService
+    wid = ctx.ownership_service.get_primary_wid(gid, target_uid)
+    intimacy_emoji = ""
+    if wid:
+        ownerships_data = ctx.ownership_service._ownership_store(gid).load_all()
+        for o in ownerships_data:
+            if o.wid == wid and o.uid == target_uid and o.is_primary:
+                intimacy_emoji = " " + OwnershipService.intimacy_level_emoji(o.intimacy)
+                break
+
+    intro = build_wife_intro_text(img, prefix=f"{owner}的老婆是", suffix=f"，羡慕吗？{intimacy_emoji}")
     yield event.chain_result(
         build_text_image_chain(
             intro,

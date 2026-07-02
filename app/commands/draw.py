@@ -26,7 +26,15 @@ async def handle_draw(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
         gid, uid, nick, ctx.today()
     )
     if not result.ok or not result.img:
-        yield event.plain_result("抱歉，今天的老婆获取失败了，请稍后再试~")
+        if result.reason == "cooldown":
+            remaining = ctx.cooldown_service.remaining(
+                gid, uid, "draw", ctx.config.draw_cooldown
+            )
+            yield event.plain_result(
+                f"{nick}，抽老婆冷却中，还需等待{remaining}秒~"
+            )
+        else:
+            yield event.plain_result("抱歉，今天的老婆获取失败了，请稍后再试~")
         return
 
     if not result.is_new:

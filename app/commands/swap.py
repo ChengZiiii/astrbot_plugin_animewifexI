@@ -47,6 +47,13 @@ async def handle_swap_request(
             yield event.plain_result(
                 f"{nick}，你今天已经发起了{ctx.config.swap_max_per_day}次交换请求啦，明天再来吧~"
             )
+        elif result.reason == "cooldown":
+            remaining = ctx.cooldown_service.remaining(
+                gid, uid, "swap", ctx.config.swap_cooldown
+            )
+            yield event.plain_result(
+                f"{nick}，交换冷却中，还需等待{remaining}秒~"
+            )
         elif result.reason == "self_no_wife":
             yield event.plain_result(f"{nick}，今天还没有老婆，无法进行交换哦~")
         elif result.reason == "target_no_wife":

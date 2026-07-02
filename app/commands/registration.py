@@ -5,6 +5,13 @@ Phase 1 注册：
 * 12 个旧扁平命令（v2.x 兼容）；
 * ``老婆帮助`` 的两种触发形式（旧版无空格 + 新版带空格）；
 * Phase 2/3 占位子命令（``老婆 列表`` 等）统一返回"未开放"提示。
+
+Phase 2 注册：
+
+* ``老婆 排行 [日|周|总] [牛|被牛|PK|收集]`` — 排行榜
+* ``老婆 复仇 @x`` — 复仇
+* ``老婆 摸头`` — 亲密度互动（摸头）
+* ``老婆 送礼`` — 亲密度互动（送礼）
 """
 
 from __future__ import annotations
@@ -17,8 +24,11 @@ from .grouped_stubs import (
     NOT_IMPLEMENTED_SUBCOMMANDS,
     make_not_implemented_handler,
 )
+from .intimacy import handle_gift, handle_pet
+from .leaderboard import handle_leaderboard
 from .ntr import handle_ntr
 from .registry import CommandRegistry
+from .revenge import handle_revenge
 from .swap import (
     handle_swap_accept,
     handle_swap_reject,
@@ -27,11 +37,11 @@ from .swap import (
 )
 from .view import handle_view
 
-__all__ = ["build_registry", "apply_legacy_aliases"]
+__all__ = ["build_registry"]
 
 
 def build_registry() -> CommandRegistry:
-    """构造 Phase 1 完整命令注册表"""
+    """构造 Phase 2 完整命令注册表"""
     registry = CommandRegistry()
 
     # ---------- 旧扁平命令 ----------
@@ -51,9 +61,14 @@ def build_registry() -> CommandRegistry:
     registry.register_legacy("切换ntr开关状态", handle_switch_ntr)
     registry.register_legacy("切换NTR开关状态", handle_switch_ntr)
 
-    # ---------- Phase 2/3 分组命令占位 ----------
-    # 也支持 ``老婆 帮助`` 作为新版入口
+    # ---------- Phase 2 分组命令 ----------
     registry.register_grouped("帮助", handle_help)
+    registry.register_grouped("排行", handle_leaderboard)
+    registry.register_grouped("复仇", handle_revenge)
+    registry.register_grouped("摸头", handle_pet)
+    registry.register_grouped("送礼", handle_gift)
+
+    # ---------- Phase 2/3 剩余占位子命令 ----------
     for sub in NOT_IMPLEMENTED_SUBCOMMANDS:
         registry.register_grouped(sub, make_not_implemented_handler(sub))
 

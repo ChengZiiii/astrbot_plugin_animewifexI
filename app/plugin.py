@@ -58,7 +58,8 @@ class WifePluginCore(Star):
         # 业务服务
         self.wife_service = WifeService(self.paths, self.plugin_config)
         self.ownership_service = OwnershipService(
-            self.paths, self.plugin_config, self.locks, self.wife_service
+            self.paths, self.plugin_config, self.locks, self.wife_service,
+            self.cooldown_service,
         )
         self.cooldown_service = CooldownService(self.locks)
 
@@ -108,7 +109,7 @@ class WifePluginCore(Star):
     # ---------- 零点清理循环 ----------
 
     async def _daily_cleanup_loop(self):
-        """每天零点清理跨天失效的 daily_counts 与 swap_requests"""
+        """每天零点清理跨天失效的 daily_counts / swap_requests / activity_logs，并递增亲密度"""
         while True:
             try:
                 # 多等一分钟，避免时钟误差导致在日期变更前执行
@@ -120,7 +121,7 @@ class WifePluginCore(Star):
                 logger.exception("定时清理过期数据失败")
 
     async def _cleanup_all_groups(self):
-        """逐群清理跨天失效的次数记录与交换请求"""
+        """逐群清理跨天失效的次数记录、交换请求、活动日志，并执行亲密度每日递增"""
         today = get_today(self.tz)
         # 已知群基于锁池（消息触发过的群），未触发的群也无数据可清
         for gid in list(self.locks.known_groups()):
@@ -132,6 +133,14 @@ class WifePluginCore(Star):
                 await self.ownership_service.prune_swap_requests_for_group(gid, today)
             except Exception:
                 logger.exception(f"清理群 {gid} 的 swap_requests 失败")
+            try:
+                await self.ownership_service.prune_activity_logs_for_group(gid, today)
+            except Exception:
+                logger.exception(f"清理群 {gid} 的 activity_logs 失败")
+            try:
+                await self.ownership_service.daily_intimacy_increment_for_group(gid, today)
+            except Exception:
+                logger.exception(f"群 {gid} 亲密度每日递增失败")
 
     # ---------- 生命周期 ----------
 

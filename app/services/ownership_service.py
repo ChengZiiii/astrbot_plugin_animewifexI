@@ -37,6 +37,7 @@ from ..storage.stores import (
 )
 from ..utils.image import parse_wife_name
 from ..utils.time import now_ts
+from .cooldown_service import CooldownService
 from .plugin_config import PluginConfig
 from .wife_service import WifeService
 
@@ -46,8 +47,10 @@ __all__ = [
     "NtrResult",
     "ChangeResult",
     "SwapResult",
+    "IntimacyResult",
     "wid_for_img",
     "DailyAction",
+    "CooldownAction",
 ]
 
 
@@ -78,6 +81,19 @@ class DailyAction:
     SWAP_ATTEMPT = "swap_attempt"      # 发起交换请求
     RESET_USE = "reset_use"            # 重置功能使用
     PK_ATTEMPT = "pk_attempt"          # PK（Phase 3）
+
+
+# ==================== 冷却动作 key ====================
+
+
+class CooldownAction:
+    """CooldownService 使用的动作 key（对应 PluginConfig 中的 *_cooldown 字段）"""
+
+    DRAW = "draw"
+    NTR = "ntr"
+    CHANGE = "change"
+    SWAP = "swap"
+    PK = "pk"
 
 
 # ==================== 结果 dataclass ====================
@@ -131,6 +147,16 @@ class SwapResult:
     refunded_old: bool = False             # 是否返还了旧请求次数
 
 
+@dataclass
+class IntimacyResult:
+    """亲密度操作结果"""
+
+    ok: bool
+    intimacy: int = 0          # 操作后的亲密度
+    reason: str = ""           # 失败原因
+    coin_balance: int = 0      # 操作后的币余额
+
+
 # ==================== 服务 ====================
 
 
@@ -143,11 +169,13 @@ class OwnershipService:
         config: PluginConfig,
         locks: GroupLocks,
         wife_service: WifeService,
+        cooldown_service: "CooldownService | None" = None,
     ):
         self._paths = paths
         self._config = config
         self._locks = locks
         self._wife_service = wife_service
+        self._cooldown = cooldown_service
         # 全局老婆元数据与 NTR 开关不按群隔离
         self._wives_master = WivesMasterStore(paths)
         self._ntr_status = NtrStatusStore(paths)
@@ -262,6 +290,13 @@ class OwnershipService:
 
         v2.x 行为：每用户每天只有一张主老婆，重复抽返回同一张。
         """
+        # P2.1: 抽老婆冷却检查
+        if self._cooldown and self._config.draw_cooldown > 0:
+            if not self._cooldown.check(
+                gid, uid, CooldownAction.DRAW, self._config.draw_cooldown
+            ):
+                return DrawResult(ok=False, reason="cooldown")
+
         async with self._locks.acquire(gid):
             ownership_store = self._ownership_store(gid)
             profile_store = self._profile_store(gid)
@@ -313,6 +348,10 @@ class OwnershipService:
             profile_store.save_all(profiles)
             activity_store.save_all(activity_logs)
 
+            # P2.1: 新抽成功后更新冷却
+            if self._cooldown and self._config.draw_cooldown > 0:
+                self._cooldown.update(gid, uid, CooldownAction.DRAW)
+
             return DrawResult(ok=True, img=img, wid=wid, is_new=True, profile=profile)
 
     # ---------- 牛老婆 ----------
@@ -324,6 +363,7 @@ class OwnershipService:
         tid: str,
         nick: str,
         today: str,
+        is_revenge: bool = False,
         roll_seed: "Optional[float]" = None,
     ) -> NtrResult:
         """牛老婆尝试
@@ -331,12 +371,20 @@ class OwnershipService:
         内部完成：NTR 开关校验、目标合法性校验、当日次数限额校验、
         概率判定、所有权转移、活动日志写入。
 
+        ``is_revenge``: True 时走复仇路径（检查复仇窗口、应用成功率加成）。
         ``roll_seed`` 用于测试注入固定概率，正常调用传 ``None``。
         """
         if not tid or tid == uid:
             return NtrResult(ok=False, reason="invalid_target")
         if not self.get_ntr_enabled(gid):
             return NtrResult(ok=False, reason="ntr_disabled")
+
+        # P2.1: NTR 冷却检查
+        if self._cooldown and self._config.ntr_cooldown > 0:
+            if not self._cooldown.check(
+                gid, uid, CooldownAction.NTR, self._config.ntr_cooldown
+            ):
+                return NtrResult(ok=False, reason="cooldown")
 
         async with self._locks.acquire(gid):
             ownership_store = self._ownership_store(gid)
@@ -376,6 +424,10 @@ class OwnershipService:
             )
             remaining = max(0, self._config.ntr_max - new_count)
 
+            # P2.1: NTR 尝试消耗后更新冷却（无论后续成功/失败）
+            if self._cooldown and self._config.ntr_cooldown > 0:
+                self._cooldown.update(gid, uid, CooldownAction.NTR)
+
             if not target_primary:
                 profile_store.save_all(profiles)
                 daily_store.save_all(daily_counts)
@@ -388,8 +440,21 @@ class OwnershipService:
                     profile=attacker_profile,
                 )
 
+            # P2.4: 复仇检查
+            revenge_valid = False
+            if is_revenge and attacker_profile.last_ntr_by:
+                rev_uid = attacker_profile.last_ntr_by.get("uid", "")
+                rev_ts = float(attacker_profile.last_ntr_by.get("ts", 0))
+                if rev_uid == tid and (now_ts() - rev_ts) < self._config.revenge_window_hours * 3600:
+                    revenge_valid = True
+
+            # 概率判定（复仇时应用成功率加成）
+            ntr_prob = self._config.ntr_possibility
+            if revenge_valid:
+                ntr_prob = min(1.0, ntr_prob * self._config.revenge_success_multiplier)
+
             roll = roll_seed if roll_seed is not None else _random.random()
-            success = roll < self._config.ntr_possibility
+            success = roll < ntr_prob
 
             meta = self.get_wife_meta(target_primary.wid)
             img = meta.img if meta else ""
@@ -427,6 +492,17 @@ class OwnershipService:
             if target_profile is not None:
                 target_profile.total_ntr_lost += 1
                 target_profile.last_ntr_by = {"uid": uid, "ts": now_ts()}
+
+            # P2.3: NTR 成功时被牛方亲密度归零（转移后的 ownership 从 0 开始）
+            transferred = ownership_store.find_by_wid(ownerships, wid)
+            if transferred:
+                transferred.intimacy = 0
+                transferred.intimacy_updated_date = ""
+                ownership_store.save_all(ownerships)
+
+            # P2.4: 复仇成功后清空 last_ntr_by（防链式复仇）
+            if revenge_valid:
+                attacker_profile.last_ntr_by = None
 
             ActivityStore.log(activity_logs, uid, today, Action.NTR_SUCCESS, 1)
             ActivityStore.log(activity_logs, tid, today, Action.NTR_LOST, 1)
@@ -546,6 +622,13 @@ class OwnershipService:
         if not tid or tid == uid:
             return SwapResult(ok=False, reason="invalid_target")
 
+        # P2.1: 交换冷却检查
+        if self._cooldown and self._config.swap_cooldown > 0:
+            if not self._cooldown.check(
+                gid, uid, CooldownAction.SWAP, self._config.swap_cooldown
+            ):
+                return SwapResult(ok=False, reason="cooldown")
+
         async with self._locks.acquire(gid):
             ownership_store = self._ownership_store(gid)
             daily_store = self._daily_count_store(gid)
@@ -590,6 +673,10 @@ class OwnershipService:
 
             swap_store.save_all(swap_requests)
             daily_store.save_all(daily_counts)
+
+            # P2.1: 交换请求创建后更新冷却
+            if self._cooldown and self._config.swap_cooldown > 0:
+                self._cooldown.update(gid, uid, CooldownAction.SWAP)
 
             return SwapResult(
                 ok=True,
@@ -804,6 +891,150 @@ class OwnershipService:
                 "reason": "roll_failed",
             }
 
+    # ---------- 亲密度 ----------
+
+    async def pet_wife(
+        self, gid: str, uid: str, nick: str, today: str
+    ) -> IntimacyResult:
+        """摸头：消耗币增加亲密度
+
+        要求：有主老婆、币余额 >= intimacy_pet_coin_cost、亲密度未满。
+        """
+        async with self._locks.acquire(gid):
+            ownership_store = self._ownership_store(gid)
+            profile_store = self._profile_store(gid)
+
+            ownerships = ownership_store.load_all()
+            profiles = profile_store.load_all()
+
+            primary = ownership_store.get_primary(uid, ownerships)
+            if primary is None:
+                return IntimacyResult(ok=False, reason="no_wife")
+
+            profile = ProfileStore.get_or_create(
+                profiles, uid, nick,
+                capacity=self._config.default_capacity,
+                coins=self._config.initial_coins,
+            )
+
+            if profile.coins < self._config.intimacy_pet_coin_cost:
+                return IntimacyResult(
+                    ok=False, reason="not_enough_coins",
+                    intimacy=primary.intimacy, coin_balance=profile.coins,
+                )
+
+            if primary.intimacy >= self._config.intimacy_max:
+                return IntimacyResult(
+                    ok=False, reason="intimacy_maxed",
+                    intimacy=primary.intimacy, coin_balance=profile.coins,
+                )
+
+            profile.coins -= self._config.intimacy_pet_coin_cost
+            primary.intimacy = min(
+                self._config.intimacy_max,
+                primary.intimacy + self._config.intimacy_pet_gain,
+            )
+            primary.intimacy_updated_date = today
+
+            ownership_store.save_all(ownerships)
+            profile_store.save_all(profiles)
+
+            return IntimacyResult(
+                ok=True, intimacy=primary.intimacy, coin_balance=profile.coins,
+            )
+
+    async def gift_wife(
+        self, gid: str, uid: str, nick: str, today: str
+    ) -> IntimacyResult:
+        """送礼：高消耗高加成亲密度
+
+        要求：有主老婆、币余额 >= intimacy_gift_coin_cost、亲密度未满。
+        """
+        async with self._locks.acquire(gid):
+            ownership_store = self._ownership_store(gid)
+            profile_store = self._profile_store(gid)
+
+            ownerships = ownership_store.load_all()
+            profiles = profile_store.load_all()
+
+            primary = ownership_store.get_primary(uid, ownerships)
+            if primary is None:
+                return IntimacyResult(ok=False, reason="no_wife")
+
+            profile = ProfileStore.get_or_create(
+                profiles, uid, nick,
+                capacity=self._config.default_capacity,
+                coins=self._config.initial_coins,
+            )
+
+            if profile.coins < self._config.intimacy_gift_coin_cost:
+                return IntimacyResult(
+                    ok=False, reason="not_enough_coins",
+                    intimacy=primary.intimacy, coin_balance=profile.coins,
+                )
+
+            if primary.intimacy >= self._config.intimacy_max:
+                return IntimacyResult(
+                    ok=False, reason="intimacy_maxed",
+                    intimacy=primary.intimacy, coin_balance=profile.coins,
+                )
+
+            profile.coins -= self._config.intimacy_gift_coin_cost
+            primary.intimacy = min(
+                self._config.intimacy_max,
+                primary.intimacy + self._config.intimacy_gift_gain,
+            )
+            primary.intimacy_updated_date = today
+
+            ownership_store.save_all(ownerships)
+            profile_store.save_all(profiles)
+
+            return IntimacyResult(
+                ok=True, intimacy=primary.intimacy, coin_balance=profile.coins,
+            )
+
+    async def daily_intimacy_increment_for_group(self, gid: str, today: str) -> int:
+        """零点循环：所有持有老婆 +intimacy_per_day（幂等，每日只加一次）
+
+        返回更新的 ownership 数量。
+        """
+        async with self._locks.acquire(gid):
+            ownership_store = self._ownership_store(gid)
+            ownerships = ownership_store.load_all()
+
+            updated = 0
+            for o in ownerships:
+                if o.intimacy_updated_date == today:
+                    continue
+                if o.intimacy >= self._config.intimacy_max:
+                    continue
+                o.intimacy = min(
+                    self._config.intimacy_max,
+                    o.intimacy + self._config.intimacy_per_day,
+                )
+                o.intimacy_updated_date = today
+                updated += 1
+
+            if updated:
+                ownership_store.save_all(ownerships)
+            return updated
+
+    @staticmethod
+    def intimacy_level(intimacy: int) -> int:
+        """亲密度 → 等级（1~10），线性分段"""
+        if intimacy <= 0:
+            return 0
+        # 每 10 点一级，上限 10 级
+        return min(10, (intimacy - 1) // 10 + 1)
+
+    @staticmethod
+    def intimacy_level_emoji(intimacy: int) -> str:
+        """亲密度等级 emoji 展示（如 ❤️ Lv.3）"""
+        lv = OwnershipService.intimacy_level(intimacy)
+        if lv <= 0:
+            return ""
+        return f"❤️ Lv.{lv}"
+
     # ---------- 零点清理（由 plugin 定时循环调用） ----------
 
     async def prune_daily_counts_for_group(self, gid: str, today: str) -> bool:
@@ -829,6 +1060,21 @@ class OwnershipService:
                 store.save_all(cleaned)
                 return True
             return False
+
+    async def prune_activity_logs_for_group(self, gid: str, today: str) -> bool:
+        """删除某群所有早于 activity_window_days 的活动日志日期 key"""
+        async with self._locks.acquire(gid):
+            activity_store = self._activity_store(gid)
+            logs = activity_store.load_all()
+            changed = False
+            for uid, log in logs.items():
+                before = len(log.days)
+                log.prune_before(days=self._config.activity_window_days)
+                if len(log.days) != before:
+                    changed = True
+            if changed:
+                activity_store.save_all(logs)
+            return changed
 
     def known_groups(self) -> List[str]:
         """返回已知群列表（基于锁池，用于零点遍历）"""
