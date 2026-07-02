@@ -26,18 +26,6 @@
         "default": "https://animewife.dpdns.org/list.txt",
         "hint": "用于获取图片文件名列表的地址"
     },
-    "default_capacity": {
-        "description": "新用户初始持有上限",
-        "type": "int",
-        "default": 3,
-        "hint": "新用户首次发消息时创建档案的老婆持有容量；Phase 3 多老婆玩法生效"
-    },
-    "max_capacity": {
-        "description": "道具扩容绝对上限",
-        "type": "int",
-        "default": 10,
-        "hint": "即使购买多个扩容道具也不能超过此值；Phase 3 商城生效"
-    },
     "ntr_cooldown": {
         "description": "牛老婆冷却（秒）",
         "type": "int",
@@ -235,7 +223,6 @@
         "type": "object",
         "items": {
             "reroll_ticket": {"type": "int", "default": 30},
-            "capacity_expansion": {"type": "int", "default": 100},
             "lock_item": {"type": "int", "default": 50},
             "revive_potion": {"type": "int", "default": 80},
             "protection_charm": {"type": "int", "default": 60},

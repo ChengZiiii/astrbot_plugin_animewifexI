@@ -123,7 +123,7 @@ class MarryService:
         profile_store = ProfileStore(self._paths, gid)
         profiles = profile_store.load_all()
         profile = ProfileStore.get_or_create(
-            profiles, uid, nick, self._config.default_capacity, self._config.initial_coins
+            profiles, uid, nick, self._config.initial_coins
         )
         if profile.inventory.get("lock_item", 0) <= 0:
             return MarryResult(ok=False, reason="no_item", msg="没有锁定卡，去商城购买吧~")

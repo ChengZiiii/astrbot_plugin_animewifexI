@@ -26,9 +26,8 @@ def config():
     return PluginConfig(
         initial_coins=200,
         shop_prices={
-            "reroll_ticket": 30,
-            "capacity_expansion": 100,
-            "lock_item": 50,
+        "reroll_ticket": 30,
+        "lock_item": 50,
             "revive_potion": 80,
             "protection_charm": 60,
         },

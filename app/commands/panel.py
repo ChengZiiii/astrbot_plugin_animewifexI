@@ -85,7 +85,6 @@ async def handle_panel(
 
     # 基础信息
     lines.append(f"💰 老婆币：{profile.coins}")
-    lines.append(f"📦 背包容量：{profile.capacity}")
     lines.append(f"📅 连续天数：{profile.streak_days}")
     lines.append("")
 
@@ -98,8 +97,9 @@ async def handle_panel(
     lines.append("")
 
     # 持有老婆
+    from ..services.ownership_service import MAX_WIVES_PER_USER
     if my_wives:
-        lines.append(f"【持有老婆】{len(my_wives)}/{profile.capacity}")
+        lines.append(f"【持有老婆】{len(my_wives)}/{MAX_WIVES_PER_USER}")
         for i, o in enumerate(my_wives, 1):
             wife = wives.get(o.wid)
             if wife:

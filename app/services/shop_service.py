@@ -3,7 +3,6 @@
 道具清单（ROADMAP.md §5.1）：
 
 * ``reroll_ticket``       - 抵扣换老婆消耗
-* ``capacity_expansion``  - 扩容 +1
 * ``lock_item``           - 限期锁定
 * ``revive_potion``       - 被牛后复活
 * ``protection_charm``    - 24h 免疫一次 NTR
@@ -30,7 +29,6 @@ __all__ = ["ShopService"]
 # 道具 key 与中文名映射
 ITEM_NAMES: Dict[str, str] = {
     "reroll_ticket": "换老婆券",
-    "capacity_expansion": "扩容卡",
     "lock_item": "锁定卡",
     "revive_potion": "复活药水",
     "protection_charm": "保护符",
@@ -41,7 +39,6 @@ ITEM_NAMES: Dict[str, str] = {
 # 使用上限（0 表示无上限）
 ITEM_USE_LIMITS: Dict[str, int] = {
     "reroll_ticket": 0,
-    "capacity_expansion": 0,
     "lock_item": 0,
     "revive_potion": 0,
     "protection_charm": 1,  # 同时只能持有 1 个
@@ -105,8 +102,7 @@ class ShopService:
         store = ProfileStore(self._paths, gid)
         profiles = store.load_all()
         profile = ProfileStore.get_or_create(
-            profiles, uid, nick,
-            self._config.default_capacity, self._config.initial_coins
+            profiles, uid, nick, self._config.initial_coins
         )
 
         # 检查余额
@@ -159,8 +155,7 @@ class ShopService:
         store = ProfileStore(self._paths, gid)
         profiles = store.load_all()
         profile = ProfileStore.get_or_create(
-            profiles, uid, nick,
-            self._config.default_capacity, self._config.initial_coins
+            profiles, uid, nick, self._config.initial_coins
         )
 
         current = profile.inventory.get(item_key, 0)

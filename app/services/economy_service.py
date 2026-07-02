@@ -55,7 +55,7 @@ class EconomyService:
         store = ProfileStore(self._paths, gid)
         profiles = store.load_all()
         profile = ProfileStore.get_or_create(
-            profiles, uid, nick, self._config.default_capacity, self._config.initial_coins
+            profiles, uid, nick, self._config.initial_coins
         )
         profile.coins += amount
         store.save_all(profiles)
@@ -85,7 +85,7 @@ class EconomyService:
         store = ProfileStore(self._paths, gid)
         profiles = store.load_all()
         profile = ProfileStore.get_or_create(
-            profiles, uid, nick, self._config.default_capacity, self._config.initial_coins
+            profiles, uid, nick, self._config.initial_coins
         )
 
         if profile.coins < amount:
@@ -112,7 +112,7 @@ class EconomyService:
         store = ProfileStore(self._paths, gid)
         profiles = store.load_all()
         profile = ProfileStore.get_or_create(
-            profiles, uid, nick, self._config.default_capacity, self._config.initial_coins
+            profiles, uid, nick, self._config.initial_coins
         )
 
         if profile.last_checkin_date == today:

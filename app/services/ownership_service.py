@@ -263,7 +263,7 @@ class OwnershipService:
             profiles,
             uid,
             nick,
-            capacity=self._config.default_capacity,
+
             coins=self._config.initial_coins,
         )
         self._profile_store(gid).save_all(profiles)
@@ -326,7 +326,7 @@ class OwnershipService:
                 profiles,
                 uid,
                 nick,
-                capacity=self._config.default_capacity,
+    
                 coins=self._config.initial_coins,
             )
 
@@ -454,7 +454,7 @@ class OwnershipService:
 
             profile = ProfileStore.get_or_create(
                 profiles, uid, nick,
-                capacity=self._config.default_capacity,
+    
                 coins=self._config.initial_coins,
             )
 
@@ -596,7 +596,7 @@ class OwnershipService:
             # H1: 指定 wid 或随机选一个
             attacker_profile = ProfileStore.get_or_create(
                 profiles, uid, nick,
-                capacity=self._config.default_capacity,
+    
                 coins=self._config.initial_coins,
             )
 
@@ -761,7 +761,7 @@ class OwnershipService:
                 profiles,
                 uid,
                 nick,
-                capacity=self._config.default_capacity,
+    
                 coins=self._config.initial_coins,
             )
 
@@ -1129,7 +1129,7 @@ class OwnershipService:
 
             profile = ProfileStore.get_or_create(
                 profiles, uid, nick,
-                capacity=self._config.default_capacity,
+    
                 coins=self._config.initial_coins,
             )
 
@@ -1179,7 +1179,7 @@ class OwnershipService:
 
             profile = ProfileStore.get_or_create(
                 profiles, uid, nick,
-                capacity=self._config.default_capacity,
+    
                 coins=self._config.initial_coins,
             )
 

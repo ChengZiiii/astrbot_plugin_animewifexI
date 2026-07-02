@@ -231,14 +231,13 @@ class ProfileStore:
         profiles: Dict[str, UserProfile],
         uid: str,
         nick: str,
-        capacity: int = 3,
         coins: int = 50,
     ) -> UserProfile:
         """获取或创建用户档案（不落盘，调用方在临界区内决定何时 save）"""
         profile = profiles.get(uid)
         if profile is None:
             profile = UserProfile.new_with_defaults(
-                uid=uid, nick=nick, capacity=capacity, coins=coins
+                uid=uid, nick=nick, coins=coins
             )
             profiles[uid] = profile
         elif nick and profile.nick != nick:

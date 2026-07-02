@@ -50,10 +50,6 @@ class PluginConfig:
     image_base_url: str = "https://cdn.jsdmirror.com/gh/monbed/wife@main"
     image_list_url: str = "https://animewife.dpdns.org/list.txt"
 
-    # ---------- 持有上限 ----------
-    default_capacity: int = 3
-    max_capacity: int = 10
-
     # ---------- 冷却（秒） ----------
     ntr_cooldown: int = 60
     draw_cooldown: int = 0
@@ -106,7 +102,6 @@ class PluginConfig:
     shop_prices: dict = field(
         default_factory=lambda: {
             "reroll_ticket": 30,
-            "capacity_expansion": 100,
             "lock_item": 50,
             "revive_potion": 80,
             "protection_charm": 60,
@@ -147,7 +142,6 @@ class PluginConfig:
         if not shop_prices:
             shop_prices = {
                 "reroll_ticket": 30,
-                "capacity_expansion": 100,
                 "lock_item": 50,
                 "revive_potion": 80,
                 "protection_charm": 60,
@@ -165,8 +159,6 @@ class PluginConfig:
             image_list_url=str(
                 d.get("image_list_url") or "https://animewife.dpdns.org/list.txt"
             ),
-            default_capacity=_as_int(d.get("default_capacity"), 3),
-            max_capacity=_as_int(d.get("max_capacity"), 10),
             ntr_cooldown=_as_int(d.get("ntr_cooldown"), 60),
             draw_cooldown=_as_int(d.get("draw_cooldown"), 0),
             swap_cooldown=_as_int(d.get("swap_cooldown"), 30),

@@ -136,11 +136,9 @@ class TestUserProfile:
         })
         assert p.inventory["reroll_ticket"] == 2
         assert p.inventory["lock_item"] == 0
-        assert p.inventory["capacity_expansion"] == 0
 
     def test_new_with_defaults(self):
-        p = UserProfile.new_with_defaults("u1", nick="x", capacity=5, coins=100)
-        assert p.capacity == 5
+        p = UserProfile.new_with_defaults("u1", nick="x", coins=100)
         assert p.coins == 100
         assert p.inventory["revive_potion"] == 0
 

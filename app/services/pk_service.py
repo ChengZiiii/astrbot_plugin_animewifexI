@@ -149,11 +149,11 @@ class PkService:
         profiles = profile_store.load_all()
         winner_profile = ProfileStore.get_or_create(
             profiles, winner_uid, winner_nick,
-            self._config.default_capacity, self._config.initial_coins
+            self._config.initial_coins
         )
         loser_profile = ProfileStore.get_or_create(
             profiles, loser_uid, defender_nick if loser_uid == defender_uid else attacker_nick,
-            self._config.default_capacity, self._config.initial_coins
+            self._config.initial_coins
         )
         winner_profile.total_pk_win = winner_profile.total_pk_win + 1
         loser_profile.total_pk_lost = loser_profile.total_pk_lost + 1

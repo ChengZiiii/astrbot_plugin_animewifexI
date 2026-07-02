@@ -16,7 +16,6 @@ __all__ = ["UserProfile"]
 def _default_inventory() -> Dict[str, int]:
     return {
         "reroll_ticket": 0,
-        "capacity_expansion": 0,
         "lock_item": 0,
         "revive_potion": 0,
         "protection_charm": 0,
@@ -124,8 +123,7 @@ class UserProfile:
         cls,
         uid: str,
         nick: str = "",
-        capacity: int = 3,
         coins: int = 50,
     ) -> "UserProfile":
         """按配置默认值创建新档案"""
-        return cls(uid=uid, nick=nick, capacity=capacity, coins=coins)
+        return cls(uid=uid, nick=nick, coins=coins)

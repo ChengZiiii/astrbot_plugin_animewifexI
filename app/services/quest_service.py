@@ -64,7 +64,7 @@ class QuestService:
         profiles = store.load_all()
         profile = ProfileStore.get_or_create(
             profiles, uid, nick,
-            self._config.default_capacity, self._config.initial_coins
+            self._config.initial_coins
         )
 
         # 已完成则跳过
