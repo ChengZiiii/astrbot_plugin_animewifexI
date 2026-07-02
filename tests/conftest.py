@@ -29,10 +29,11 @@ _STUB_MODULES = {
 def _install_astrbot_stub() -> None:
     """注入最小可用的 astrbot 桩模块
 
-    只覆盖 app.api.events / app.api.messaging 用到的属性，
+    只覆盖 app.api.events / app.api.messaging / app.plugin 用到的属性，
     不实现完整框架（生产环境由真实 astrbot 提供）。
     """
     import types
+    from typing import Any
 
     if "astrbot" in sys.modules:
         return  # 真 astrbot 已加载，跳过桩
@@ -96,8 +97,24 @@ def _install_astrbot_stub() -> None:
 
     # astrbot.api.star
     star_mod = types.ModuleType("astrbot.api.star")
-    star_mod.Star = object  # type: ignore[attr-defined]
-    star_mod.Context = object  # type: ignore[attr-defined]
+
+    class _Star:
+        """Star 基类桩：接受 context 参数（与真实 AstrBot Star 签名一致）"""
+
+        def __init__(self, context: Any = None):
+            self.context = context
+
+        async def terminate(self):
+            pass
+
+    class _Context:
+        """Context 桩：默认 get_config 返回空 dict"""
+
+        def __init__(self, config: dict = None):
+            self._config = config or {}
+
+        def get_config(self) -> dict:
+            return self._config
 
     class _StarTools:
         @staticmethod
@@ -107,7 +124,9 @@ def _install_astrbot_stub() -> None:
             import os
             return tempfile.mkdtemp(prefix=f"{name}_test_")
 
-    star_mod.StarTools = _StarTools  # type: ignore[attr-defined]
+    star_mod.Star = _Star
+    star_mod.Context = _Context
+    star_mod.StarTools = _StarTools
 
     # astrbot 顶层
     top = types.ModuleType("astrbot")

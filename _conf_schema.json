@@ -14,17 +14,77 @@
         "hint": "启用后需要前缀来触发指令",
         "default": false
     },
+    "image_base_url": {
+        "description": "图片服务器基础 URL",
+        "type": "string",
+        "default": "https://cdn.jsdmirror.com/gh/monbed/wife@main",
+        "hint": "用于拼接图片链接的基础地址"
+    },
+    "image_list_url": {
+        "description": "图片列表 URL",
+        "type": "string",
+        "default": "https://animewife.dpdns.org/list.txt",
+        "hint": "用于获取图片文件名列表的地址"
+    },
+    "default_capacity": {
+        "description": "新用户初始持有上限",
+        "type": "int",
+        "default": 3,
+        "hint": "新用户首次发消息时创建档案的老婆持有容量；Phase 3 多老婆玩法生效"
+    },
+    "max_capacity": {
+        "description": "道具扩容绝对上限",
+        "type": "int",
+        "default": 10,
+        "hint": "即使购买多个扩容道具也不能超过此值；Phase 3 商城生效"
+    },
+    "ntr_cooldown": {
+        "description": "牛老婆冷却（秒）",
+        "type": "int",
+        "default": 60,
+        "hint": "两次牛老婆尝试之间的最小间隔（Phase 2 接入）"
+    },
+    "draw_cooldown": {
+        "description": "抽老婆冷却（秒）",
+        "type": "int",
+        "default": 0,
+        "hint": "两次抽老婆之间的最小间隔，0 表示不限"
+    },
+    "swap_cooldown": {
+        "description": "交换老婆冷却（秒）",
+        "type": "int",
+        "default": 30,
+        "hint": "两次交换请求之间的最小间隔（Phase 2 接入）"
+    },
+    "pk_cooldown": {
+        "description": "PK 冷却（秒）",
+        "type": "int",
+        "default": 120,
+        "hint": "两次 PK 之间的最小间隔（Phase 3 接入）"
+    },
     "ntr_max": {
         "description": "每日可牛老婆次数",
         "type": "int",
         "default": 3,
-        "hint": "每天可以牛老婆的次数"
+        "hint": "每天可以牛老婆的次数（成功失败都计）"
     },
     "ntr_possibility": {
         "description": "NTR 成功概率",
         "type": "float",
         "default": 0.20,
         "hint": "牛老婆成功的概率，取值范围 [0, 1]"
+    },
+    "revenge_window_hours": {
+        "description": "复仇窗口（小时）",
+        "type": "int",
+        "default": 24,
+        "hint": "被牛后多少小时内可发起复仇（Phase 2 接入）"
+    },
+    "revenge_success_multiplier": {
+        "description": "复仇成功率倍率",
+        "type": "float",
+        "default": 2.0,
+        "hint": "复仇时 NTR 概率乘以此倍数（Phase 2 接入）"
     },
     "change_max_per_day": {
         "description": "每天换老婆最大次数",
@@ -56,16 +116,124 @@
         "default": 300,
         "hint": "重置失败后禁言时长，单位秒"
     },
-    "image_base_url": {
-        "description": "图片服务器基础 URL",
-        "type": "string",
-        "default": "https://cdn.jsdmirror.com/gh/monbed/wife@main",
-        "hint": "用于拼接图片链接的基础地址"
+    "intimacy_per_day": {
+        "description": "每日亲密度自然增长",
+        "type": "int",
+        "default": 10,
+        "hint": "持有老婆每日零点自动增加的亲密度（Phase 2 接入）"
     },
-    "image_list_url": {
-        "description": "图片列表 URL",
+    "intimacy_max": {
+        "description": "亲密度上限",
+        "type": "int",
+        "default": 100,
+        "hint": "单只老婆的亲密度最大值"
+    },
+    "intimacy_marry_threshold": {
+        "description": "求婚所需亲密度",
+        "type": "int",
+        "default": 60,
+        "hint": "求婚前老婆亲密度需达到的阈值（Phase 3 接入）"
+    },
+    "intimacy_pet_coin_cost": {
+        "description": "摸头消耗老婆币",
+        "type": "int",
+        "default": 5,
+        "hint": "「老婆 摸头」消耗的老婆币数量（Phase 2 接入）"
+    },
+    "intimacy_pet_gain": {
+        "description": "摸头亲密度增量",
+        "type": "int",
+        "default": 3,
+        "hint": "「老婆 摸头」增加的亲密度（Phase 2 接入）"
+    },
+    "intimacy_gift_coin_cost": {
+        "description": "送礼消耗老婆币",
+        "type": "int",
+        "default": 30,
+        "hint": "「老婆 送礼」消耗的老婆币数量（Phase 2 接入）"
+    },
+    "intimacy_gift_gain": {
+        "description": "送礼亲密度增量",
+        "type": "int",
+        "default": 20,
+        "hint": "「老婆 送礼」增加的亲密度（Phase 2 接入）"
+    },
+    "activity_window_days": {
+        "description": "活动日志保留天数",
+        "type": "int",
+        "default": 7,
+        "hint": "榜单聚合的滚动窗口长度（Phase 2 接入）"
+    },
+    "leaderboard_top_n": {
+        "description": "榜单显示条数",
+        "type": "int",
+        "default": 10,
+        "hint": "「老婆 排行」命令显示前 N 名（Phase 2 接入）"
+    },
+    "rarity_weights": {
+        "description": "稀有度抽卡权重",
+        "type": "object",
+        "default": {"SSR": 5, "SR": 20, "R": 50, "N": 25},
+        "hint": "抽卡时各稀有度的相对权重（Phase 3 接入）"
+    },
+    "pity_threshold": {
+        "description": "保底次数",
+        "type": "int",
+        "default": 10,
+        "hint": "连续 N 次未达保底稀有度时强制保底（Phase 3 接入）"
+    },
+    "pity_min_rarity": {
+        "description": "保底最低稀有度",
         "type": "string",
-        "default": "https://animewife.dpdns.org/list.txt",
-        "hint": "用于获取图片文件名列表的地址"
+        "default": "SR",
+        "hint": "保底时至少获得的稀有度（Phase 3 接入）"
+    },
+    "initial_coins": {
+        "description": "新用户初始老婆币",
+        "type": "int",
+        "default": 50,
+        "hint": "新档案创建时发放的老婆币数量；老用户首次启动 v3.x 时也按此补偿"
+    },
+    "daily_checkin_coins": {
+        "description": "每日签到老婆币",
+        "type": "int",
+        "default": 20,
+        "hint": "「老婆 签到」每日发放数量（Phase 3 接入）"
+    },
+    "reroll_cost": {
+        "description": "换老婆消耗老婆币",
+        "type": "int",
+        "default": 30,
+        "hint": "「换老婆」消耗的老婆币；持有 reroll_ticket 时抵扣（Phase 3 接入）"
+    },
+    "pk_winner_reward": {
+        "description": "PK 胜方奖励老婆币",
+        "type": "int",
+        "default": 15,
+        "hint": "PK 胜利方获得的老婆币（Phase 3 接入）"
+    },
+    "quest_complete_coins": {
+        "description": "每日任务完成奖励",
+        "type": "int",
+        "default": 10,
+        "hint": "每日任务全部完成时发放的老婆币（Phase 3 接入）"
+    },
+    "shop_prices": {
+        "description": "商城道具价格",
+        "type": "object",
+        "default": {
+            "reroll_ticket": 30,
+            "capacity_expansion": 100,
+            "lock_item": 50,
+            "revive_potion": 80,
+            "protection_charm": 60
+        },
+        "hint": "各道具的老婆币价格（Phase 3 接入）"
+    },
+    "marry_coin_cost": {
+        "description": "求婚消耗老婆币",
+        "type": "int",
+        "default": 100,
+        "hint": "「老婆 求婚」消耗的老婆币（Phase 3 接入）"
     }
 }
