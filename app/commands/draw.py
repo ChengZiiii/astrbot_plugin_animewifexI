@@ -114,7 +114,7 @@ async def handle_draw_ten(event: AstrMessageEvent, ctx: CommandContext) -> Async
     results: List[DrawResult] = []
     for i in range(10):
         result = await ctx.ownership_service.draw_or_get_primary(
-            gid, uid, nick, ctx.today()
+            gid, uid, nick, ctx.today(), skip_check=True
         )
         if result.ok and result.img:
             results.append(result)

@@ -291,11 +291,12 @@ class OwnershipService:
     # ---------- 抽老婆 ----------
 
     async def draw_or_get_primary(
-        self, gid: str, uid: str, nick: str, today: str
+        self, gid: str, uid: str, nick: str, today: str, skip_check: bool = False
     ) -> DrawResult:
         """抽老婆：检查免费/券，抽新老婆
 
         Phase 3: 支持多次抽卡，每日免费次数 + 抽卡券
+        skip_check: 跳过免费/券检查（用于十连抽卡，券已在外部消耗）
         """
         # P2.1: 抽老婆冷却检查
         if self._cooldown and self._config.draw_cooldown > 0:
@@ -326,45 +327,46 @@ class OwnershipService:
                 profile.today_free_draws = 0
                 profile.today_draw_date = today
 
-            # 检查是否还能抽卡
-            # daily_free_draws=0 表示无限制
-            free_draws_unlimited = self._config.daily_free_draws == 0
-            can_free_draw = free_draws_unlimited or profile.today_free_draws < self._config.daily_free_draws
-            has_single_ticket = profile.inventory.get("draw_ticket_single", 0) > 0
-            has_ten_ticket = profile.inventory.get("draw_ticket_ten", 0) > 0
+            if not skip_check:
+                # 检查是否还能抽卡
+                # daily_free_draws=0 表示无限制
+                free_draws_unlimited = self._config.daily_free_draws == 0
+                can_free_draw = free_draws_unlimited or profile.today_free_draws < self._config.daily_free_draws
+                has_single_ticket = profile.inventory.get("draw_ticket_single", 0) > 0
 
-            if not can_free_draw and not has_single_ticket and not has_ten_ticket:
-                # 没有免费次数也没有券，返回已有主老婆（如果有）
-                primary = ownership_store.get_primary(uid, ownerships)
-                if primary:
-                    meta = self.get_wife_meta(primary.wid)
-                    img = meta.img if meta else ""
+                if not can_free_draw and not has_single_ticket:
+                    # 没有免费次数也没有券，返回已有主老婆（如果有）
+                    primary = ownership_store.get_primary(uid, ownerships)
+                    if primary:
+                        meta = self.get_wife_meta(primary.wid)
+                        img = meta.img if meta else ""
+                        profile_store.save_all(profiles)
+                        return DrawResult(
+                            ok=True, img=img, wid=primary.wid, is_new=False, profile=profile,
+                            reason="no_draws"
+                        )
                     profile_store.save_all(profiles)
-                    return DrawResult(
-                        ok=True, img=img, wid=primary.wid, is_new=False, profile=profile,
-                        reason="no_draws"
-                    )
-                profile_store.save_all(profiles)
-                return DrawResult(ok=False, reason="no_draws", profile=profile)
+                    return DrawResult(ok=False, reason="no_draws", profile=profile)
 
-            # 决定使用哪种抽卡方式
-            use_free = can_free_draw
-            use_single_ticket = not use_free and has_single_ticket
+                # 决定使用哪种抽卡方式
+                use_free = can_free_draw
+                use_single_ticket = not use_free and has_single_ticket
 
-            if use_free and not free_draws_unlimited:
-                profile.today_free_draws += 1
-            elif use_single_ticket:
-                profile.inventory["draw_ticket_single"] -= 1
+                if use_free and not free_draws_unlimited:
+                    profile.today_free_draws += 1
+                elif use_single_ticket:
+                    profile.inventory["draw_ticket_single"] -= 1
 
             profile.today_draws += 1
 
             img = await self._wife_service.fetch_image()
             if not img:
                 # 回退：恢复券
-                if use_free and not free_draws_unlimited:
-                    profile.today_free_draws -= 1
-                elif use_single_ticket:
-                    profile.inventory["draw_ticket_single"] += 1
+                if not skip_check:
+                    if use_free and not free_draws_unlimited:
+                        profile.today_free_draws -= 1
+                    elif use_single_ticket:
+                        profile.inventory["draw_ticket_single"] += 1
                 profile.today_draws -= 1
                 profile_store.save_all(profiles)
                 return DrawResult(ok=False, reason="fetch_failed", profile=profile)
