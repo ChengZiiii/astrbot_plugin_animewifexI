@@ -7,7 +7,7 @@ from typing import AsyncGenerator, List
 from astrbot.api.event import AstrMessageEvent
 
 from ..api.events import get_group_id, get_sender_nick, get_sender_uid
-from ..api.messaging import build_text_image_chain
+from ..api.messaging import build_multi_image_chain, build_text_image_chain
 from ..services.ownership_service import DrawResult
 from ..utils.image import build_wife_intro_text
 from .context import CommandContext
@@ -128,7 +128,7 @@ async def handle_draw_ten(event: AstrMessageEvent, ctx: CommandContext) -> Async
         yield event.plain_result("十连抽卡失败，已退还十连券~")
         return
 
-    # 格式化结果
+    # 格式化结果（文字部分）
     lines = [f"【{nick} 的十连抽卡】\n"]
     for i, r in enumerate(results, 1):
         lines.append(_format_draw_result(nick, r, i))
@@ -143,12 +143,18 @@ async def handle_draw_ten(event: AstrMessageEvent, ctx: CommandContext) -> Async
             summary.append(f"{r}x{rarities[r]}")
     lines.append(f"\n统计：{' '.join(summary)}")
 
-    # 用最后一张图作为预览图
-    last_img = results[-1].img
+    # 收集所有图片（去重避免重复发送）
+    imgs = []
+    seen = set()
+    for r in results:
+        if r.img and r.img not in seen:
+            imgs.append(r.img)
+            seen.add(r.img)
+
     yield event.chain_result(
-        build_text_image_chain(
+        build_multi_image_chain(
             "\n".join(lines),
-            last_img,
+            imgs,
             ctx.paths.img_dir,
             ctx.config.normalized_image_base_url,
         )

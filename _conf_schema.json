@@ -205,6 +205,12 @@
         "default": 20,
         "hint": "「老婆 签到」每日发放数量（Phase 3 接入）"
     },
+    "daily_free_draws": {
+        "description": "每日免费抽卡次数",
+        "type": "int",
+        "default": 1,
+        "hint": "每人每天免费抽卡次数，0 表示无限制（Phase 3 接入）"
+    },
     "reroll_cost": {
         "description": "换老婆消耗老婆币",
         "type": "int",
@@ -232,7 +238,9 @@
             "capacity_expansion": {"type": "int", "default": 100},
             "lock_item": {"type": "int", "default": 50},
             "revive_potion": {"type": "int", "default": 80},
-            "protection_charm": {"type": "int", "default": 60}
+            "protection_charm": {"type": "int", "default": 60},
+            "draw_ticket_single": {"type": "int", "default": 30},
+            "draw_ticket_ten": {"type": "int", "default": 270}
         }
     },
     "marry_coin_cost": {

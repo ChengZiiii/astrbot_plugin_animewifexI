@@ -15,6 +15,7 @@ from ..utils.image import build_image_url, is_path_within_dir
 __all__ = [
     "build_text_chain",
     "build_text_image_chain",
+    "build_multi_image_chain",
     "build_at_text_chain",
     "build_image_component",
 ]
@@ -51,6 +52,18 @@ def build_text_image_chain(
     img_comp = build_image_component(img_dir, base_url, img)
     if img_comp is not None:
         chain.append(img_comp)
+    return chain
+
+
+def build_multi_image_chain(
+    text: str, imgs: List[str], img_dir: str, base_url: str
+) -> List:
+    """「文字 + 多张图片」消息链（十连抽卡用）"""
+    chain = [Plain(text)]
+    for img in imgs:
+        img_comp = build_image_component(img_dir, base_url, img)
+        if img_comp is not None:
+            chain.append(img_comp)
     return chain
 
 
