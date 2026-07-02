@@ -27,6 +27,7 @@ from __future__ import annotations
 from .admin import (
     handle_admin_reset_draw,
     handle_admin_reset_group,
+    handle_admin_test_draw,
     handle_help,
     handle_reset_change,
     handle_reset_ntr,
@@ -100,6 +101,7 @@ def build_registry() -> CommandRegistry:
     # ---------- 管理员命令 ----------
     registry.register_grouped("重置本群", handle_admin_reset_group)
     registry.register_grouped("重置抽卡", handle_admin_reset_draw)
+    registry.register_grouped("测试抽卡", handle_admin_test_draw)
 
     # ---------- Phase 2/3 剩余占位子命令 ----------
     for sub in NOT_IMPLEMENTED_SUBCOMMANDS:

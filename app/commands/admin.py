@@ -184,6 +184,7 @@ def build_help_text() -> str:
 • 切换ntr开关状态 - 开启/关闭NTR功能
 • 老婆 重置本群 - 清空本群所有老婆数据（慎用！）
 • 老婆 重置抽卡 [@某人] - 重置目标的今日抽卡状态
+• 老婆 测试抽卡 [次数] - 模拟抽卡测试概率分布（不写入数据）
 
 💡 提示：部分命令有每日使用次数限制和冷却时间
 
@@ -259,3 +260,63 @@ async def handle_admin_reset_draw(
 
     target_nick = target.nick or tid
     yield event.plain_result(f"已重置 {target_nick} 的今日抽卡状态，可以重新抽老婆了~")
+
+
+async def handle_admin_test_draw(
+    event: AstrMessageEvent, ctx: CommandContext
+) -> AsyncGenerator:
+    """``老婆 测试抽卡 <次数>`` — 管理员批量模拟抽卡（不写入数据，仅测试概率）"""
+    gid = get_group_id(event)
+    if not gid:
+        return
+    uid = get_sender_uid(event)
+    nick = get_sender_nick(event)
+
+    if not ctx.config.is_admin(uid):
+        yield event.plain_result(f"{nick}，你没有权限执行此操作~")
+        return
+
+    msg = (event.message_str or "").strip()
+    rest = msg
+    for prefix in ("老婆测试抽卡", "老婆 测试抽卡"):
+        if rest.startswith(prefix):
+            rest = rest[len(prefix):]
+            break
+    rest = rest.strip()
+
+    try:
+        count = int(rest) if rest else 10
+    except ValueError:
+        count = 10
+    count = max(1, min(count, 1000))
+
+    from ..models.profile import UserProfile
+    from ..services.rarity_service import RarityService
+
+    rarity_svc = RarityService(ctx.paths, ctx.config)
+
+    # 模拟抽卡统计
+    stats = {"N": 0, "R": 0, "SR": 0, "SSR": 0}
+    pity_triggers = 0
+    max_pity = 0
+    current_pity = 0
+
+    for i in range(count):
+        rarity, pity_hit = rarity_svc.roll_rarity(current_pity)
+        stats[rarity] += 1
+        if pity_hit:
+            pity_triggers += 1
+        if rarity in ("SR", "SSR"):
+            current_pity = 0
+        else:
+            current_pity += 1
+            max_pity = max(max_pity, current_pity)
+
+    lines = [f"【模拟抽卡 x{count}】"]
+    for r in ("SSR", "SR", "R", "N"):
+        pct = stats[r] / count * 100
+        lines.append(f"  {r}: {stats[r]} ({pct:.1f}%)")
+    lines.append(f"保底触发: {pity_triggers} 次")
+    lines.append(f"最大连续非SR: {max_pity}")
+
+    yield event.plain_result("\n".join(lines))
