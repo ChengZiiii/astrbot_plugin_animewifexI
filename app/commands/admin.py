@@ -182,6 +182,8 @@ def build_help_text() -> str:
 
 【管理员命令】
 • 切换ntr开关状态 - 开启/关闭NTR功能
+• 老婆 重置本群 - 清空本群所有老婆数据（慎用！）
+• 老婆 重置抽卡 [@某人] - 重置目标的今日抽卡状态
 
 💡 提示：部分命令有每日使用次数限制和冷却时间
 
@@ -192,3 +194,61 @@ def build_help_text() -> str:
 async def handle_help(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGenerator:
     """``老婆帮助``"""
     yield event.plain_result(build_help_text())
+
+
+# ==================== 管理员重置 ====================
+
+
+async def handle_admin_reset_group(
+    event: AstrMessageEvent, ctx: CommandContext
+) -> AsyncGenerator:
+    """``老婆 重置本群`` — 管理员清空本群所有老婆数据"""
+    gid = get_group_id(event)
+    if not gid:
+        return
+    uid = get_sender_uid(event)
+    nick = get_sender_nick(event)
+
+    if not ctx.config.is_admin(uid):
+        yield event.plain_result(f"{nick}，你没有权限执行此操作~")
+        return
+
+    # 清空本群所有数据文件
+    import os
+    group_dir = ctx.paths.group_dir(gid)
+    if os.path.exists(group_dir):
+        import shutil
+        shutil.rmtree(group_dir)
+        os.makedirs(group_dir, exist_ok=True)
+
+    yield event.plain_result(f"{nick}，本群老婆数据已全部重置！所有人的老婆、币、背包、亲密度均已清空。")
+
+
+async def handle_admin_reset_draw(
+    event: AstrMessageEvent, ctx: CommandContext
+) -> AsyncGenerator:
+    """``老婆 重置抽卡 [@某人]`` — 管理员重置目标的今日抽卡状态"""
+    gid = get_group_id(event)
+    if not gid:
+        return
+    uid = get_sender_uid(event)
+    nick = get_sender_nick(event)
+    tid = parse_at_target(event) or uid
+
+    if not ctx.config.is_admin(uid):
+        yield event.plain_result(f"{nick}，你没有权限执行此操作~")
+        return
+
+    from ..storage.stores import ProfileStore
+    store = ProfileStore(ctx.paths, gid)
+    profiles = store.load_all()
+    target = profiles.get(tid)
+    if not target:
+        yield event.plain_result("目标用户没有老婆数据~")
+        return
+
+    target.last_draw_date = ""
+    store.save_all(profiles)
+
+    target_nick = target.nick or tid
+    yield event.plain_result(f"已重置 {target_nick} 的今日抽卡状态，可以重新抽老婆了~")

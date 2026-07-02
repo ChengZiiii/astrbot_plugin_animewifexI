@@ -24,7 +24,14 @@ Phase 3 注册：
 
 from __future__ import annotations
 
-from .admin import handle_help, handle_reset_change, handle_reset_ntr, handle_switch_ntr
+from .admin import (
+    handle_admin_reset_draw,
+    handle_admin_reset_group,
+    handle_help,
+    handle_reset_change,
+    handle_reset_ntr,
+    handle_switch_ntr,
+)
 from .change import handle_change
 from .context import CommandContext
 from .draw import handle_draw
@@ -89,6 +96,10 @@ def build_registry() -> CommandRegistry:
     registry.register_grouped("商城", handle_shop)
     registry.register_grouped("购买", handle_buy)
     registry.register_grouped("背包", handle_backpack)
+
+    # ---------- 管理员命令 ----------
+    registry.register_grouped("重置本群", handle_admin_reset_group)
+    registry.register_grouped("重置抽卡", handle_admin_reset_draw)
 
     # ---------- Phase 2/3 剩余占位子命令 ----------
     for sub in NOT_IMPLEMENTED_SUBCOMMANDS:
