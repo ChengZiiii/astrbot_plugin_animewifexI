@@ -522,6 +522,7 @@ class OwnershipService:
         today: str,
         is_revenge: bool = False,
         roll_seed: "Optional[float]" = None,
+        target_wid: "Optional[str]" = None,
     ) -> NtrResult:
         """牛老婆尝试
 
@@ -530,6 +531,7 @@ class OwnershipService:
 
         ``is_revenge``: True 时走复仇路径（检查复仇窗口、应用成功率加成）。
         ``roll_seed`` 用于测试注入固定概率，正常调用传 ``None``。
+        ``target_wid``: 指定要牛的老婆 wid。None 时随机选一个。
         """
         if not tid or tid == uid:
             return NtrResult(ok=False, reason="invalid_target")
@@ -566,40 +568,58 @@ class OwnershipService:
                     remaining_attempts=0,
                 )
 
-            target_primary = ownership_store.get_primary(tid, ownerships)
+            # H1: 指定 wid 或随机选一个
             attacker_profile = ProfileStore.get_or_create(
-                profiles,
-                uid,
-                nick,
+                profiles, uid, nick,
                 capacity=self._config.default_capacity,
                 coins=self._config.initial_coins,
             )
-            target_profile = profiles.get(tid)
 
+            # 先消耗当日次数（无论后续成功/失败，与 v2.x 一致）
             new_count = DailyCountStore.increment(
                 daily_counts, uid, DailyAction.NTR_ATTEMPT, today
             )
             remaining = max(0, self._config.ntr_max - new_count)
 
+            if target_wid:
+                target_wife = ownership_store.find_by_wid(target_wid, ownerships)
+                if not target_wife or target_wife.uid != tid:
+                    profile_store.save_all(profiles)
+                    daily_store.save_all(daily_counts)
+                    return NtrResult(
+                        ok=True,
+                        success=False,
+                        consumed_attempt=True,
+                        reason="target_no_wife",
+                        remaining_attempts=remaining,
+                        profile=attacker_profile,
+                    )
+            else:
+                # 随机选目标的一个老婆
+                target_wives = ownership_store.list_by_user(tid, ownerships)
+                if not target_wives:
+                    profile_store.save_all(profiles)
+                    daily_store.save_all(daily_counts)
+                    return NtrResult(
+                        ok=True,
+                        success=False,
+                        consumed_attempt=True,
+                        reason="target_no_wife",
+                        remaining_attempts=remaining,
+                        profile=attacker_profile,
+                    )
+                target_wife = _random.choice(target_wives)
+                target_wid = target_wife.wid
+
+            target_profile = profiles.get(tid)
+
             # P2.1: NTR 尝试消耗后更新冷却（无论后续成功/失败）
             if self._cooldown and self._config.ntr_cooldown > 0:
                 self._cooldown.update(gid, uid, CooldownAction.NTR)
 
-            if not target_primary:
-                profile_store.save_all(profiles)
-                daily_store.save_all(daily_counts)
-                return NtrResult(
-                    ok=True,
-                    success=False,
-                    consumed_attempt=True,
-                    reason="target_no_wife",
-                    remaining_attempts=remaining,
-                    profile=attacker_profile,
-                )
-
             # H1: 检查目标老婆是否被锁定
             from .marry_service import MarryService
-            if MarryService.is_locked(target_primary):
+            if MarryService.is_locked(target_wife):
                 profile_store.save_all(profiles)
                 daily_store.save_all(daily_counts)
                 return NtrResult(
@@ -627,9 +647,9 @@ class OwnershipService:
             roll = roll_seed if roll_seed is not None else _random.random()
             success = roll < ntr_prob
 
-            meta = self.get_wife_meta(target_primary.wid)
+            meta = self.get_wife_meta(target_wid)
             img = meta.img if meta else ""
-            wid = target_primary.wid
+            wid = target_wid
 
             if not success:
                 profile_store.save_all(profiles)

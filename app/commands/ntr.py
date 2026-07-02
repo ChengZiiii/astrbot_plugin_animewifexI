@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import AsyncGenerator, List, Optional
 
 from astrbot.api.event import AstrMessageEvent
@@ -13,6 +14,7 @@ from ..api.events import (
     parse_at_target,
 )
 from ..api.messaging import build_text_image_chain
+from ..storage.stores import OwnershipStore
 from ..utils.image import build_wife_intro_text
 from .context import CommandContext
 from .view import find_uid_by_owner_nick
@@ -21,14 +23,18 @@ __all__ = ["handle_ntr", "cancel_related_swap_requests"]
 
 
 async def handle_ntr(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGenerator:
-    """``牛老婆 [@用户 | 昵称]``：尝试抢夺他人的主老婆"""
+    """``牛老婆 [@用户 | 昵称] [编号]``：尝试抢夺他人的老婆
+
+    不指定编号：随机牛一个
+    指定编号：牛对方的第 N 个老婆
+    """
     gid = get_group_id(event)
     if not gid:
         return
     uid = get_sender_uid(event)
     nick = get_sender_nick(event)
 
-    tid = _resolve_target(event, ctx)
+    tid, target_wid = _resolve_target_and_wid(event, ctx, gid)
 
     if not tid or tid == uid:
         msg = (
@@ -40,7 +46,7 @@ async def handle_ntr(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGener
         return
 
     result = await ctx.ownership_service.try_ntr(
-        gid, uid, tid, nick, ctx.today()
+        gid, uid, tid, nick, ctx.today(), target_wid=target_wid
     )
 
     # 前置拒绝（无效目标/被禁用/冷却）
@@ -98,22 +104,54 @@ async def handle_ntr(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGener
     )
 
 
-def _resolve_target(event: AstrMessageEvent, ctx: CommandContext) -> Optional[str]:
-    """与查老婆相同：@优先 → 文本昵称匹配"""
-    at_target = parse_at_target(event)
-    if at_target:
-        return at_target
+def _resolve_target_and_wid(
+    event: AstrMessageEvent, ctx: CommandContext, gid: str
+) -> tuple[Optional[str], Optional[str]]:
+    """解析目标用户 + 可选的老婆编号。
 
+    格式：``牛老婆 @某人 2`` 或 ``牛老婆 昵称 3``
+    返回 (target_uid, target_wid)。target_wid 为 None 时随机牛。
+    """
+    at_target = parse_at_target(event)
     msg = (event.message_str or "").strip()
+
+    # 提取末尾数字（老婆编号）
+    target_wid = None
+    page_match = re.search(r"\s(\d+)\s*$", msg)
+    if page_match:
+        # 有数字，先尝试解析为目标用户的第 N 个老婆
+        idx = int(page_match.group(1)) - 1  # 0-based
+
+        # 先确定目标用户
+        tid = at_target
+        if not tid:
+            parts = msg.split(maxsplit=1)
+            if len(parts) > 1:
+                rest = re.sub(r"\s+\d+\s*$", "", parts[1]).strip()
+                if rest:
+                    tid = find_uid_by_owner_nick(ctx, gid, rest)
+
+        if tid and idx >= 0:
+            ownership_store = OwnershipStore(ctx.paths, gid)
+            ownerships = ownership_store.load_all()
+            my_wives = ownership_store.list_by_user(tid, ownerships)
+            if 0 <= idx < len(my_wives):
+                target_wid = my_wives[idx].wid
+        return tid, target_wid
+
+    # 无数字：@ 或昵称匹配
+    if at_target:
+        return at_target, None
+
     parts = msg.split(maxsplit=1)
     if len(parts) > 1:
         target_nick = parts[1].strip()
-        gid = get_group_id(event)
-        if gid and target_nick:
+        if target_nick:
             tid = find_uid_by_owner_nick(ctx, gid, target_nick)
             if tid:
-                return tid
-    return None
+                return tid, None
+
+    return None, None
 
 
 def cancel_related_swap_requests(
