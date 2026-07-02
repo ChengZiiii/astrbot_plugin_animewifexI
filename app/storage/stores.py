@@ -37,6 +37,7 @@ __all__ = [
     "ActivityStore",
     "SwapRequestStore",
     "NtrStatusStore",
+    "DailyCountStore",
 ]
 
 
@@ -328,3 +329,105 @@ class NtrStatusStore:
 
     def save_all(self, statuses: Dict[str, bool]) -> None:
         json_store.save_json(self._path, {gid: bool(v) for gid, v in statuses.items()})
+
+
+# ==================== 每日次数计数（NTR/换/交换/重置/PK 当日触发计数） ====================
+
+
+class DailyCountStore:
+    """群内每日次数计数：dict[uid, dict[action, {date, count}]]
+
+    用于限额校验（NTR 每日 3 次、换老婆每日 3 次等），跨重启持久化，
+    每日零点定时清理跨天失效的记录（由 :mod:`app.plugin` 的零点循环调用
+    :meth:`prune_for_group`）。
+
+    与 :class:`ActivityStore` 区别：
+
+    * ActivityStore：按日期索引、滚动 N 天，用于榜单聚合；
+    * DailyCountStore：只保留"今天"的计数，过日期即清零，用于限额。
+    """
+
+    def __init__(self, paths: Paths, gid: str):
+        self._path = paths.group_daily_counts_file(gid)
+        self._gid = gid
+
+    def load_all(self) -> Dict[str, Dict[str, Dict[str, Any]]]:
+        raw = json_store.load_json(self._path, default={})
+        if not isinstance(raw, dict):
+            return {}
+        # 过滤非 dict 条目
+        cleaned: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        for uid, actions in raw.items():
+            if not isinstance(actions, dict):
+                continue
+            user_cleaned: Dict[str, Dict[str, Any]] = {}
+            for action, rec in actions.items():
+                if isinstance(rec, dict):
+                    user_cleaned[str(action)] = rec
+            cleaned[str(uid)] = user_cleaned
+        return cleaned
+
+    def save_all(self, data: Dict[str, Dict[str, Dict[str, Any]]]) -> None:
+        json_store.save_json(self._path, data)
+
+    # ---------- 静态方法（在群锁内对引用操作） ----------
+
+    @staticmethod
+    def get_count(
+        data: Dict[str, Dict[str, Dict[str, Any]]],
+        uid: str,
+        action: str,
+        today: str,
+    ) -> int:
+        """获取某用户某动作当日已触发次数（非今日或缺失返回 0）"""
+        rec = data.get(uid, {}).get(action)
+        if not rec or rec.get("date") != today:
+            return 0
+        return int(rec.get("count", 0) or 0)
+
+    @staticmethod
+    def increment(
+        data: Dict[str, Dict[str, Dict[str, Any]]],
+        uid: str,
+        action: str,
+        today: str,
+    ) -> int:
+        """记录一次新触发并返回最新计数（自动重置跨天记录）"""
+        user = data.setdefault(uid, {})
+        rec = user.get(action)
+        if not rec or rec.get("date") != today:
+            rec = {"date": today, "count": 0}
+        rec["count"] = int(rec.get("count", 0)) + 1
+        rec["date"] = today
+        user[action] = rec
+        return rec["count"]
+
+    @staticmethod
+    def reset_user_action(
+        data: Dict[str, Dict[str, Dict[str, Any]]],
+        uid: str,
+        action: str,
+    ) -> None:
+        """清除某用户某动作的计数（管理员重置他人次数）"""
+        user = data.get(uid)
+        if user and action in user:
+            del user[action]
+
+    @staticmethod
+    def prune_for_group(
+        data: Dict[str, Dict[str, Dict[str, Any]]],
+        today: str,
+    ) -> bool:
+        """删除某群所有非今日的计数记录，返回是否有变动"""
+        changed = False
+        for uid in list(data.keys()):
+            actions = data[uid]
+            for action in list(actions.keys()):
+                rec = actions[action]
+                if not isinstance(rec, dict) or rec.get("date") != today:
+                    del actions[action]
+                    changed = True
+            if not actions:
+                del data[uid]
+                changed = True
+        return changed

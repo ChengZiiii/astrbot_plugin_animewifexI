@@ -86,6 +86,10 @@ class Paths:
     def group_ntr_status_file(self, gid: str) -> str:
         return os.path.join(self.group_dir(gid), "ntr_status.json")
 
+    def group_daily_counts_file(self, gid: str) -> str:
+        """每日次数计数文件（NTR/换/交换/重置/PK 等动作的当日触发次数）"""
+        return os.path.join(self.group_dir(gid), "daily_counts.json")
+
     # ---------- 初始化 ----------
 
     def ensure_dirs(self) -> None:

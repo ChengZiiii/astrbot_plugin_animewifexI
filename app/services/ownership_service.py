@@ -4,8 +4,9 @@
 
 * 所有公开方法内部走群锁 (:class:`app.storage.locks.GroupLocks`)；
 * 多个 Store 在一次锁内批量 load → 修改 → save，避免半状态；
+* 每日次数计数 (NTR/换/交换) 在锁内 check+increment，避免并发绕过限额；
 * 抽老婆所需的图片获取委托给 :class:`app.services.wife_service.WifeService`；
-* 方法返回小型 dataclass 结果（不返回原始 Store 对象），便于命令层格式化。
+* 方法返回小型 dataclass 结果，便于命令层格式化。
 
 Phase 1 行为对齐 v2.x：
 
@@ -17,15 +18,17 @@ Phase 1 行为对齐 v2.x：
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+import random as _random
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
-from ..models import ActivityLog, Ownership, UserProfile, WifeMeta
+from ..models import Ownership, UserProfile, WifeMeta
 from ..models.enums import AcquireVia, Action, Rarity
 from ..storage.locks import GroupLocks
 from ..storage.paths import Paths
 from ..storage.stores import (
     ActivityStore,
+    DailyCountStore,
     NtrStatusStore,
     OwnershipStore,
     ProfileStore,
@@ -43,6 +46,8 @@ __all__ = [
     "NtrResult",
     "ChangeResult",
     "SwapResult",
+    "wid_for_img",
+    "DailyAction",
 ]
 
 
@@ -56,6 +61,23 @@ def wid_for_img(img: str) -> str:
     """
     h = hashlib.sha1(img.encode("utf-8")).hexdigest()[:8]
     return f"w_{h}"
+
+
+# ==================== 动作 key（每日次数计数用） ====================
+
+
+class DailyAction:
+    """每日次数计数的动作 key
+
+    与 :class:`app.models.enums.Action`（活动日志，含 SUCCESS/LOST 等统计字段）区别：
+    这里只关心"触发型"动作，每次执行都计 1，不论后续成功失败（除非明确不消耗）。
+    """
+
+    NTR_ATTEMPT = "ntr_attempt"        # 牛老婆尝试（成功失败都计，与 v2.x 一致）
+    CHANGE_ATTEMPT = "change_attempt"  # 换老婆（仅成功才计）
+    SWAP_ATTEMPT = "swap_attempt"      # 发起交换请求
+    RESET_USE = "reset_use"            # 重置功能使用
+    PK_ATTEMPT = "pk_attempt"          # PK（Phase 3）
 
 
 # ==================== 结果 dataclass ====================
@@ -77,12 +99,13 @@ class DrawResult:
 class NtrResult:
     """牛老婆结果"""
 
-    ok: bool
+    ok: bool                              # 流程是否正常完成（False 表示被前置拒绝）
     img: str = ""
     wid: str = ""
-    success: bool = False           # NTR 是否成功（False 可能是冷却/失败/限额）
-    remaining_attempts: int = 0     # 今日剩余次数
-    reason: str = ""                # 失败/拒绝原因
+    success: bool = False                 # NTR 是否成功（False 可能是冷却/失败/限额）
+    consumed_attempt: bool = False        # 是否消耗了一次当日 NTR 次数
+    remaining_attempts: int = 0           # 今日剩余次数
+    reason: str = ""                      # 失败/拒绝原因
     profile: Optional[UserProfile] = None
 
 
@@ -93,24 +116,26 @@ class ChangeResult:
     ok: bool
     img: str = ""
     wid: str = ""
+    consumed_attempt: bool = False
     remaining_changes: int = 0
     reason: str = ""
 
 
 @dataclass
 class SwapResult:
-    """交换老婆结果"""
+    """交换请求结果"""
 
     ok: bool
     reason: str = ""
-    swap_consumed: bool = False     # 是否消耗了发起次数
+    consumed_attempt: bool = False         # 是否消耗了一次当日交换次数
+    refunded_old: bool = False             # 是否返还了旧请求次数
 
 
 # ==================== 服务 ====================
 
 
 class OwnershipService:
-    """所有权 + 抽老婆业务编排"""
+    """所有权 + 抽老婆 + 每日次数计数 业务编排"""
 
     def __init__(
         self,
@@ -141,13 +166,13 @@ class OwnershipService:
     def _swap_store(self, gid: str) -> SwapRequestStore:
         return SwapRequestStore(self._paths, gid)
 
+    def _daily_count_store(self, gid: str) -> DailyCountStore:
+        return DailyCountStore(self._paths, gid)
+
     # ---------- 全局老婆元数据 ----------
 
     def _ensure_wife_meta(self, img: str) -> str:
-        """首次见到 img 时写入全局 WifeMeta；返回 wid
-
-        幂等：已存在时不覆盖（避免重置 first_seen）。
-        """
+        """首次见到 img 时写入全局 WifeMeta；返回 wid（幂等）"""
         wid = wid_for_img(img)
         all_metas = self._wives_master.load_all()
         if wid in all_metas:
@@ -174,14 +199,10 @@ class OwnershipService:
         """根据 img 查询老婆元数据"""
         return self._wives_master.load_all().get(wid_for_img(img))
 
-    # ---------- 查询 ----------
+    # ---------- 查询（只读，不进入群锁） ----------
 
     def get_primary_wid(self, gid: str, uid: str) -> Optional[str]:
-        """查询用户主老婆的 wid（无主老婆返回 None）
-
-        只读操作不进入群锁（list 读取在 Python 单线程 GIL 下安全）；
-        若调用方后续要做写操作，应直接走 :meth:`draw_or_get_primary` 等加锁方法。
-        """
+        """查询用户主老婆的 wid（无主老婆返回 None）"""
         ownerships = self._ownership_store(gid).load_all()
         primary = self._ownership_store(gid).get_primary(uid, ownerships)
         return primary.wid if primary else None
@@ -192,15 +213,12 @@ class OwnershipService:
         if not wid:
             return None
         meta = self.get_wife_meta(wid)
-        return meta.img if meta else None
+        return meta.img if meta else ""
 
     def get_profile(self, gid: str, uid: str, nick: str = "") -> UserProfile:
         """获取用户档案（不存在则按默认值创建并落盘）
 
-        只读命令（查老婆、面板）使用此方法。同步执行：
-        ``get_or_create`` 本身幂等且单条 dict 修改在 GIL 下原子，
-        即使与同群并发写协程交错也不会损坏数据，最坏情况是重复创建一份
-        默认 profile 被后写的覆盖。
+        同步执行：``get_or_create`` 本身幂等且单条 dict 修改在 GIL 下原子。
         """
         profiles = self._profile_store(gid).load_all()
         profile = ProfileStore.get_or_create(
@@ -212,6 +230,28 @@ class OwnershipService:
         )
         self._profile_store(gid).save_all(profiles)
         return profile
+
+    def get_ntr_enabled(self, gid: str) -> bool:
+        """获取群 NTR 开关状态（默认开启）"""
+        return bool(self._ntr_status.load_all().get(gid, True))
+
+    def set_ntr_enabled(self, gid: str, enabled: bool) -> None:
+        """设置群 NTR 开关状态"""
+        statuses = self._ntr_status.load_all()
+        statuses[gid] = bool(enabled)
+        self._ntr_status.save_all(statuses)
+
+    def get_daily_count(self, gid: str, uid: str, action: str, today: str) -> int:
+        """查询某用户某动作当日已触发次数"""
+        data = self._daily_count_store(gid).load_all()
+        return DailyCountStore.get_count(data, uid, action, today)
+
+    def reset_daily_count(self, gid: str, uid: str, action: str) -> None:
+        """清除某用户某动作的当日次数计数（管理员重置他人）"""
+        store = self._daily_count_store(gid)
+        data = store.load_all()
+        DailyCountStore.reset_user_action(data, uid, action)
+        store.save_all(data)
 
     # ---------- 抽老婆 ----------
 
@@ -230,7 +270,6 @@ class OwnershipService:
             ownerships = ownership_store.load_all()
             profiles = profile_store.load_all()
 
-            # 已有主老婆：直接返回（v2.x 抽老婆幂等语义）
             primary = ownership_store.get_primary(uid, ownerships)
             profile = ProfileStore.get_or_create(
                 profiles,
@@ -247,7 +286,6 @@ class OwnershipService:
                     ok=True, img=img, wid=primary.wid, is_new=False, profile=profile
                 )
 
-            # 新抽一张（图片获取在锁外更佳，但 v2.x 也是锁内 fetch，保持一致）
             img = await self._wife_service.fetch_image()
             if not img:
                 profile_store.save_all(profiles)
@@ -263,24 +301,19 @@ class OwnershipService:
             )
             ownership_store.add(ownerships, new_o)
 
-            # 更新 profile
             if wid not in profile.collection:
                 profile.collection.append(wid)
             profile.last_draw_date = today
             profile.total_draws += 1
 
-            # 活动日志
             activity_logs = activity_store.load_all()
             ActivityStore.log(activity_logs, uid, today, Action.DRAW, 1)
 
-            # 落盘
             ownership_store.save_all(ownerships)
             profile_store.save_all(profiles)
             activity_store.save_all(activity_logs)
 
-            return DrawResult(
-                ok=True, img=img, wid=wid, is_new=True, profile=profile
-            )
+            return DrawResult(ok=True, img=img, wid=wid, is_new=True, profile=profile)
 
     # ---------- 牛老婆 ----------
 
@@ -291,39 +324,42 @@ class OwnershipService:
         tid: str,
         nick: str,
         today: str,
-        daily_ntr_count: int,
-        ntr_enabled: bool,
-        roll_seed: Optional[float] = None,
+        roll_seed: "Optional[float]" = None,
     ) -> NtrResult:
         """牛老婆尝试
 
-        ``daily_ntr_count`` 为调用方维护的"今日已牛次数"（与限额校验解耦，
-        便于命令层接入 records.json 或未来 cooldown_service）。
+        内部完成：NTR 开关校验、目标合法性校验、当日次数限额校验、
+        概率判定、所有权转移、活动日志写入。
 
         ``roll_seed`` 用于测试注入固定概率，正常调用传 ``None``。
-
-        返回 :class:`NtrResult`，调用方根据 ``success``/``reason`` 决定提示。
         """
-        if not ntr_enabled:
-            return NtrResult(ok=False, reason="ntr_disabled")
         if not tid or tid == uid:
             return NtrResult(ok=False, reason="invalid_target")
-        if daily_ntr_count >= self._config.ntr_max:
-            return NtrResult(
-                ok=True,
-                success=False,
-                reason="limit_reached",
-                remaining_attempts=0,
-            )
+        if not self.get_ntr_enabled(gid):
+            return NtrResult(ok=False, reason="ntr_disabled")
 
         async with self._locks.acquire(gid):
             ownership_store = self._ownership_store(gid)
             profile_store = self._profile_store(gid)
             activity_store = self._activity_store(gid)
+            daily_store = self._daily_count_store(gid)
 
             ownerships = ownership_store.load_all()
             profiles = profile_store.load_all()
             activity_logs = activity_store.load_all()
+            daily_counts = daily_store.load_all()
+
+            used = DailyCountStore.get_count(
+                daily_counts, uid, DailyAction.NTR_ATTEMPT, today
+            )
+            if used >= self._config.ntr_max:
+                return NtrResult(
+                    ok=True,
+                    success=False,
+                    consumed_attempt=False,
+                    reason="limit_reached",
+                    remaining_attempts=0,
+                )
 
             target_primary = ownership_store.get_primary(tid, ownerships)
             attacker_profile = ProfileStore.get_or_create(
@@ -333,21 +369,26 @@ class OwnershipService:
                 capacity=self._config.default_capacity,
                 coins=self._config.initial_coins,
             )
-            target_profile = profiles.get(tid)  # 不存在不创建，避免污染数据
+            target_profile = profiles.get(tid)
+
+            new_count = DailyCountStore.increment(
+                daily_counts, uid, DailyAction.NTR_ATTEMPT, today
+            )
+            remaining = max(0, self._config.ntr_max - new_count)
 
             if not target_primary:
                 profile_store.save_all(profiles)
+                daily_store.save_all(daily_counts)
                 return NtrResult(
                     ok=True,
                     success=False,
+                    consumed_attempt=True,
                     reason="target_no_wife",
-                    remaining_attempts=self._config.ntr_max - daily_ntr_count,
+                    remaining_attempts=remaining,
                     profile=attacker_profile,
                 )
 
-            # 概率判定
-            import random as _r
-            roll = roll_seed if roll_seed is not None else _r.random()
+            roll = roll_seed if roll_seed is not None else _random.random()
             success = roll < self._config.ntr_possibility
 
             meta = self.get_wife_meta(target_primary.wid)
@@ -355,26 +396,23 @@ class OwnershipService:
             wid = target_primary.wid
 
             if not success:
-                # 失败：仅记活动日志 + profile.total_ntr_lost（攻击者发起但失败）
-                ActivityStore.log(activity_logs, uid, today, Action.NTR_SUCCESS, 0)
                 profile_store.save_all(profiles)
-                activity_store.save_all(activity_logs)
+                daily_store.save_all(daily_counts)
                 return NtrResult(
                     ok=True,
                     success=False,
+                    consumed_attempt=True,
                     img=img,
                     wid=wid,
                     reason="roll_failed",
-                    remaining_attempts=self._config.ntr_max - daily_ntr_count - 1,
+                    remaining_attempts=remaining,
                     profile=attacker_profile,
                 )
 
             # 成功：转移所有权（保留 v2.x 替换语义）
-            # 1. 删除攻击者旧主老婆（若有）
             attacker_old_primary = ownership_store.get_primary(uid, ownerships)
             if attacker_old_primary is not None:
                 ownership_store.remove_by_wid(ownerships, attacker_old_primary.wid)
-            # 2. 转移目标主老婆给攻击者，并设为攻击者主老婆
             ownership_store.transfer(
                 ownerships,
                 wid=wid,
@@ -383,62 +421,50 @@ class OwnershipService:
                 acquired_via=AcquireVia.NTR,
             )
             ownership_store.set_primary(ownerships, uid, wid)
-            # 3. 收集图鉴
             if wid not in attacker_profile.collection:
                 attacker_profile.collection.append(wid)
             attacker_profile.total_ntr_success += 1
             if target_profile is not None:
                 target_profile.total_ntr_lost += 1
-                # 复仇窗口：记录被谁、什么时候牛的
                 target_profile.last_ntr_by = {"uid": uid, "ts": now_ts()}
 
-            # 活动日志双写
             ActivityStore.log(activity_logs, uid, today, Action.NTR_SUCCESS, 1)
             ActivityStore.log(activity_logs, tid, today, Action.NTR_LOST, 1)
 
-            # 落盘
             ownership_store.save_all(ownerships)
             profile_store.save_all(profiles)
             activity_store.save_all(activity_logs)
+            daily_store.save_all(daily_counts)
 
             return NtrResult(
                 ok=True,
                 success=True,
+                consumed_attempt=True,
                 img=img,
                 wid=wid,
-                remaining_attempts=self._config.ntr_max - daily_ntr_count - 1,
+                remaining_attempts=remaining,
                 profile=attacker_profile,
             )
 
     # ---------- 换老婆 ----------
 
     async def change_primary(
-        self,
-        gid: str,
-        uid: str,
-        nick: str,
-        today: str,
-        daily_change_count: int,
+        self, gid: str, uid: str, nick: str, today: str
     ) -> ChangeResult:
         """换老婆：丢弃当前主老婆，抽一张新的
 
-        v2.x 行为：当日已换 change_max_per_day 次拒绝；无老婆拒绝；
-        抽取失败时老婆与次数都不动。
+        v2.x 行为：当日已换 ``change_max_per_day`` 次拒绝；无老婆拒绝；
+        抽取失败时老婆与次数都不动（故 count 在抽成功后才 increment）。
         """
-        if daily_change_count >= self._config.change_max_per_day:
-            return ChangeResult(
-                ok=False,
-                reason="limit_reached",
-                remaining_changes=0,
-            )
-
         async with self._locks.acquire(gid):
             ownership_store = self._ownership_store(gid)
             profile_store = self._profile_store(gid)
             activity_store = self._activity_store(gid)
+            daily_store = self._daily_count_store(gid)
 
             ownerships = ownership_store.load_all()
             profiles = profile_store.load_all()
+            daily_counts = daily_store.load_all()
             profile = ProfileStore.get_or_create(
                 profiles,
                 uid,
@@ -447,12 +473,20 @@ class OwnershipService:
                 coins=self._config.initial_coins,
             )
 
+            used = DailyCountStore.get_count(
+                daily_counts, uid, DailyAction.CHANGE_ATTEMPT, today
+            )
+            if used >= self._config.change_max_per_day:
+                profile_store.save_all(profiles)
+                return ChangeResult(
+                    ok=False, reason="limit_reached", remaining_changes=0
+                )
+
             primary = ownership_store.get_primary(uid, ownerships)
             if primary is None:
                 profile_store.save_all(profiles)
                 return ChangeResult(ok=False, reason="no_wife")
 
-            # 先抽到新老婆再替换；抽取失败时老婆和次数都保持不动
             img = await self._wife_service.fetch_image()
             if not img:
                 profile_store.save_all(profiles)
@@ -460,7 +494,6 @@ class OwnershipService:
 
             wid = self._ensure_wife_meta(img)
 
-            # 删除旧主老婆 + 新建主老婆
             ownership_store.remove_by_wid(ownerships, primary.wid)
             ownership_store.add(
                 ownerships,
@@ -477,49 +510,121 @@ class OwnershipService:
             profile.last_draw_date = today
             profile.total_draws += 1
 
+            new_count = DailyCountStore.increment(
+                daily_counts, uid, DailyAction.CHANGE_ATTEMPT, today
+            )
+
             activity_logs = activity_store.load_all()
             ActivityStore.log(activity_logs, uid, today, Action.DRAW, 1)
 
             ownership_store.save_all(ownerships)
             profile_store.save_all(profiles)
             activity_store.save_all(activity_logs)
+            daily_store.save_all(daily_counts)
 
             return ChangeResult(
                 ok=True,
                 img=img,
                 wid=wid,
-                remaining_changes=self._config.change_max_per_day - daily_change_count - 1,
+                consumed_attempt=True,
+                remaining_changes=max(0, self._config.change_max_per_day - new_count),
             )
 
     # ---------- 交换老婆 ----------
 
-    async def swap_primaries(
-        self,
-        gid: str,
-        uid_a: str,
-        uid_b: str,
-        today: str,
-    ) -> Tuple[bool, str]:
-        """交换两用户的主老婆（仅交换 wid，保留各自昵称）
+    async def create_swap_request(
+        self, gid: str, uid: str, tid: str, today: str
+    ) -> SwapResult:
+        """发起交换请求
 
-        用于"同意交换"命令。返回 ``(ok, reason)``。
-        调用方负责校验发起次数限额与目标是否一致。
+        v2.x 行为：
+
+        * 当日次数已达上限拒绝（除非有旧请求可返还次数）；
+        * 已有待处理请求时重复发起视为更换目标：自动取消旧请求并返还次数；
+        * 任一方当日无老婆拒绝。
         """
-        if uid_a == uid_b:
-            return False, "self_swap"
+        if not tid or tid == uid:
+            return SwapResult(ok=False, reason="invalid_target")
 
         async with self._locks.acquire(gid):
             ownership_store = self._ownership_store(gid)
+            daily_store = self._daily_count_store(gid)
+            swap_store = self._swap_store(gid)
+
             ownerships = ownership_store.load_all()
+            daily_counts = daily_store.load_all()
+            swap_requests = swap_store.load_all()
 
-            a_primary = ownership_store.get_primary(uid_a, ownerships)
-            b_primary = ownership_store.get_primary(uid_b, ownerships)
+            old_req = swap_requests.get(uid)
+            used = DailyCountStore.get_count(
+                daily_counts, uid, DailyAction.SWAP_ATTEMPT, today
+            )
+            refundable = (
+                1
+                if old_req
+                and old_req.get("date") == today
+                and used > 0
+                else 0
+            )
+
+            if used - refundable >= self._config.swap_max_per_day:
+                return SwapResult(ok=False, reason="limit_reached")
+
+            if not ownership_store.get_primary(uid, ownerships):
+                return SwapResult(ok=False, reason="self_no_wife")
+            if not ownership_store.get_primary(tid, ownerships):
+                return SwapResult(ok=False, reason="target_no_wife")
+
+            refunded_old = False
+            if old_req is not None:
+                if refundable:
+                    cur = daily_counts.get(uid, {}).get(DailyAction.SWAP_ATTEMPT, {})
+                    if cur.get("date") == today:
+                        cur["count"] = max(0, int(cur.get("count", 0)) - 1)
+                refunded_old = bool(refundable)
+
+            DailyCountStore.increment(
+                daily_counts, uid, DailyAction.SWAP_ATTEMPT, today
+            )
+            swap_requests[uid] = {"target": tid, "date": today}
+
+            swap_store.save_all(swap_requests)
+            daily_store.save_all(daily_counts)
+
+            return SwapResult(
+                ok=True,
+                consumed_attempt=True,
+                refunded_old=refunded_old,
+            )
+
+    async def accept_swap(
+        self, gid: str, initiator_uid: str, accepter_uid: str, today: str
+    ) -> SwapResult:
+        """同意交换请求"""
+        if initiator_uid == accepter_uid:
+            return SwapResult(ok=False, reason="self_swap")
+
+        async with self._locks.acquire(gid):
+            swap_store = self._swap_store(gid)
+            swap_requests = swap_store.load_all()
+            rec = swap_requests.get(initiator_uid)
+
+            if rec and rec.get("date") != today:
+                del swap_requests[initiator_uid]
+                swap_store.save_all(swap_requests)
+                return SwapResult(ok=False, reason="expired")
+            if not rec or rec.get("target") != accepter_uid:
+                return SwapResult(ok=False, reason="mismatch")
+
+            ownership_store = self._ownership_store(gid)
+            ownerships = ownership_store.load_all()
+            a_primary = ownership_store.get_primary(initiator_uid, ownerships)
+            b_primary = ownership_store.get_primary(accepter_uid, ownerships)
             if not a_primary or not b_primary:
-                return False, "no_wife"
+                del swap_requests[initiator_uid]
+                swap_store.save_all(swap_requests)
+                return SwapResult(ok=False, reason="wife_changed")
 
-            # 交换 wid：删除旧记录 + 添加新记录（保留 acquired_at 不动会误导统计，
-            # 因此各自重置 acquired_at + acquired_via=swap）
-            import time as _t
             ts = now_ts()
             ownership_store.remove_by_wid(ownerships, a_primary.wid)
             ownership_store.remove_by_wid(ownerships, b_primary.wid)
@@ -527,7 +632,7 @@ class OwnershipService:
                 ownerships,
                 Ownership(
                     wid=b_primary.wid,
-                    uid=uid_a,
+                    uid=initiator_uid,
                     acquired_at=ts,
                     acquired_via=AcquireVia.SWAP,
                     is_primary=True,
@@ -537,7 +642,7 @@ class OwnershipService:
                 ownerships,
                 Ownership(
                     wid=a_primary.wid,
-                    uid=uid_b,
+                    uid=accepter_uid,
                     acquired_at=ts,
                     acquired_via=AcquireVia.SWAP,
                     is_primary=True,
@@ -546,46 +651,185 @@ class OwnershipService:
 
             activity_store = self._activity_store(gid)
             activity_logs = activity_store.load_all()
-            ActivityStore.log(activity_logs, uid_a, today, Action.SWAP, 1)
-            ActivityStore.log(activity_logs, uid_b, today, Action.SWAP, 1)
+            ActivityStore.log(activity_logs, initiator_uid, today, Action.SWAP, 1)
+            ActivityStore.log(activity_logs, accepter_uid, today, Action.SWAP, 1)
+
+            del swap_requests[initiator_uid]
 
             ownership_store.save_all(ownerships)
             activity_store.save_all(activity_logs)
-            return True, ""
+            swap_store.save_all(swap_requests)
+            return SwapResult(ok=True)
 
-    # ---------- 交换请求存储（旧 v2.x 行为） ----------
+    async def reject_swap(
+        self, gid: str, initiator_uid: str, accepter_uid: str, today: str
+    ) -> SwapResult:
+        """拒绝交换请求（删除请求，不返还次数）"""
+        async with self._locks.acquire(gid):
+            swap_store = self._swap_store(gid)
+            swap_requests = swap_store.load_all()
+            rec = swap_requests.get(initiator_uid)
 
-    def load_swap_requests(self, gid: str) -> Dict[str, dict]:
-        """加载群内交换请求（命令层使用）"""
-        return self._swap_store(gid).load_all()
+            if rec and rec.get("date") != today:
+                del swap_requests[initiator_uid]
+                swap_store.save_all(swap_requests)
+                return SwapResult(ok=False, reason="expired")
+            if not rec or rec.get("target") != accepter_uid:
+                return SwapResult(ok=False, reason="mismatch")
 
-    def save_swap_requests(self, gid: str, requests: Dict[str, dict]) -> None:
-        """保存群内交换请求（命令层使用，需在群锁内调用）"""
-        self._swap_store(gid).save_all(requests)
+            del swap_requests[initiator_uid]
+            swap_store.save_all(swap_requests)
+            return SwapResult(ok=True)
 
-    # ---------- NTR 开关 ----------
+    def list_swap_requests(self, gid: str, today: str) -> Dict[str, str]:
+        """查看今日有效的交换请求：返回 ``{initiator_uid: target_uid}``"""
+        raw = self._swap_store(gid).load_all()
+        return {
+            uid: rec.get("target", "")
+            for uid, rec in raw.items()
+            if rec.get("date") == today
+        }
 
-    def load_ntr_statuses(self) -> Dict[str, bool]:
-        """加载所有群的 NTR 开关状态"""
-        return self._ntr_status.load_all()
+    def cancel_swap_for_users(
+        self, gid: str, user_ids: List[str], today: str
+    ) -> int:
+        """老婆变动时取消相关的今日交换请求，返回取消条数
 
-    def save_ntr_statuses(self, statuses: Dict[str, bool]) -> None:
-        self._ntr_status.save_all(statuses)
-
-    # ---------- 上限校验 ----------
-
-    def check_capacity(
-        self, profile: UserProfile, expansion_count: int = 0
-    ) -> Tuple[bool, str]:
-        """校验用户能否再持有更多老婆
-
-        ``expansion_count`` 为已使用的扩容道具数量（Phase 3 商城用）。
-        返回 ``(ok, reason)``。
+        接受调用方持锁（如在 ``try_ntr`` 内部调用）；若调用方未持锁，
+        本方法会进入群锁保护。
         """
-        capacity = min(
-            profile.capacity + expansion_count,
-            self._config.max_capacity,
-        )
-        # 实际持有数需要查 ownerships；本方法只做容量上限检查，由调用方传入当前持有数
-        # 这里仅返回上限值，调用方自行比较
-        return True, str(capacity)
+        # 由于是 sync 方法，无法 await 群锁；本方法设计为供已持锁的 sync 上下文调用，
+        # 或在命令层调用 `` OwnershipService.try_ntr`` / ``change_primary`` 后用
+        # 返回值标记是否有相关请求需要清理。
+        #
+        # Phase 1 的 v2.x 行为："NTR/换/抽" 成功后命令层不需要主动取消请求，
+        # 因为 v2.x 的 cancel_swap_on_wife_change 是在锁内调用，
+        # 这里提供 sync 版本即可。
+        swap_store = self._swap_store(gid)
+        daily_store = self._daily_count_store(gid)
+        swap_requests = swap_store.load_all()
+        daily_counts = daily_store.load_all()
+
+        to_cancel = [
+            req_uid
+            for req_uid, req in swap_requests.items()
+            if req.get("date") == today
+            and (req_uid in user_ids or req.get("target") in user_ids)
+        ]
+        if not to_cancel:
+            return 0
+
+        for req_uid in to_cancel:
+            rec = swap_requests.get(req_uid, {})
+            if rec.get("date") != today:
+                continue
+            cur = daily_counts.get(req_uid, {}).get(DailyAction.SWAP_ATTEMPT, {})
+            if cur.get("date") == today and int(cur.get("count", 0)) > 0:
+                cur["count"] = max(0, int(cur.get("count", 0)) - 1)
+            del swap_requests[req_uid]
+
+        swap_store.save_all(swap_requests)
+        daily_store.save_all(daily_counts)
+        return len(to_cancel)
+
+    # ---------- 重置（管理员 / 概率型） ----------
+
+    async def reset_user_action(
+        self,
+        gid: str,
+        operator_uid: str,
+        operator_is_admin: bool,
+        target_uid: str,
+        action: str,
+        today: str,
+        roll_seed: "Optional[float]" = None,
+    ) -> Dict[str, Any]:
+        """通用重置逻辑（v2.x ``_do_reset`` 的服务层版本）
+
+        管理员直接成功；普通用户消耗 ``reset_max_uses_per_day`` 一次，
+        按 ``reset_success_rate`` 概率成功，失败时返回 ``do_mute=True`` 让命令层禁言。
+        """
+        if operator_is_admin:
+            async with self._locks.acquire(gid):
+                daily_store = self._daily_count_store(gid)
+                daily_counts = daily_store.load_all()
+                DailyCountStore.reset_user_action(daily_counts, target_uid, action)
+                daily_store.save_all(daily_counts)
+            return {
+                "ok": True,
+                "consumed_reset": False,
+                "do_mute": False,
+                "mute_duration": 0,
+                "reason": "admin",
+            }
+
+        async with self._locks.acquire(gid):
+            daily_store = self._daily_count_store(gid)
+            daily_counts = daily_store.load_all()
+
+            reset_used = DailyCountStore.get_count(
+                daily_counts, operator_uid, DailyAction.RESET_USE, today
+            )
+            if reset_used >= self._config.reset_max_uses_per_day:
+                return {
+                    "ok": False,
+                    "consumed_reset": False,
+                    "do_mute": False,
+                    "mute_duration": 0,
+                    "reason": "limit_reached",
+                }
+
+            DailyCountStore.increment(
+                daily_counts, operator_uid, DailyAction.RESET_USE, today
+            )
+
+            roll = roll_seed if roll_seed is not None else _random.random()
+            if roll < self._config.reset_success_rate:
+                DailyCountStore.reset_user_action(daily_counts, target_uid, action)
+                daily_store.save_all(daily_counts)
+                return {
+                    "ok": True,
+                    "consumed_reset": True,
+                    "do_mute": False,
+                    "mute_duration": 0,
+                    "reason": "success",
+                }
+
+            daily_store.save_all(daily_counts)
+            return {
+                "ok": False,
+                "consumed_reset": True,
+                "do_mute": True,
+                "mute_duration": self._config.reset_mute_duration,
+                "reason": "roll_failed",
+            }
+
+    # ---------- 零点清理（由 plugin 定时循环调用） ----------
+
+    async def prune_daily_counts_for_group(self, gid: str, today: str) -> bool:
+        """删除某群所有非今日的次数记录，返回是否有变动"""
+        async with self._locks.acquire(gid):
+            store = self._daily_count_store(gid)
+            data = store.load_all()
+            changed = DailyCountStore.prune_for_group(data, today)
+            if changed:
+                store.save_all(data)
+            return changed
+
+    async def prune_swap_requests_for_group(self, gid: str, today: str) -> bool:
+        """删除某群所有非今日的交换请求，返回是否有变动"""
+        async with self._locks.acquire(gid):
+            store = self._swap_store(gid)
+            data = store.load_all()
+            before = len(data)
+            cleaned = {
+                uid: rec for uid, rec in data.items() if rec.get("date") == today
+            }
+            if len(cleaned) != before:
+                store.save_all(cleaned)
+                return True
+            return False
+
+    def known_groups(self) -> List[str]:
+        """返回已知群列表（基于锁池，用于零点遍历）"""
+        return self._locks.known_groups()
