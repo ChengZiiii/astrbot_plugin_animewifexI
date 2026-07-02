@@ -1,6 +1,6 @@
 name: astrbot_plugin_animewifexI
 display_name: 二次元老婆
-desc: 群二次元老婆插件修改版（v3.x 重构，模块化架构 + 经济/稀有度/求婚/PK/图鉴/面板）。
-version: v3.0.0-phase3-final
+desc: 群二次元老婆插件修改版（v3.x 重构，模块化架构 + 二游抽卡/经济/稀有度/锁定/PK/图鉴/面板）。
+version: v3.0.0-phase3-gacha
 author: soren
 repo: https://github.com/ChengZiiii/astrbot_plugin_animewifexI

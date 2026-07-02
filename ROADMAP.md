@@ -488,13 +488,18 @@ marry_coin_cost: int = 100
   - ✅ 每日任务模板：抽老婆 1 次 / 参与 PK 1 次 / 被牛 0 次 / 牛成功 1 次
   - ✅ 完成自动发币，写入 `quest_completed_date`
 - ✅ 商城 `services/shop_service.py`：
-  - ✅ 道具清单：`reroll_ticket` / `capacity_expansion` / `lock_item` / `revive_potion` / `protection_charm`
+  - ✅ 道具清单：`reroll_ticket` / `capacity_expansion` / `lock_item` / `revive_potion` / `protection_charm` / `draw_ticket_single` / `draw_ticket_ten`
   - ✅ `老婆 商城` 列表，`老婆 购买 <道具>` 交易
 - ✅ 背包：`profile.inventory` dict
+- ✅ 抽卡券系统：
+  - ✅ 每日免费 1 次（`daily_free_draws` 可配置，0=无限制）
+  - ✅ 单抽券：30 币/张
+  - ✅ 十连券：270 币/张（9折优惠）
+  - ✅ `老婆 十连` 命令：消耗十连券抽 10 次
 - ⬜ 换老婆消耗 `reroll_cost` 币（有 `reroll_ticket` 时抵扣）— 待接入
 - ✅ 测试：余额一致性、并发扣款、越权防护、持有上限
 
-### 5.2 老婆稀有度 + 抽卡 ✅
+### 5.2 老婆稀有度 + 抽卡系统 ✅
 
 - ✅ `services/rarity_service.py`：
   - ✅ `roll_rarity()`：根据 `rarity_weights` 加权随机
@@ -503,17 +508,24 @@ marry_coin_cost: int = 100
 - ✅ 保底机制：`pity_counter`，连续 N 次未达 `pity_min_rarity` 时强制保底
 - ✅ 抽卡展示：稀有度边框色、emoji（✨ SSR / 🌟 SR / ⭐ R / · N）
 - ✅ 抽到已收集的角色 → 自动转换为"重复"，给予老婆币补偿
+- ✅ 二游抽卡系统：
+  - ✅ 每日免费 1 次（`daily_free_draws` 可配置）
+  - ✅ 单抽券/十连券：商城购买
+  - ✅ `抽老婆`：优先免费，其次单抽券
+  - ✅ `老婆 十连`：消耗十连券，展示 10 连结果 + 统计
+  - ✅ 重复抽卡：每次都抽新老婆，可拥有多个
 - ✅ 测试：概率分布（蒙特卡洛 10000 次）、保底触发、稀有度筛选、重复处理
 
-### 5.3 求婚/锁定系统 ✅
+### 5.3 锁定系统 ✅
 
 - ✅ `services/marry_service.py`：
-  - ✅ `propose(gid, uid, wid)`：校验亲密度 ≥ 阈值、扣 `marry_coin_cost` 币、设置 `is_locked=true` + `lock_expires_at=null`
   - ✅ `lock(gid, uid, wid)`：消耗 `lock_item`，限期锁定 7 天
   - ✅ `unlock(gid, uid, wid)`：主动解锁
-- ✅ `ntr` 前置校验：目标老婆 `is_locked` 时直接失败（友好提示）
-- ✅ 命令：`老婆 求婚 <编号>` / `老婆 锁 <编号>` / `老婆 解锁 <编号>`
+  - ✅ `is_locked(ownership)`：检查是否锁定（含过期自动解锁）
+- ✅ NTR 前置校验：目标老婆 `is_locked` 时直接失败（友好提示）
+- ✅ 命令：`老婆 锁定 <编号>` / `老婆 解锁 <编号>`
 - ✅ 测试：锁定 NTR 失败、过期自动解锁
+- ⬜ 复活药水 / 保护符 — 待实现（Phase 3 后续）
 
 ### 5.4 老婆 PK ✅
 
