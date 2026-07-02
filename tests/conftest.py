@@ -158,10 +158,10 @@ def tmp_paths(tmp_path: Path):
 
 @pytest.fixture
 def config():
-    """默认 PluginConfig（全默认值）"""
+    """默认 PluginConfig（全默认值，daily_free_draws=0 表示无限制）"""
     from app.services.plugin_config import PluginConfig
 
-    return PluginConfig.default_for_test()
+    return PluginConfig(daily_free_draws=0)
 
 
 @pytest.fixture

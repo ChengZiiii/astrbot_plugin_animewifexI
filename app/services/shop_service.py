@@ -2,11 +2,13 @@
 
 道具清单（ROADMAP.md §5.1）：
 
-* ``reroll_ticket``     - 抵扣换老婆消耗
-* ``capacity_expansion`` - 扩容 +1
-* ``lock_item``         - 限期锁定
-* ``revive_potion``     - 被牛后复活
-* ``protection_charm``  - 24h 免疫一次 NTR
+* ``reroll_ticket``       - 抵扣换老婆消耗
+* ``capacity_expansion``  - 扩容 +1
+* ``lock_item``           - 限期锁定
+* ``revive_potion``       - 被牛后复活
+* ``protection_charm``    - 24h 免疫一次 NTR
+* ``draw_ticket_single``  - 单抽券
+* ``draw_ticket_ten``     - 十连券（9折优惠）
 """
 
 from __future__ import annotations
@@ -31,6 +33,8 @@ ITEM_NAMES: Dict[str, str] = {
     "lock_item": "锁定卡",
     "revive_potion": "复活药水",
     "protection_charm": "保护符",
+    "draw_ticket_single": "单抽券",
+    "draw_ticket_ten": "十连券",
 }
 
 # 使用上限（0 表示无上限）

@@ -42,7 +42,7 @@ from .admin import (
 )
 from .change import handle_change
 from .context import CommandContext
-from .draw import handle_draw
+from .draw import handle_draw, handle_draw_ten
 from .economy import (
     handle_backpack,
     handle_buy,
@@ -107,6 +107,7 @@ def build_registry() -> CommandRegistry:
     registry.register_grouped("商城", handle_shop)
     registry.register_grouped("购买", handle_buy)
     registry.register_grouped("背包", handle_backpack)
+    registry.register_grouped("十连", handle_draw_ten)
 
     # ---------- Phase 3: 锁定/PK/图鉴/面板 ----------
     registry.register_grouped("锁定", handle_lock)

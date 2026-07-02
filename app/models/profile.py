@@ -20,6 +20,8 @@ def _default_inventory() -> Dict[str, int]:
         "lock_item": 0,
         "revive_potion": 0,
         "protection_charm": 0,
+        "draw_ticket_single": 0,    # 单抽券
+        "draw_ticket_ten": 0,       # 十连券
     }
 
 
@@ -41,6 +43,9 @@ class UserProfile:
     last_checkin_date: str = ""       # 每日签到日期
     quest_completed_date: str = ""    # 当日任务完成标记
     total_draws: int = 0
+    today_draws: int = 0              # 今日已抽卡次数
+    today_free_draws: int = 0         # 今日已用免费次数
+    today_draw_date: str = ""         # 今日抽卡日期（用于跨天重置）
     total_ntr_success: int = 0
     total_ntr_lost: int = 0
     total_pk_win: int = 0
@@ -61,6 +66,9 @@ class UserProfile:
             "last_checkin_date": self.last_checkin_date,
             "quest_completed_date": self.quest_completed_date,
             "total_draws": self.total_draws,
+            "today_draws": self.today_draws,
+            "today_free_draws": self.today_free_draws,
+            "today_draw_date": self.today_draw_date,
             "total_ntr_success": self.total_ntr_success,
             "total_ntr_lost": self.total_ntr_lost,
             "total_pk_win": self.total_pk_win,
@@ -98,6 +106,9 @@ class UserProfile:
             last_checkin_date=str(data.get("last_checkin_date", "") or ""),
             quest_completed_date=str(data.get("quest_completed_date", "") or ""),
             total_draws=int(data.get("total_draws", 0) or 0),
+            today_draws=int(data.get("today_draws", 0) or 0),
+            today_free_draws=int(data.get("today_free_draws", 0) or 0),
+            today_draw_date=str(data.get("today_draw_date", "") or ""),
             total_ntr_success=int(data.get("total_ntr_success", 0) or 0),
             total_ntr_lost=int(data.get("total_ntr_lost", 0) or 0),
             total_pk_win=int(data.get("total_pk_win", 0) or 0),

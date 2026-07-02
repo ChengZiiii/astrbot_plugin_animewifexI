@@ -97,6 +97,7 @@ class PluginConfig:
     # ---------- 经济 ----------
     initial_coins: int = 50
     daily_checkin_coins: int = 20
+    daily_free_draws: int = 1           # 每日免费抽卡次数
     reroll_cost: int = 30
     pk_winner_reward: int = 15
     quest_complete_coins: int = 10
@@ -109,6 +110,8 @@ class PluginConfig:
             "lock_item": 50,
             "revive_potion": 80,
             "protection_charm": 60,
+            "draw_ticket_single": 30,    # 单抽券
+            "draw_ticket_ten": 270,      # 十连券（9折）
         }
     )
 
@@ -148,6 +151,8 @@ class PluginConfig:
                 "lock_item": 50,
                 "revive_potion": 80,
                 "protection_charm": 60,
+                "draw_ticket_single": 30,
+                "draw_ticket_ten": 270,
             }
 
         return cls(
@@ -192,6 +197,7 @@ class PluginConfig:
             pity_min_rarity=str(d.get("pity_min_rarity") or "SR"),
             initial_coins=_as_int(d.get("initial_coins"), 50),
             daily_checkin_coins=_as_int(d.get("daily_checkin_coins"), 20),
+            daily_free_draws=_as_int(d.get("daily_free_draws"), 1),
             reroll_cost=_as_int(d.get("reroll_cost"), 30),
             pk_winner_reward=_as_int(d.get("pk_winner_reward"), 15),
             quest_complete_coins=_as_int(d.get("quest_complete_coins"), 10),
