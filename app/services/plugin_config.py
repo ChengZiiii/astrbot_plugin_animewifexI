@@ -73,7 +73,6 @@ class PluginConfig:
     # ---------- 亲密度 ----------
     intimacy_per_day: int = 10
     intimacy_max: int = 100
-    intimacy_marry_threshold: int = 60
     intimacy_pet_coin_cost: int = 5
     intimacy_pet_gain: int = 3
     intimacy_gift_coin_cost: int = 30
@@ -110,8 +109,6 @@ class PluginConfig:
         }
     )
 
-    # ---------- 求婚 ----------
-    marry_coin_cost: int = 100
 
     # ---------- 派生 ----------
     @property
@@ -177,7 +174,6 @@ class PluginConfig:
             reset_mute_duration=_as_int(d.get("reset_mute_duration"), 300),
             intimacy_per_day=_as_int(d.get("intimacy_per_day"), 10),
             intimacy_max=_as_int(d.get("intimacy_max"), 100),
-            intimacy_marry_threshold=_as_int(d.get("intimacy_marry_threshold"), 60),
             intimacy_pet_coin_cost=_as_int(d.get("intimacy_pet_coin_cost"), 5),
             intimacy_pet_gain=_as_int(d.get("intimacy_pet_gain"), 3),
             intimacy_gift_coin_cost=_as_int(d.get("intimacy_gift_coin_cost"), 30),
@@ -194,7 +190,6 @@ class PluginConfig:
             pk_winner_reward=_as_int(d.get("pk_winner_reward"), 15),
             quest_complete_coins=_as_int(d.get("quest_complete_coins"), 10),
             shop_prices=shop_prices,
-            marry_coin_cost=_as_int(d.get("marry_coin_cost"), 100),
         )
 
     @classmethod

@@ -28,8 +28,6 @@ def tmp_paths(tmp_path):
 def config():
     return PluginConfig(
         initial_coins=200,
-        marry_coin_cost=100,
-        intimacy_marry_threshold=60,
     )
 
 
@@ -55,44 +53,6 @@ def _seed_profile(paths, gid, uid, coins=200, lock_item=0):
     p.inventory["lock_item"] = lock_item
     profiles[uid] = p
     store.save_all(profiles)
-
-
-class TestPropose:
-    def test_propose_success(self, marry, tmp_paths):
-        _seed_ownership(tmp_paths, "g1", "u1", "w1", intimacy=80)
-        _seed_profile(tmp_paths, "g1", "u1", coins=200)
-        result = marry.propose_sync("g1", "u1", "w1", "Alice")
-        assert result.ok is True
-        assert "永久锁定" in result.msg
-
-    def test_propose_insufficient_intimacy(self, marry, tmp_paths):
-        _seed_ownership(tmp_paths, "g1", "u1", "w1", intimacy=30)
-        _seed_profile(tmp_paths, "g1", "u1", coins=200)
-        result = marry.propose_sync("g1", "u1", "w1")
-        assert result.ok is False
-        assert "亲密度不足" in result.msg
-
-    def test_propose_insufficient_coins(self, marry, tmp_paths):
-        _seed_ownership(tmp_paths, "g1", "u1", "w1", intimacy=80)
-        _seed_profile(tmp_paths, "g1", "u1", coins=50)
-        result = marry.propose_sync("g1", "u1", "w1")
-        assert result.ok is False
-        assert "余额不足" in result.msg
-
-    def test_propose_not_owner(self, marry, tmp_paths):
-        _seed_ownership(tmp_paths, "g1", "u1", "w1", intimacy=80)
-        _seed_profile(tmp_paths, "g2", "u2", coins=200)
-        result = marry.propose_sync("g1", "u2", "w1")
-        assert result.ok is False
-        assert "不是你的" in result.msg
-
-    def test_propose_already_married(self, marry, tmp_paths):
-        _seed_ownership(tmp_paths, "g1", "u1", "w1", intimacy=80)
-        _seed_profile(tmp_paths, "g1", "u1", coins=200)
-        marry.propose_sync("g1", "u1", "w1", "Alice")
-        result = marry.propose_sync("g1", "u1", "w1")
-        assert result.ok is False
-        assert "已经求婚" in result.msg
 
 
 class TestLock:

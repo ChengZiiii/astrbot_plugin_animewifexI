@@ -116,12 +116,6 @@
         "default": 100,
         "hint": "单只老婆的亲密度最大值"
     },
-    "intimacy_marry_threshold": {
-        "description": "求婚所需亲密度",
-        "type": "int",
-        "default": 60,
-        "hint": "求婚前老婆亲密度需达到的阈值（Phase 3 接入）"
-    },
     "intimacy_pet_coin_cost": {
         "description": "摸头消耗老婆币",
         "type": "int",
@@ -229,11 +223,5 @@
             "draw_ticket_single": {"type": "int", "default": 30},
             "draw_ticket_ten": {"type": "int", "default": 270}
         }
-    },
-    "marry_coin_cost": {
-        "description": "求婚消耗老婆币",
-        "type": "int",
-        "default": 100,
-        "hint": "「老婆 求婚」消耗的老婆币（Phase 3 接入）"
     }
 }

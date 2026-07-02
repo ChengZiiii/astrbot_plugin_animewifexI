@@ -1,9 +1,8 @@
-"""求婚/锁定服务。
+"""锁定服务。
 
-* ``propose(gid, uid, wid)`` 校验亲密度 ≥ 阈值、扣币、永久锁定
 * ``lock(gid, uid, wid)`` 消耗 lock_item，限期锁定 7 天
 * ``unlock(gid, uid, wid)`` 主动解锁
-* ``is_locked(ownership)`` 检查是否锁定（含过期判断）
+* ``is_locked(ownership)`` 检查是否锁定
 """
 
 from __future__ import annotations
@@ -14,11 +13,9 @@ from dataclasses import dataclass
 from typing import Optional
 
 from ..models.ownership import Ownership
-from ..models.profile import UserProfile
 from ..storage.locks import GroupLocks
 from ..storage.paths import Paths
 from ..storage.stores import OwnershipStore, ProfileStore
-from .economy_service import EconomyService
 from .plugin_config import PluginConfig
 
 logger = logging.getLogger("astrbot_plugin_animewifex.marry")
@@ -37,58 +34,12 @@ class MarryResult:
 
 
 class MarryService:
-    """求婚/锁定服务。"""
+    """锁定服务。"""
 
     def __init__(self, paths: Paths, config: PluginConfig, locks: GroupLocks | None = None):
         self._paths = paths
         self._config = config
         self._locks = locks
-        self._economy = EconomyService(paths, config, locks)
-
-    async def propose(
-        self, gid: str, uid: str, wid: str, nick: str = ""
-    ) -> MarryResult:
-        """求婚：永久锁定（消耗 marry_coin_cost 币 + 亲密度 ≥ 阈值）"""
-        if self._locks:
-            async with self._locks.acquire(gid):
-                return self._propose_inner(gid, uid, wid, nick)
-        return self._propose_inner(gid, uid, wid, nick)
-
-    def _propose_inner(self, gid: str, uid: str, wid: str, nick: str) -> MarryResult:
-        store = OwnershipStore(self._paths, gid)
-        ownerships = store.load_all()
-        ownership = store.find_by_wid(wid, ownerships)
-        if not ownership:
-            return MarryResult(ok=False, reason="not_found", msg="未找到该老婆")
-        if ownership.uid != uid:
-            return MarryResult(ok=False, reason="not_owner", msg="这不是你的老婆")
-        if ownership.is_locked and ownership.lock_expires_at is None:
-            return MarryResult(ok=False, reason="already_married", msg="已经求婚过了")
-
-        # 检查亲密度
-        if ownership.intimacy < self._config.intimacy_marry_threshold:
-            return MarryResult(
-                ok=False,
-                reason="intimacy_low",
-                msg=f"亲密度不足（需要 {self._config.intimacy_marry_threshold}，当前 {ownership.intimacy}）",
-            )
-
-        # 扣币（同步调用 _spend_inner 避免死锁）
-        cost = self._config.marry_coin_cost
-        if not self._economy._spend_inner(gid, uid, cost, nick, "propose"):
-            return MarryResult(
-                ok=False,
-                reason="insufficient",
-                msg=f"余额不足（需要 {cost} 币）",
-            )
-
-        # 永久锁定
-        ownership.is_locked = True
-        ownership.lock_expires_at = None
-        store.save_all(ownerships)
-
-        logger.debug("propose: gid=%s uid=%s wid=%s -> locked permanently", gid, uid, wid)
-        return MarryResult(ok=True, msg=f"求婚成功！花费 {cost} 币，老婆已永久锁定 💍")
 
     async def lock(
         self, gid: str, uid: str, wid: str, nick: str = ""
@@ -189,12 +140,6 @@ class MarryService:
         return True
 
     # ---------- 同步别名（测试/无锁场景兼容） ----------
-
-    def propose_sync(
-        self, gid: str, uid: str, wid: str, nick: str = ""
-    ) -> MarryResult:
-        """同步版 propose（不经过锁）。"""
-        return self._propose_inner(gid, uid, wid, nick)
 
     def lock_sync(
         self, gid: str, uid: str, wid: str, nick: str = ""
