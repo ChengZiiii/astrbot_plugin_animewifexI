@@ -239,16 +239,23 @@ async def handle_admin_reset_draw(
         yield event.plain_result(f"{nick}，你没有权限执行此操作~")
         return
 
-    from ..storage.stores import ProfileStore
-    store = ProfileStore(ctx.paths, gid)
-    profiles = store.load_all()
+    from ..storage.stores import OwnershipStore, ProfileStore
+    profile_store = ProfileStore(ctx.paths, gid)
+    profiles = profile_store.load_all()
     target = profiles.get(tid)
     if not target:
         yield event.plain_result("目标用户没有老婆数据~")
         return
 
+    # 清除今日抽卡日期
     target.last_draw_date = ""
-    store.save_all(profiles)
+    profile_store.save_all(profiles)
+
+    # 清除主老婆记录（否则 draw_or_get_primary 仍会返回旧老婆）
+    ownership_store = OwnershipStore(ctx.paths, gid)
+    ownerships = ownership_store.load_all()
+    OwnershipStore.clear_primary_for_user(ownerships, tid)
+    ownership_store.save_all(ownerships)
 
     target_nick = target.nick or tid
     yield event.plain_result(f"已重置 {target_nick} 的今日抽卡状态，可以重新抽老婆了~")
