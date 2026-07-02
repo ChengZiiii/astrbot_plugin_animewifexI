@@ -173,8 +173,13 @@
     "rarity_weights": {
         "description": "稀有度抽卡权重",
         "type": "object",
-        "default": {"SSR": 5, "SR": 20, "R": 50, "N": 25},
-        "hint": "抽卡时各稀有度的相对权重（Phase 3 接入）"
+        "hint": "抽卡时各稀有度的相对权重（Phase 3 接入）",
+        "items": {
+            "SSR": {"type": "int", "default": 5},
+            "SR": {"type": "int", "default": 20},
+            "R": {"type": "int", "default": 50},
+            "N": {"type": "int", "default": 25}
+        }
     },
     "pity_threshold": {
         "description": "保底次数",
@@ -220,15 +225,15 @@
     },
     "shop_prices": {
         "description": "商城道具价格",
+        "hint": "各道具的老婆币价格（Phase 3 接入）",
         "type": "object",
-        "default": {
-            "reroll_ticket": 30,
-            "capacity_expansion": 100,
-            "lock_item": 50,
-            "revive_potion": 80,
-            "protection_charm": 60
-        },
-        "hint": "各道具的老婆币价格（Phase 3 接入）"
+        "items": {
+            "reroll_ticket": {"type": "int", "default": 30},
+            "capacity_expansion": {"type": "int", "default": 100},
+            "lock_item": {"type": "int", "default": 50},
+            "revive_potion": {"type": "int", "default": 80},
+            "protection_charm": {"type": "int", "default": 60}
+        }
     },
     "marry_coin_cost": {
         "description": "求婚消耗老婆币",

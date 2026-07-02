@@ -48,7 +48,7 @@ class WifePlugin(Star):
         self.tz = self._resolve_timezone(context)
 
         # 数据目录与归档
-        plugin_data_root = StarTools.get_data_dir("astrbot_plugin_animewifex")
+        plugin_data_root = StarTools.get_data_dir("astrbot_plugin_animewifexI")
         self.paths = Paths(plugin_data_root)
         self.paths.ensure_dirs()
 

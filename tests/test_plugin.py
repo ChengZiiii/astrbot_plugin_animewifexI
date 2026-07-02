@@ -91,7 +91,7 @@ def test_plugin_init_archive_legacy_data(tmp_path, monkeypatch):
     monkeypatch.setattr(StarTools, "get_data_dir", staticmethod(_mocked_get_data_dir))
 
     # 先模拟旧版数据
-    plugin_root = _mocked_get_data_dir("astrbot_plugin_animewifex")
+    plugin_root = _mocked_get_data_dir("astrbot_plugin_animewifexI")
     legacy_config_dir = os.path.join(plugin_root, "config")
     os.makedirs(legacy_config_dir, exist_ok=True)
     with open(os.path.join(legacy_config_dir, "records.json"), "w", encoding="utf-8") as f:

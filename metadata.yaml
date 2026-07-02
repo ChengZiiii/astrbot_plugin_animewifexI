@@ -1,6 +1,6 @@
-name: astrbot_plugin_animewifex
+name: astrbot_plugin_animewifexI
 display_name: 二次元老婆
-desc: 群二次元老婆插件修改版。
-version: v2.0.1
-author: monbed
-repo: https://github.com/monbed/astrbot_plugin_animewifex
+desc: 群二次元老婆插件修改版（v3.x 重构 fork，模块化架构 + 多老婆数据结构就绪）。
+version: v3.0.0-phase1
+author: soren
+repo: https://github.com/ChengZiiii/astrbot_plugin_animewifexI
