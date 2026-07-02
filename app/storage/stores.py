@@ -144,8 +144,13 @@ class OwnershipStore:
 
     @staticmethod
     def remove_by_wid(ownerships: List[Ownership], wid: str) -> List[Ownership]:
-        """按 wid 删除所有权记录"""
-        return [o for o in ownerships if o.wid != wid]
+        """按 wid 删除所有权记录（**就地修改** 并返回同一列表）
+
+        与 :meth:`add`/``set_primary``/``transfer`` 保持一致的 in-place 语义，
+        避免调用方拿到新列表却仍在原引用上做后续操作。
+        """
+        ownerships[:] = [o for o in ownerships if o.wid != wid]
+        return ownerships
 
     @staticmethod
     def set_primary(
