@@ -54,6 +54,9 @@ __all__ = [
     "CooldownAction",
 ]
 
+# 每用户老婆上限（硬上限）
+MAX_WIVES_PER_USER = 999
+
 
 # ==================== wid 生成 ====================
 
@@ -313,6 +316,12 @@ class OwnershipService:
             ownerships = ownership_store.load_all()
             profiles = profile_store.load_all()
 
+            # 老婆上限检查
+            my_wives_count = sum(1 for o in ownerships if o.uid == uid)
+            if my_wives_count >= MAX_WIVES_PER_USER:
+                profile_store.save_all(profiles)
+                return DrawResult(ok=False, reason="limit_reached")
+
             profile = ProfileStore.get_or_create(
                 profiles,
                 uid,
@@ -436,6 +445,13 @@ class OwnershipService:
             activity_store = self._activity_store(gid)
 
             profiles = profile_store.load_all()
+            ownerships = ownership_store.load_all()
+
+            # 老婆上限检查
+            my_wives_count = sum(1 for o in ownerships if o.uid == uid)
+            if my_wives_count >= MAX_WIVES_PER_USER:
+                return []
+
             profile = ProfileStore.get_or_create(
                 profiles, uid, nick,
                 capacity=self._config.default_capacity,
@@ -457,9 +473,13 @@ class OwnershipService:
                 profile.today_draw_date = today
 
             results: list[DrawResult] = []
-            ownerships = ownership_store.load_all()
 
             for i in range(10):
+                # 每次抽卡前检查上限
+                my_wives_count = sum(1 for o in ownerships if o.uid == uid)
+                if my_wives_count >= MAX_WIVES_PER_USER:
+                    break
+
                 img = await self._wife_service.fetch_image()
                 if not img:
                     break
@@ -555,6 +575,11 @@ class OwnershipService:
             profiles = profile_store.load_all()
             activity_logs = activity_store.load_all()
             daily_counts = daily_store.load_all()
+
+            # 老婆上限检查（攻击者已满则拒绝 NTR）
+            my_wives_count = sum(1 for o in ownerships if o.uid == uid)
+            if my_wives_count >= MAX_WIVES_PER_USER:
+                return NtrResult(ok=False, reason="limit_reached")
 
             used = DailyCountStore.get_count(
                 daily_counts, uid, DailyAction.NTR_ATTEMPT, today
