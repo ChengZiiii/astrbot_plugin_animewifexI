@@ -1,23 +1,17 @@
-"""WifePlugin 主类：装配所有 service + 注册消息监听 + 生命周期管理。
+"""WifePluginCore：插件业务装配基类（无 AstrBot 装饰器，便于单测）。
 
-职责：
-
-* ``__init__`` ：解析配置 → 归档旧数据 → 初始化 paths/locks/services/registry；
-* ``on_all_messages`` ：群聊消息过滤 → ``registry.parse`` → 执行 handler；
-* ``_daily_cleanup_loop`` ：每日零点清理跨天失效的 daily_counts 与 swap_requests；
-* ``terminate`` ：插件卸载时停止后台任务。
+实际入口 :class:`WifePlugin` 在 ``main.py`` 中继承本类并加上
+``@filter.event_message_type`` 装饰器。装饰器必须在 ``main.py`` 里，
+否则 AstrBot reload 时由于 ``app.plugin`` 已缓存于 ``sys.modules``，
+装饰器不会重跑 → handler 不重新注册 → 插件失效。
 """
 
 from __future__ import annotations
 
 import asyncio
-import os
-from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from astrbot.api import AstrBotConfig, logger
-from astrbot.api.event import AstrMessageEvent, filter
-from astrbot.api.event.filter import EventMessageType
 from astrbot.api.star import Context, Star, StarTools
 
 from .commands.context import CommandContext
@@ -33,11 +27,11 @@ from .utils.time import get_today, seconds_until_next_midnight
 
 DEFAULT_TIMEZONE = "Asia/Shanghai"
 
-__all__ = ["WifePlugin"]
+__all__ = ["WifePluginCore", "DEFAULT_TIMEZONE"]
 
 
-class WifePlugin(Star):
-    """v3.x 重构后的 WifePlugin 主类"""
+class WifePluginCore(Star):
+    """v3.x 插件业务装配（不含 ``@filter`` 装饰方法，便于单测）"""
 
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -111,39 +105,6 @@ class WifePlugin(Star):
             )
             return _safe_zoneinfo(DEFAULT_TIMEZONE)
 
-    # ---------- 消息分发 ----------
-
-    @filter.event_message_type(EventMessageType.GROUP_MESSAGE)
-    async def on_all_messages(self, event: AstrMessageEvent):
-        """群聊消息分发（仅群聊监听）"""
-        if not event.message_obj or not hasattr(event.message_obj, "group_id"):
-            return
-
-        if self.plugin_config.need_prefix and not event.is_at_or_wake_command:
-            return
-
-        text = (event.message_str or "").strip()
-        if not text:
-            return
-
-        # 兼容 AstrBot wake prefix（/ ! \ . 等）与首尾空白
-        text = _strip_wake_prefix(text)
-        if not text:
-            return
-
-        result = self.registry.parse(text)
-        if result is None:
-            return
-
-        # 命中即拦截，阻止后续 LLM 流程
-        event.stop_event()
-        # 执行 handler 并转发所有 yield 的消息
-        try:
-            async for reply in result.handler(event, self.cmd_ctx):
-                yield reply
-        except Exception:
-            logger.exception(f"执行命令 {result.name!r} 时出错")
-
     # ---------- 零点清理循环 ----------
 
     async def _daily_cleanup_loop(self):
@@ -192,14 +153,3 @@ def _safe_zoneinfo(name: str) -> ZoneInfo:
     except (ZoneInfoNotFoundError, ValueError):
         logger.error(f"时区 {name!r} 不可用，回退 UTC")
         return ZoneInfo("UTC")
-
-
-# AstrBot 常见 wake prefix：/ ! \ . 与全角版本
-_WAKE_PREFIXES = ("/", "!", "\\", ".", "／", "！", "、", "。")
-
-
-def _strip_wake_prefix(text: str) -> str:
-    """去掉开头的 wake prefix（/ ! \\ . 等）和首尾空白，便于命令匹配"""
-    while text[:1] in _WAKE_PREFIXES:
-        text = text[1:].lstrip()
-    return text.strip()

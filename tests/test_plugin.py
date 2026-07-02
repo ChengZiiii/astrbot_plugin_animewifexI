@@ -16,7 +16,7 @@ import pytest
 
 from app.commands.context import CommandContext
 from app.commands.registration import build_registry
-from app.plugin import WifePlugin
+from app.plugin import WifePluginCore
 from app.services.plugin_config import PluginConfig
 
 
@@ -32,7 +32,7 @@ class _MockContext:
 
 def test_plugin_imports():
     """模块能被 import（间接由本测试模块 import 验证）"""
-    assert WifePlugin is not None
+    assert WifePluginCore is not None
 
 
 def test_plugin_init_with_default_config(tmp_path, monkeypatch):
@@ -54,7 +54,7 @@ def test_plugin_init_with_default_config(tmp_path, monkeypatch):
     raw_config: Dict[str, Any] = {}
     context = _MockContext({"timezone": "Asia/Shanghai"})
 
-    plugin = WifePlugin(context, raw_config)
+    plugin = WifePluginCore(context, raw_config)
 
     # 验证装配
     assert plugin.paths is not None
@@ -99,7 +99,7 @@ def test_plugin_init_archive_legacy_data(tmp_path, monkeypatch):
 
     raw_config: Dict[str, Any] = {}
     context = _MockContext({})
-    plugin = WifePlugin(context, raw_config)
+    plugin = WifePluginCore(context, raw_config)
 
     # config/ 应已被归档移走
     assert not os.path.exists(os.path.join(legacy_config_dir, "records.json"))
@@ -130,7 +130,7 @@ def test_plugin_parse_commands_via_context(tmp_path, monkeypatch):
 
     raw_config: Dict[str, Any] = {}
     context = _MockContext({})
-    plugin = WifePlugin(context, raw_config)
+    plugin = WifePluginCore(context, raw_config)
 
     # 关键命令都能解析
     for cmd in ["抽老婆", "查老婆", "牛老婆", "换老婆", "交换老婆",

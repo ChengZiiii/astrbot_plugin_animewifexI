@@ -29,6 +29,11 @@ async def handle_draw(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
         yield event.plain_result("抱歉，今天的老婆获取失败了，请稍后再试~")
         return
 
+    if not result.is_new:
+        # 今天已经抽过了，提示并展示当前老婆
+        yield event.plain_result(f"{nick}，你今天已经抽过老婆了哦~")
+        return
+
     intro = build_wife_intro_text(
         result.img,
         prefix=f"{nick}，你今天的老婆是",

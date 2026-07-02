@@ -25,17 +25,27 @@ async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
     if not gid:
         return
 
-    tid = _resolve_target(event, ctx)
-    if tid is None:
-        yield event.plain_result("没有发现老婆的踪迹，快去抽一个试试吧~")
+    sender_uid = get_sender_uid(event)
+    at_target = parse_at_target(event)
+    # 是否查询他人（@ 或昵称）
+    target_uid = _resolve_target(event, ctx)
+    if target_uid is None:
+        # 昵称匹配失败（明确指定了昵称但没命中）
+        yield event.plain_result("没有找到该昵称的群友老婆哦~")
         return
 
-    img = ctx.ownership_service.get_primary_img(gid, tid)
+    img = ctx.ownership_service.get_primary_img(gid, target_uid)
     if not img:
-        yield event.plain_result("没有发现老婆的踪迹，快去抽一个试试吧~")
+        # 区分自查 / 查他人，给不同文案
+        if target_uid == sender_uid or at_target is None:
+            yield event.plain_result("没有发现老婆的踪迹，快去抽一个试试吧~")
+        else:
+            target_profile = ctx.ownership_service.get_profile(gid, target_uid)
+            target_name = target_profile.nick or "对方"
+            yield event.plain_result(f"{target_name}今天还没有老婆哦~")
         return
 
-    target_profile = ctx.ownership_service.get_profile(gid, tid)
+    target_profile = ctx.ownership_service.get_profile(gid, target_uid)
     owner = target_profile.nick or "未知用户"
     intro = build_wife_intro_text(img, prefix=f"{owner}的老婆是", suffix="，羡慕吗？")
     yield event.chain_result(
