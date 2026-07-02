@@ -57,11 +57,11 @@ class WifePluginCore(Star):
 
         # 业务服务
         self.wife_service = WifeService(self.paths, self.plugin_config)
+        self.cooldown_service = CooldownService(self.locks)
         self.ownership_service = OwnershipService(
             self.paths, self.plugin_config, self.locks, self.wife_service,
             self.cooldown_service,
         )
-        self.cooldown_service = CooldownService(self.locks)
 
         # 命令注册表
         self.registry = build_registry()

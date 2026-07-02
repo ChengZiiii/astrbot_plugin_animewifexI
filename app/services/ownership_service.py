@@ -494,7 +494,7 @@ class OwnershipService:
                 target_profile.last_ntr_by = {"uid": uid, "ts": now_ts()}
 
             # P2.3: NTR 成功时被牛方亲密度归零（转移后的 ownership 从 0 开始）
-            transferred = ownership_store.find_by_wid(ownerships, wid)
+            transferred = ownership_store.find_by_wid(wid, ownerships)
             if transferred:
                 transferred.intimacy = 0
                 transferred.intimacy_updated_date = ""
@@ -502,7 +502,7 @@ class OwnershipService:
 
             # P2.4: 复仇成功后清空 last_ntr_by（防链式复仇）
             if revenge_valid:
-                attacker_profile.last_ntr_by = None
+                attacker_profile.last_ntr_by = {}
 
             ActivityStore.log(activity_logs, uid, today, Action.NTR_SUCCESS, 1)
             ActivityStore.log(activity_logs, tid, today, Action.NTR_LOST, 1)

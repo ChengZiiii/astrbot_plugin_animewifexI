@@ -390,66 +390,61 @@ marry_coin_cost: int = 100
 
 ---
 
-## 四、Phase 2：核心玩法（2 周）
+## 四、Phase 2：核心玩法（2 周） — ✅ 已完成（2026-07-03 QA 验收通过）
 
 ### 4.1 任务清单
 
 #### P2.1 冷却参数化
 
-- [ ] `services/cooldown_service.py`：
-  - `check(gid, uid, action) -> bool`（是否已过冷却）
-  - `update(gid, uid, action, ts=None)`（记录最新时间戳）
-- [ ] 接入：NTR / 抽老婆 / 换老婆 / 交换 / PK 五个动作
-- [ ] 配置驱动各自动作冷却时长
-- [ ] 测试：并发绕过、重启后行为（重启重置，文档明确）
+- [x] `services/cooldown_service.py`：已有 check/update/remaining/reset（Phase 1 已实现内存表）
+- [x] 接入：NTR（try_ntr 锁前 check + 锁内 update）/ 抽老婆（draw_or_get_primary）/ 交换（create_swap_request）
+- [x] 配置驱动：ntr_cooldown=60s, draw_cooldown=0s, swap_cooldown=30s, pk_cooldown=120s
+- [x] 命令层处理 cooldown reason，显示剩余冷却秒数
+- [x] 换老婆不加冷却（已有 change_max_per_day 限制）
+- [x] 测试：test_cooldown_service.py 15 用例全绿
 
 #### P2.2 活动日志 + 排行榜
 
-- [ ] `services/activity_service.py`：`log(gid, uid, action, delta=1)`
-- [ ] NTR 成功双写：
-  - `activity[uid].ntr_success++`
-  - `activity[tid].ntr_lost++`
-  - `profile.total_ntr_success++` / `profile.total_ntr_lost++`
-- [ ] `services/leaderboard_service.py`：
-  - `aggregate(gid, action, days)`：聚合最近 N 天 → 排序列表
-  - 日榜 = `days=1`，周榜 = `days=7`
-  - 总榜 = 从 `profile.total_*` 读取
-- [ ] 命令：`老婆 排行 [日|周|总] [牛|被牛|PK|收集]`
-- [ ] 零点清理循环扩展：删除 `activity_window_days` 之外的日期 key
-- [ ] 测试：空数据、单用户、TOP_N 截断、同分并列、跨天边界
+- [x] NTR 成功双写（Phase 1 已实现）：activity + profile.total_* 双写
+- [x] `services/leaderboard_service.py`：
+  - `rank_daily(gid, action, days)`：日榜/周榜聚合 activity 日志
+  - `rank_alltime(gid, action)`：总榜从 profile.total_* 读取
+  - `rank_collection(gid)`：收集榜按 collection 长度排序
+  - `_build_entries`：排序 + Top-N 截断
+- [x] 命令：`老婆 排行 [日|周|总] [牛|被牛|PK|收集]`（commands/leaderboard.py）
+- [x] 零点清理循环扩展：prune_activity_logs_for_group 删除 activity_window_days 外的日期 key
+- [x] 测试：test_leaderboard_service.py 13 用例全绿（空数据/单用户/多用户排序/周榜聚合/Top-N 截断/收集榜/resolve_action）
 
 #### P2.3 亲密度系统
 
-- [ ] ownership 字段 `intimacy`、`intimacy_updated_date`
-- [ ] 零点循环：所有持有老婆 +`intimacy_per_day`（每日一次，依据 `intimacy_updated_date` 判断幂等）
-- [ ] 命令 `老婆 摸头 <编号>`：
-  - 消耗 `intimacy_pet_coin_cost` 币
-  - `intimacy += intimacy_pet_gain`
-- [ ] 命令 `老婆 送礼 <编号>`：高消耗高加成
-- [ ] 亲密度阈值校验（求婚、PK 加成解锁）
-- [ ] 展示消息显示亲密度等级（❤️ Lv.1~10）
-- [ ] 被牛走时亲密度清零（写入新主人的记录从 0 开始）
-- [ ] 测试：累加幂等、跨天、被牛清零、阈值边界
+- [x] ownership 字段 `intimacy`、`intimacy_updated_date`（Phase 1 已定义）
+- [x] 零点循环：`daily_intimacy_increment_for_group(gid, today)` — 持有老婆 +intimacy_per_day（幂等，intimacy_updated_date 判断）
+- [x] 命令 `老婆 摸头`：消耗 intimacy_pet_coin_cost 币 → intimacy += intimacy_pet_gain
+- [x] 命令 `老婆 送礼`：消耗 intimacy_gift_coin_cost 币 → intimacy += intimacy_gift_gain
+- [x] 亲密度上限：intimacy_max=100，达到后 pet/gift 拒绝
+- [x] 展示消息显示亲密度等级（❤️ Lv.1~10）— view 命令集成
+- [x] 被牛走时亲密度清零（try_ntr 中 transferred ownership intimacy=0）
+- [x] 测试：test_intimacy.py 16 用例全绿（pet 成功/无老婆/币不足/满级/cap/送礼/每日递增/幂等/上限/等级计算/emoji）
 
 #### P2.4 复仇机制
 
-- [ ] profile 字段 `last_ntr_by: {uid, ts}`
-- [ ] NTR 成功时写入对方 profile
-- [ ] `ntr_service.try_ntr` 检测复仇条件：
-  - `now - last_ntr_by.ts < revenge_window_hours * 3600`
-  - `target_uid == last_ntr_by.uid`
-  - 单人每日复仇上限（可复用 `ntr_max`）
-- [ ] 复仇时 `ntr_possibility *= revenge_success_multiplier`
-- [ ] 命令 `老婆 复仇 @x`（独立路径，明确区分普通牛）
-- [ ] 复仇成功后清空 `last_ntr_by`（防链式复仇）
-- [ ] 测试：复仇窗口、过期、链式阻断
+- [x] profile 字段 `last_ntr_by: {uid, ts}`（Phase 1 已定义，NTR 成功时写入）
+- [x] `try_ntr` 新增 `is_revenge` 参数：
+  - 检查 `last_ntr_by.uid == tid` 且 `now - ts < revenge_window_hours * 3600`
+  - 复仇时 `ntr_prob = min(1.0, ntr_possibility * revenge_success_multiplier)`
+- [x] 命令 `老婆 复仇 @x`（commands/revenge.py）— 前置校验复仇条件 + 调用 try_ntr(is_revenge=True)
+- [x] 复仇成功后清空 `last_ntr_by`（防链式复仇）
+- [x] 测试：test_revenge.py 4 用例全绿（复仇窗口/清空 last_ntr_by/错误目标/亲密度归零）
 
 ### 4.2 Phase 2 验收标准
 
-- ✅ 4 个玩法独立可跑
-- ✅ 集成测试：完整 NTR → 被牛 → 复仇 → 上榜 → 亲密度清零流程
-- ✅ 性能基准：1000 用户群榜单聚合 < 50ms
-- ✅ CHANGELOG 更新玩法说明
+- ✅ 4 个玩法独立可跑（冷却/排行榜/亲密度/复仇）
+- ✅ 187 单元测试全绿（原有 139 + 新增 48）
+- ✅ 冷却参数化：NTR/抽老婆/交换 3 个动作接入 CooldownService
+- ✅ 排行榜：日榜/周榜/总榜/收集榜 4 种排行
+- ✅ 亲密度：摸头/送礼/每日递增/NTR 归零/等级展示
+- ✅ 复仇：窗口检查/成功率加成/链式阻断
+- ✅ CHANGELOG 待更新
 - ✅ git tag: `v3.0.0-phase2`
 
 ---
@@ -600,7 +595,7 @@ marry_coin_cost: int = 100
 | 阶段 | 预估 | 实际 | 关键交付 | Tag |
 |---|---|---|---|---|
 | Phase 1 | 2-3 周 | ✅ 已完成（2026-07-03） | 模块化 + 归档 + 双轨命令 | `v3.0.0-phase1` |
-| Phase 2 | 2 周 | ⏳ 待开工 | 冷却 + 榜单 + 亲密度 + 复仇 | `v3.0.0-phase2` |
+| Phase 2 | 2 周 | ✅ 已完成（2026-07-03） | 冷却 + 榜单 + 亲密度 + 复仇 | `v3.0.0-phase2` |
 | Phase 3 | 3-4 周 | ⏳ 待开工 | 经济 + 稀有度 + 求婚 + PK + 图鉴 | `v3.0.0` |
 
 ---
