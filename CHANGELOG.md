@@ -1,5 +1,60 @@
 # 更新日志
 
+## v3.0.0-phase2
+
+**Phase 2 核心玩法上线（参考 [ROADMAP.md](ROADMAP.md) §四）**
+
+### 新增
+
+- **冷却参数化（P2.1）**：
+  - NTR/抽老婆/交换请求 3 个动作接入 `CooldownService`（锁前 check + 成功后 update）
+  - 冷却配置：`ntr_cooldown`=60s / `draw_cooldown`=0s / `swap_cooldown`=30s / `pk_cooldown`=120s
+  - 命令层处理 `cooldown` reason，显示剩余冷却秒数
+  - 换老婆不加冷却（已有 `change_max_per_day` 限制）
+
+- **排行榜（P2.2）**：
+  - `services/leaderboard_service.py`：日榜/周榜/总榜/收集榜 4 种排行聚合
+  - `commands/leaderboard.py`：`老婆 排行 [日|周|总] [牛|被牛|PK|收集]`
+  - 零点循环新增 `prune_activity_logs_for_group`（清理 `activity_window_days` 外的日期 key）
+
+- **亲密度系统（P2.3）**：
+  - `pet_wife` / `gift_wife`：消耗币增加亲密度（摸头 +3 / 送礼 +20）
+  - `daily_intimacy_increment_for_group`：零点递增（幂等，每日只加一次）
+  - NTR 成功时被牛方亲密度归零（转移后 ownership 从 0 开始）
+  - 亲密度等级：❤️ Lv.1~10（线性分段，每 10 点一级）
+  - `commands/intimacy.py`：`老婆 摸头` / `老婆 送礼`
+  - view 命令展示亲密度等级
+
+- **复仇机制（P2.4）**：
+  - `try_ntr(is_revenge=True)`：检查 `last_ntr_by` 的 uid + 时间窗口
+  - 复仇时 `ntr_prob = min(1.0, ntr_possibility * revenge_success_multiplier)`
+  - 复仇成功后清空 `last_ntr_by`（防链式复仇）
+  - `commands/revenge.py`：`老婆 复仇 @x`
+
+- **命令注册更新**：
+  - `registration.py`：接入排行/复仇/摸头/送礼 4 个真实 handler
+  - `grouped_stubs.py`：移除已实现的摸头/送礼/复仇/排行
+  - 帮助文本更新为 Phase 2
+
+- **测试扩展**：
+  - 新增 4 个测试文件：`test_cooldown_service` / `test_leaderboard_service` / `test_revenge` / `test_intimacy`
+  - 总计 187 个 pytest 用例全绿（原有 139 + 新增 48）
+
+### 修复
+
+- `find_by_wid` 参数顺序修正为 `(wid, ownerships)`
+- `plugin.py` CooldownService 初始化顺序修正
+- `last_ntr_by` 清空用 `{}` 而非 `None`（序列化兼容）
+
+### Phase 2 验收
+
+- ✅ 4 个玩法独立可跑（冷却/排行榜/亲密度/复仇）
+- ✅ 187 单元测试全绿
+- ✅ ROADMAP.md Phase 2 全部复选框标记完成
+- ✅ git tag: `v3.0.0-phase2`
+
+---
+
 ## v3.0.0-phase1
 
 **Phase 1 重构完成（参考 [ROADMAP.md](ROADMAP.md) §三）**
