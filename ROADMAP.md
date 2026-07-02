@@ -494,16 +494,16 @@ marry_coin_cost: int = 100
 - ⬜ 换老婆消耗 `reroll_cost` 币（有 `reroll_ticket` 时抵扣）— 待接入
 - ✅ 测试：余额一致性、并发扣款、越权防护、持有上限
 
-### 5.2 老婆稀有度 + 抽卡
+### 5.2 老婆稀有度 + 抽卡 ✅
 
-- [ ] `services/rarity_service.py`：
-  - `roll_rarity()`：根据 `rarity_weights` 加权随机
-  - `pick_wife_by_rarity(rarity)`：从 `wives_master` 过滤候选
-  - 首次抽到新角色时自动写入 `wives_master`（解析 img → source/chara，按 hash 派生稀有度）
-- [ ] 保底机制：`pity_counter`，连续 N 次未达 `pity_min_rarity` 时强制保底
-- [ ] 抽卡展示：稀有度边框色、emoji（✨ SSR / 🌟 SR / ⭐ R / · N）
-- [ ] 抽到已收集的角色 → 自动转换为"重复"，给予老婆币补偿
-- [ ] 测试：概率分布（蒙特卡洛 10000 次）、保底触发、稀有度筛选、重复处理
+- ✅ `services/rarity_service.py`：
+  - ✅ `roll_rarity()`：根据 `rarity_weights` 加权随机
+  - ✅ `pick_wife_by_rarity(rarity)`：从 `wives_master` 过滤候选
+  - ✅ 首次抽到新角色时自动写入 `wives_master`（解析 img → source/chara，按 hash 派生稀有度）
+- ✅ 保底机制：`pity_counter`，连续 N 次未达 `pity_min_rarity` 时强制保底
+- ✅ 抽卡展示：稀有度边框色、emoji（✨ SSR / 🌟 SR / ⭐ R / · N）
+- ✅ 抽到已收集的角色 → 自动转换为"重复"，给予老婆币补偿
+- ✅ 测试：概率分布（蒙特卡洛 10000 次）、保底触发、稀有度筛选、重复处理
 
 ### 5.3 求婚/锁定系统
 
