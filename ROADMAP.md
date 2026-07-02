@@ -9,7 +9,7 @@
 
 | # | 决策项 | 选择 | 影响 |
 |---|---|---|---|
-| Q1 | 老婆持有上限 | 默认值 + 经济扩容 + 用户可配置上限 | 默认 3，道具扩容到 `max_capacity` 上限 |
+| Q1 | 老婆持有上限 | 硬上限 999 | 无相对上限，MAX_WIVES_PER_USER=999 |
 | Q2 | 老婆唯一性 | 群内全局唯一 | NTR = 所有权转移，保住稀缺性 |
 | Q3 | 经济系统 | 完整经济（币 + 商城 + 任务 + 道具） | Phase 3 重点 |
 | Q4 | 存储格式 | JSON + 群锁 + 原子写 | 沿用现有并发模型 |
@@ -60,7 +60,7 @@ astrbot_plugin_animewifexI/
 │   │   ├── leaderboard_service.py # 榜单聚合
 │   │   ├── cooldown_service.py    # 通用冷却
 │   │   ├── rarity_service.py      # 稀有度抽卡
-│   │   ├── marry_service.py       # 求婚/锁定
+│   │   ├── marry_service.py       # 锁定
 │   │   ├── shop_service.py        # 商城
 │   │   └── quest_service.py       # 每日任务
 │   ├── storage/
@@ -152,7 +152,6 @@ astrbot_plugin_animewifexI/
     "uid": "12345",
     "nick": "张三",
     "coins": 100,
-    "capacity": 3,
     "streak_days": 7,
     "last_draw_date": "2026-07-03",
     "last_checkin_date": "2026-07-03",
@@ -214,14 +213,16 @@ astrbot_plugin_animewifexI/
 老婆 送礼 <编号>               # 大幅加亲密度（高消耗）
 老婆 复仇 @x                   # 24h 内对牛过自己的人复仇
 老婆 PK @x                     # 老婆对决
-老婆 求婚 <编号>               # 锁定一只老婆
-老婆 锁 <编号> / 老婆 解锁 <编号>
+老婆 锁定 <编号> / 老婆 解锁 <编号>
 老婆 排行 [日|周|总] [牛|被牛|PK|收集]
 老婆 图鉴 [作品名]
 老婆 面板                      # 个人综合面板
 老婆 签到                      # 每日签到领币
 老婆 商城 / 老婆 购买 <道具> / 老婆 背包
 老婆 任务                      # 查看每日任务
+老婆 十连                      # 十连抽卡（消耗十连券）
+查老婆 [@用户] [页码]           # 查看老婆列表（分页，每页10个）
+牛老婆 [@用户] [编号]           # 牛老婆（指定编号或随机）
 ```
 
 ### 2.4 配置 schema 完整清单（_conf_schema.json 新增）
@@ -232,10 +233,6 @@ admins: list                   # 管理员用户 ID 列表
 need_prefix: bool              # 启用触发前缀
 image_base_url: string         # 图片服务器基础 URL
 image_list_url: string         # 图片列表 URL
-
-# ========== 持有上限 ==========
-default_capacity: int = 3      # 新用户初始持有上限
-max_capacity: int = 10         # 道具扩容绝对上限
 
 # ========== 冷却（秒） ==========
 ntr_cooldown: int = 60
@@ -259,7 +256,6 @@ reset_mute_duration: int = 300
 # ========== 亲密度 ==========
 intimacy_per_day: int = 10
 intimacy_max: int = 100
-intimacy_marry_threshold: int = 60
 intimacy_pet_coin_cost: int = 5
 intimacy_pet_gain: int = 3
 intimacy_gift_coin_cost: int = 30
@@ -284,17 +280,16 @@ daily_checkin_coins: int = 20
 reroll_cost: int = 30          # 换老婆消耗（可被 reroll_ticket 抵扣）
 pk_winner_reward: int = 15
 quest_complete_coins: int = 10
+daily_free_draws: int = 1      # 每日免费抽卡次数（0=无限制）
 
 # ========== 商城价格 ==========
 shop_prices:
   reroll_ticket: 30
-  capacity_expansion: 100      # 扩容 +1
   lock_item: 50
   revive_potion: 80
-  protection_charm: 60         # 24h 免疫一次 NTR
-
-# ========== 求婚 ==========
-marry_coin_cost: int = 100
+  protection_charm: 60
+  draw_ticket_single: 30
+  draw_ticket_ten: 270
 ```
 
 ### 2.5 并发模型
@@ -344,7 +339,7 @@ marry_coin_cost: int = 100
 
 - [x] `services/wife_service.py`：抽老婆核心（移植 `_fetch_wife_image`，新增元数据生成入口）
 - [x] `services/ownership_service.py`：所有权 CRUD + 上限校验
-  - 校验 `len(user_owns) < profile.capacity` 或 `max_capacity`
+  - 校验 `len(user_owns) < MAX_WIVES_PER_USER`（硬上限 999）
 - [x] `services/cooldown_service.py`：内存冷却表
 - [x] 其他 service 占位文件 + 接口签名（不实现）：intimacy / economy / pk / leaderboard / ntr / rarity / marry / shop / quest
 - [x] **新增 `services/plugin_config.py`**：40+ 配置字段 dataclass 容器，`from_dict` + `default_for_test()`
@@ -475,7 +470,7 @@ marry_coin_cost: int = 100
 
 ---
 
-## 五、Phase 3：扩展玩法（3-4 周）
+## 五、Phase 3：扩展玩法（3-4 周） — ✅ 已完成（2026-07-03）
 
 ### 5.1 经济系统（最先做，因 Q1 依赖扩容） ✅
 
@@ -488,7 +483,7 @@ marry_coin_cost: int = 100
   - ✅ 每日任务模板：抽老婆 1 次 / 参与 PK 1 次 / 被牛 0 次 / 牛成功 1 次
   - ✅ 完成自动发币，写入 `quest_completed_date`
 - ✅ 商城 `services/shop_service.py`：
-  - ✅ 道具清单：`reroll_ticket` / `capacity_expansion` / `lock_item` / `revive_potion` / `protection_charm` / `draw_ticket_single` / `draw_ticket_ten`
+  - ✅ 道具清单：`reroll_ticket` / `lock_item` / `revive_potion` / `protection_charm` / `draw_ticket_single` / `draw_ticket_ten`
   - ✅ `老婆 商城` 列表，`老婆 购买 <道具>` 交易
 - ✅ 背包：`profile.inventory` dict
 - ✅ 抽卡券系统：
@@ -521,11 +516,12 @@ marry_coin_cost: int = 100
 - ✅ `services/marry_service.py`：
   - ✅ `lock(gid, uid, wid)`：消耗 `lock_item`，限期锁定 7 天
   - ✅ `unlock(gid, uid, wid)`：主动解锁
-  - ✅ `is_locked(ownership)`：检查是否锁定（含过期自动解锁）
-- ✅ NTR 前置校验：目标老婆 `is_locked` 时直接失败（友好提示）
+  - ✅ `is_locked(ownership)`：检查是否锁定
+  - ✅ `clear_expired_lock(ownership)`：清除过期锁
+- ✅ NTR 前置校验：目标老婆 `is_locked` 时直接失败
 - ✅ 命令：`老婆 锁定 <编号>` / `老婆 解锁 <编号>`
 - ✅ 测试：锁定 NTR 失败、过期自动解锁
-- ⬜ 复活药水 / 保护符 — 待实现（Phase 3 后续）
+- ⬜ 复活药水 / 保护符 — 待实现
 
 ### 5.4 老婆 PK ✅
 
@@ -562,7 +558,7 @@ marry_coin_cost: int = 100
 
 - ✅ 经济闭环（产出/消耗比合理，1 周观察期无通胀）
 - ✅ 抽卡概率符合配置（蒙特卡洛测试报告）
-- ✅ 求婚/PK/锁定链路完整
+- ✅ 锁定/PK 链路完整
 - ✅ 个人面板信息齐全
 - ✅ 性能基准：10000 用户跨群榜聚合 < 500ms
 - ✅ git tag: `v3.0.0`
@@ -626,7 +622,7 @@ marry_coin_cost: int = 100
 |---|---|---|---|---|
 | Phase 1 | 2-3 周 | ✅ 已完成（2026-07-03） | 模块化 + 归档 + 双轨命令 | `v3.0.0-phase1` |
 | Phase 2 | 2 周 | ✅ 已完成（2026-07-03） | 冷却 + 榜单 + 亲密度 + 复仇 | `v3.0.0-phase2` |
-| Phase 3 | 3-4 周 | ⏳ 待开工 | 经济 + 稀有度 + 求婚 + PK + 图鉴 | `v3.0.0` |
+| Phase 3 | 3-4 周 | ✅ 已完成（2026-07-03） | 经济 + 稀有度 + 锁定 + PK + 图鉴 + 面板 | `v3.0.0-phase3-gacha` |
 
 ---
 
