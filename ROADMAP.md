@@ -305,82 +305,86 @@ marry_coin_cost: int = 100
 
 ---
 
-## 三、Phase 1：地基重构（2-3 周）
+## 三、Phase 1：地基重构（2-3 周） — ✅ 已完成（2026-07-03 QA 验收通过）
 
 ### 3.1 任务清单
 
 #### P1.1 模块骨架（独立可交付）
 
-- [ ] 创建 `app/` 完整目录树 + 所有 `__init__.py`
-- [ ] `storage/paths.py`：定义所有文件路径常量（基于 `StarTools.get_data_dir`）
-- [ ] `storage/json_store.py`：移植 `load_json` / `save_json` / `sanitize_group_records`，新增 typed load（基于 dataclass）
-- [ ] `storage/locks.py`：移植 `get_group_lock`
-- [ ] `utils/time.py`：移植 `get_today` / `seconds_until_next_midnight` / 时区解析
-- [ ] `utils/image.py`：移植 `_parse_wife_name` / `_build_image_component` / URL 构建
+- [x] 创建 `app/` 完整目录树 + 所有 `__init__.py`
+- [x] `storage/paths.py`：定义所有文件路径常量（基于 `StarTools.get_data_dir`）
+- [x] `storage/json_store.py`：移植 `load_json` / `save_json` / `sanitize_group_records`，新增 typed load（基于 dataclass）
+- [x] `storage/locks.py`：移植 `get_group_lock`
+- [x] `utils/time.py`：移植 `get_today` / `seconds_until_next_midnight` / 时区解析
+- [x] `utils/image.py`：移植 `_parse_wife_name` / `_build_image_component` / URL 构建
 
 #### P1.2 数据模型层
 
-- [ ] `models/enums.py`：
+- [x] `models/enums.py`：
   - `AcquireVia`（draw / ntr / swap / gift / summon）
   - `Rarity`（N / R / SR / SSR）
   - `Action`（用于活动日志 key）
-- [ ] `models/wife.py`：`WifeMeta` dataclass
-- [ ] `models/ownership.py`：`Ownership` dataclass
-- [ ] `models/profile.py`：`UserProfile` dataclass
-- [ ] `models/activity.py`：`ActivityLog` dataclass
+- [x] `models/wife.py`：`WifeMeta` dataclass
+- [x] `models/ownership.py`：`Ownership` dataclass
+- [x] `models/profile.py`：`UserProfile` dataclass
+- [x] `models/activity.py`：`ActivityLog` dataclass
 
 #### P1.3 持久化层
 
-- [ ] `storage/stores.py`：每个实体一个 Store 类
+- [x] `storage/stores.py`：每个实体一个 Store 类
   - `WivesMasterStore`（全局，无群锁）
   - `OwnershipStore`：`add(gid, ownership)` / `remove(gid, wid)` / `list_by_user(gid, uid)` / `find_by_wife(gid, wid)` / `set_primary(gid, uid, wid)`
   - `ProfileStore`：`get_or_create(gid, uid, nick)` / `update(gid, uid, ...)`
   - `ActivityStore`：`log(gid, uid, action, delta)` / `prune_old(gid, days)`
   - `SwapStore` / `NtrStatusStore`：复用现有逻辑
-- [ ] 所有 Store 方法走群锁 + 原子写
+  - **新增 `DailyCountStore`**：NTR/换/交换/重置每日次数（独立于 ActivityStore）
+- [x] 所有 Store 方法走群锁 + 原子写
 
 #### P1.4 业务服务层骨架
 
-- [ ] `services/wife_service.py`：抽老婆核心（移植 `_fetch_wife_image`，新增元数据生成入口）
-- [ ] `services/ownership_service.py`：所有权 CRUD + 上限校验
+- [x] `services/wife_service.py`：抽老婆核心（移植 `_fetch_wife_image`，新增元数据生成入口）
+- [x] `services/ownership_service.py`：所有权 CRUD + 上限校验
   - 校验 `len(user_owns) < profile.capacity` 或 `max_capacity`
-- [ ] `services/cooldown_service.py`：内存冷却表
-- [ ] 其他 service 占位文件 + 接口签名（不实现）
+- [x] `services/cooldown_service.py`：内存冷却表
+- [x] 其他 service 占位文件 + 接口签名（不实现）：intimacy / economy / pk / leaderboard / ntr / rarity / marry / shop / quest
+- [x] **新增 `services/plugin_config.py`**：40+ 配置字段 dataclass 容器，`from_dict` + `default_for_test()`
 
 #### P1.5 旧数据归档（Q6 = 清空重来）
 
-- [ ] `storage/migrations.py`：
+- [x] `storage/migrations.py`：
   - 启动时检测 `data/records.json`、`data/{gid}.json`、`data/swap_requests.json`、`data/ntr_status.json`
   - 存在则整体移动到 `data/archive_v1/<timestamp>/`
   - 写入 `archive_v1/MIGRATED.md` 记录归档时间与文件清单
-- [ ] 不做语义转换（按 Q6 决策）
-- [ ] README 顶部加大字号变更公告 + 老婆币补偿说明（首次启动给老用户 `initial_coins`）
+- [x] 不做语义转换（按 Q6 决策）
+- [x] README 顶部加大字号变更公告 + 老婆币补偿说明（首次启动给老用户 `initial_coins`）
 
 #### P1.6 命令路由重写
 
-- [ ] `commands/registry.py`：
+- [x] `commands/registry.py`：
   - 维护两张映射表：`LEGACY_COMMANDS` + `GROUPED_COMMANDS`
   - 提供统一 `dispatch(event)` 入口
   - 解析 @target / 编号参数 / 子命令
   - 按命令名长度降序匹配（避免短命令截胡长命令）
-- [ ] `app/plugin.py`：`on_all_messages` 简化为调 `registry.dispatch`
-- [ ] 所有旧命令基于新数据模型重新实现
+- [x] `main.py` 的 `WifePlugin.on_all_messages` 调用 `registry.parse` + handler
+- [x] 所有旧命令基于新数据模型重新实现（12 个扁平命令 + 占位分组命令）
 
 #### P1.7 配置 schema 扩展
 
-- [ ] `_conf_schema.json` 按上述完整清单更新
-- [ ] `app/plugin.py` 加载所有配置项 + 默认值兜底（避免老配置文件升级失败）
+- [x] `_conf_schema.json` 按完整清单更新（40+ 项）
+- [x] `app/plugin.py` 加载所有配置项 + 默认值兜底（避免老配置文件升级失败）
+- [x] **object 类型用 `items` 嵌套 schema**（AstrBot 解析要求，顶层 `default` 不识别）
 
 #### P1.8 main.py 精简
 
-- [ ] 仅保留：插件注册、config 注入、生命周期（`_daily_cleanup_loop` 启动）
-- [ ] 所有业务委托给 `app/plugin.py`
+- [x] ~~仅保留：插件注册、config 注入、生命周期~~ **改为：含 WifePlugin 类定义与 @filter 装饰方法**
+- [x] 业务装配委托给 `app/plugin.py` 的 `WifePluginCore` 基类
+- [x] **关键教训**：@filter 装饰的方法必须在 main.py 里，否则 reload 时 app.plugin 模块缓存导致装饰器不重跑（详见 §10.3）
 
 ### 3.2 Phase 1 验收标准
 
-- ✅ 清空数据后，旧 12 个扁平命令全部能跑通抽/查/牛/换/交换/重置/开关
+- ✅ 清空数据后，旧 12 个扁平命令全部能跑通抽/查/牛/换/交换/重置/开关（**AstrBot 实例 QA 通过**）
 - ✅ 新数据结构完整生效（多老婆持有已就绪，UI 暂未完全暴露）
-- ✅ 单元测试覆盖：storage 层、registry 解析、归档逻辑
+- ✅ 单元测试覆盖：139 用例全绿（storage / models / utils / ownership_service / migrations / commands_registry / plugin 装配）
 - ✅ README + CHANGELOG 同步更新
 - ✅ git tag: `v3.0.0-phase1`
 
@@ -593,12 +597,11 @@ marry_coin_cost: int = 100
 
 ## 八、时间表
 
-| 阶段 | 预估 | 关键交付 | Tag |
-|---|---|---|---|
-| Phase 1 | 2-3 周 | 模块化 + 归档 + 双轨命令 | `v3.0.0-phase1` |
-| Phase 2 | 2 周 | 冷却 + 榜单 + 亲密度 + 复仇 | `v3.0.0-phase2` |
-| Phase 3 | 3-4 周 | 经济 + 稀有度 + 求婚 + PK + 图鉴 | `v3.0.0` |
-| **总计** | **7-9 周** | **完整新版本** | |
+| 阶段 | 预估 | 实际 | 关键交付 | Tag |
+|---|---|---|---|---|
+| Phase 1 | 2-3 周 | ✅ 已完成（2026-07-03） | 模块化 + 归档 + 双轨命令 | `v3.0.0-phase1` |
+| Phase 2 | 2 周 | ⏳ 待开工 | 冷却 + 榜单 + 亲密度 + 复仇 | `v3.0.0-phase2` |
+| Phase 3 | 3-4 周 | ⏳ 待开工 | 经济 + 稀有度 + 求婚 + PK + 图鉴 | `v3.0.0` |
 
 ---
 
@@ -615,3 +618,68 @@ marry_coin_cost: int = 100
    - 原子写 + 群锁并发模型
    - `logger.error` / `logger.exception` 记录异常
    - 错误兜底优先于抛异常（参考现有 `load_json`）
+
+---
+
+## 十、Phase 1 实施记录（2026-07-03）
+
+### 10.1 与原计划的偏差
+
+| 项 | 原计划 | 实际 | 原因 |
+|---|---|---|---|
+| main.py 职责 | 仅插件注册，业务全在 `app/plugin.py` | `WifePlugin` 类 + `@filter` 方法必须在 main.py | AstrBot reload 时 `app.plugin` 已缓存于 `sys.modules` 不重跑，装饰器不重新注册 handler |
+| `app/plugin.py` | WifePlugin 主类 | 改为 `WifePluginCore` 基类（无装饰器，便于单测），main.py 子类化 | 同上 |
+| 命令文件 | draw/view/ntr/swap/shop/pk/marry/leaderboard/collection/profile/quest/admin | 实际拆为 draw/view/ntr/change/swap/admin + grouped_stubs（Phase 2/3 占位） | 换老婆逻辑独立成 change.py；Phase 2/3 子命令统一占位 |
+| Store 数量 | 6 个（WivesMaster/Ownership/Profile/Activity/Swap/NtrStatus） | 7 个，新增 `DailyCountStore` | ActivityStore 是滚动 N 天榜单数据源；每日次数限制（NTR/换/交换/重置）需要独立的今日计数，语义不同 |
+| 配置容器 | 直接读 dict | `services/plugin_config.py` dataclass + `from_dict` + `default_for_test()` | 类型安全 + 测试便利 |
+| 测试文件 | 7 个（按玩法分：ntr/leaderboard/economy/intimacy/pk/storage/registry） | 7 个（按层分：storage/models/utils/ownership_service/migrations/commands_registry/plugin） | Phase 1 只到地基层，玩法测试归 Phase 2/3 |
+| `_conf_schema.json` object 配置 | `{"type": "object", "default": {...}}` | `{"type": "object", "items": {子项 schema}}` | AstrBot `_parse_schema` 对 object 类型要求 `items` 嵌套，顶层 `default` 不识别（KeyError: 'items'） |
+
+### 10.2 QA 阶段发现并修复的 bug
+
+按发现顺序记录，后续 Phase 可参考：
+
+1. **`ModuleNotFoundError: No module named 'app'`**
+   - AstrBot 加载插件时不把插件目录加入 `sys.path`，`from app.xxx` 失败
+   - 修复：早期 main.py 加 `sys.path.insert(0, _PLUGIN_DIR)`，后改用相对导入 `from .app.plugin` 解决
+
+2. **`KeyError: 'items'` 加载崩溃**
+   - `_conf_schema.json` 的 `rarity_weights` / `shop_prices` 用顶层 `default` 写 object，AstrBot 不识别
+   - 修复：改成 `items` 嵌套 schema，每个子项独立 `type` + `default`
+
+3. **插件导入但完全不响应消息**
+   - 现象：日志只有 `Loading plugin ...` 没有 `Plugin xxx (vX) by xxx: ...` 那行
+   - 根因：`WifePlugin` 定义在 `app/plugin.py`，`cls.__module__ = "app.plugin"`；AstrBot `star_manager.py:976` 用 `cls.__module__` 匹配 `star_map`，期望值是 `data.plugins.astrbot_plugin_animewifexI.main`，不匹配 → 实例化/handler 绑定整个流程被跳过
+   - 中间方案：main.py 导入后改写 `star_map` 与 `star_handlers_registry` 的键（commit `c3db7e8`）
+   - 最终方案：把 WifePlugin 类与 `@filter` 方法搬到 main.py（commit `94af947`），彻底消除 `__module__` 不一致
+
+4. **reload 1 次后插件失效**
+   - 现象：第一次 Reload 后所有命令变 LLM 对话
+   - 根因：`app.plugin` 第一次 import 后缓存在 `sys.modules`，reload 时 main.py 重跑但 `from app.plugin import WifePlugin` 不重新执行 `app/plugin.py` → 装饰器不重跑 → handler 不重新注册 → 中间方案的 star_map 改写也无效（pop 返回 None）
+   - 修复： WifePlugin 类定义与 `@filter` 方法必须在 main.py 里（每次 reload 都重跑装饰器）
+
+5. **wake prefix `/` 不被识别**
+   - 现象：`/老婆帮助` 走 LLM；`老婆帮助` 被 group_chat_plus 截胡
+   - 修复：main.py 加 `_strip_wake_prefix` 去掉前导 `/ ! \ .` 及全角变体；命中后 `event.stop_event()` 拦截 LLM
+
+6. **抽老婆连发不提示"今天已抽"**
+   - `draw_or_get_primary` 返回 `is_new=False` 时命令层忽略
+   - 修复：`draw.py` 检查 `result.is_new`，False 时提示 "今天已经抽过老婆了哦~"
+
+7. **查老婆 @B（B 无老婆）文案错误**
+   - 显示 "没有发现老婆的踪迹，快去抽一个试试吧~"（自查文案）
+   - 修复：`view.py` 区分自查 vs 查他人，他人无老婆时显示 "{nick}今天还没有老婆哦~"
+
+### 10.3 给 Phase 2/3 的教训
+
+1. **任何带 `@filter` 装饰的方法必须在 main.py** — 不只是 plugin 入口，所有 hook（`@filter.command` / `@filter.on_llm_request` 等）都一样。其他 service / store / 模块的业务逻辑可以放 app/，但装饰器必须在 main.py 才能正确注册 + reload。
+
+2. **`_conf_schema.json` 的 object 类型必须用 `items` 嵌套** — 不能用顶层 `default`，AstrBot 的 `_parse_schema` 会 KeyError。新增 object 配置时参考 `rarity_weights` / `shop_prices` 写法。
+
+3. **AstrBot reload 行为**：main.py 全量重执行，但其他被 import 的模块走 Python 缓存。任何依赖"导入时副作用"（装饰器注册、全局表初始化）的逻辑必须放在 main.py，不能放在被 import 的子模块。
+
+4. **群聊消息可能被其他插件（如 group_chat_plus）的概率筛选截胡** — 命令触发建议用 `/` 前缀或 `@机器人`，并把 `need_prefix` 配置项暴露给用户。
+
+5. **测试覆盖应该按"层"而非按"玩法"** — Phase 1 测试 storage/models/utils/service 层，Phase 2 在此基础上加 ntr/leaderboard/intimacy 玩法测试。避免在 Phase 1 写 Phase 3 的测试文件。
+
+6. **fork 项目要同步更新所有身份信息** — metadata.yaml 的 `name`/`author`/`repo`/`version`、README 的标题和计数器、代码中的 `StarTools.get_data_dir("xxx")` 字符串、logger 名字。任何遗漏都会让 fork 在 AstrBot UI 或数据目录上显示出上游身份。
