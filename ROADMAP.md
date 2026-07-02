@@ -477,22 +477,22 @@ marry_coin_cost: int = 100
 
 ## 五、Phase 3：扩展玩法（3-4 周）
 
-### 5.1 经济系统（最先做，因 Q1 依赖扩容）
+### 5.1 经济系统（最先做，因 Q1 依赖扩容） ✅
 
-- [ ] `services/economy_service.py`：
-  - `balance(gid, uid) -> int`
-  - `earn(gid, uid, amount, reason)` / `spend(gid, uid, amount) -> bool`
-  - 所有扣款走 spend，余额不足返回 False 由调用方决定提示
-- [ ] 每日签到 `老婆 签到`：发放 `daily_checkin_coins`，写入 `last_checkin_date` 防重领
-- [ ] 任务系统 `services/quest_service.py`：
-  - 每日任务模板：抽老婆 1 次 / 参与 PK 1 次 / 被牛 0 次 / 牛成功 1 次
-  - 完成自动发币，写入 `quest_completed_date`
-- [ ] 商城 `services/shop_service.py`：
-  - 道具清单：`reroll_ticket` / `capacity_expansion` / `lock_item` / `revive_potion` / `protection_charm`
-  - `老婆 商城` 列表，`老婆 购买 <道具>` 交易
-- [ ] 背包：`profile.inventory` dict
-- [ ] 换老婆消耗 `reroll_cost` 币（有 `reroll_ticket` 时抵扣）
-- [ ] 测试：余额一致性、并发扣款、越权防护、通胀监控（产出/消耗统计）
+- ✅ `services/economy_service.py`：
+  - ✅ `balance(gid, uid) -> int`
+  - ✅ `earn(gid, uid, amount, reason)` / `spend(gid, uid, amount) -> bool`
+  - ✅ 所有扣款走 spend，余额不足返回 False 由调用方决定提示
+- ✅ 每日签到 `老婆 签到`：发放 `daily_checkin_coins`，写入 `last_checkin_date` 防重领
+- ✅ 任务系统 `services/quest_service.py`：
+  - ✅ 每日任务模板：抽老婆 1 次 / 参与 PK 1 次 / 被牛 0 次 / 牛成功 1 次
+  - ✅ 完成自动发币，写入 `quest_completed_date`
+- ✅ 商城 `services/shop_service.py`：
+  - ✅ 道具清单：`reroll_ticket` / `capacity_expansion` / `lock_item` / `revive_potion` / `protection_charm`
+  - ✅ `老婆 商城` 列表，`老婆 购买 <道具>` 交易
+- ✅ 背包：`profile.inventory` dict
+- ⬜ 换老婆消耗 `reroll_cost` 币（有 `reroll_ticket` 时抵扣）— 待接入
+- ✅ 测试：余额一致性、并发扣款、越权防护、持有上限
 
 ### 5.2 老婆稀有度 + 抽卡
 
