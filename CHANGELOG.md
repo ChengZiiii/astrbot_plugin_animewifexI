@@ -1,5 +1,77 @@
 # 更新日志
 
+## v3.0.0-phase1
+
+**Phase 1 重构完成（参考 [ROADMAP.md](ROADMAP.md) §三）**
+
+### 不兼容变更（升级前必读）
+
+- **数据布局整体迁移**：`config/` 下的 v2.x 数据（`records.json`、`{gid}.json`、
+  `swap_requests.json`、`ntr_status.json`）启动时**整体归档**到 `data/archive_v1/<时间戳>/`，
+  并写入 `MIGRATED.md` 清单，**不做语义迁移**（Q6 = 清空重来决策）。
+- **新数据结构**：每群独立目录 `data/groups/{gid}/`，包含
+  `ownership.json` / `profiles.json` / `activity.json` / `swap_requests.json` /
+  `daily_counts.json`；全局老婆元数据在 `data/wives_master.json`。
+- 老用户首次启动后按新结构空数据起步；可通过 `initial_coins`（默认 50）发放老婆币补偿。
+
+### 新增
+
+- **模块化分层架构**（`app/` 目录）：
+  - `models/`：dataclass 形式的实体（`WifeMeta` / `Ownership` / `UserProfile` / `ActivityLog`）
+    + 枚举（`AcquireVia` / `Rarity` / `Action`）
+  - `storage/`：`Paths` 路径常量、`json_store` 原子读写、`GroupLocks` 群锁、
+    6 个 Store 类（`WivesMaster` / `Ownership` / `Profile` / `Activity` / `SwapRequest` /
+    `NtrStatus` / `DailyCount`）、`migrations` 旧数据归档
+  - `services/`：`PluginConfig` 配置容器、`WifeService` 图片获取、
+    `OwnershipService` 业务编排（抽/牛/换/交换/重置完整流程）、
+    `CooldownService` 内存冷却表 + Phase 2/3 占位（`IntimacyService` 等）
+  - `commands/`：`CommandRegistry` 双轨注册表 + 12 个旧命令处理器 + Phase 2/3 占位
+  - `api/`：`events` AstrMessageEvent 解析 + `messaging` 消息链构建
+  - `utils/`：`time` / `image` / `random_utils` / `format` 纯函数
+- **配置 schema 扩展**至 40+ 项（`_conf_schema.json`），全部带默认值与 Phase 归属 hint：
+  - 持有上限（`default_capacity` / `max_capacity`）
+  - 冷却（NTR/抽/交换/PK 各自秒数）
+  - NTR（窗口/复仇倍率）
+  - 亲密度（每日增长/上限/阈值/摸头/送礼）
+  - 榜单（窗口天数 / TOP N）
+  - 稀有度（权重 / 保底）
+  - 经济（初始币 / 签到 / 换老婆消耗 / PK 奖励 / 任务奖励）
+  - 商城（5 种道具价格）
+  - 求婚（消耗币）
+- **本地测试工具集**：139 个 pytest 用例（不依赖 AstrBot 框架），覆盖
+  storage / models / utils / ownership_service / migrations / registry / plugin 装配。
+  命令 `PYTHONPATH=. python -m pytest` 可在源码目录直接跑通。
+- **wid 稳定哈希**：老婆全局 ID 由 `sha1(img)[:8]` 派生，跨运行稳定。
+- **零点清理扩展**：原 v2.x 仅清理 `swap_requests`/`records`；v3.x 同时清理
+  `daily_counts.json` 与 `swap_requests.json` 的跨天记录。
+
+### 优化
+
+- `main.py` 精简为 5 行（仅插件入口），所有业务委托给 `app/plugin.py`
+- 纯逻辑层（`utils` / `storage` / `models` / 大部分 `services`）零 astrbot 依赖，
+  便于本地单测
+- 业务方法返回 dataclass 结果（`DrawResult` / `NtrResult` / `ChangeResult` / `SwapResult`），
+  命令层只做格式化
+- 每日次数计数（NTR/换/交换/重置）由 `OwnershipService` 在群锁内统一管理，
+  命令层不再自行维护 records 字典
+- NTR/换/交换/抽的所有权变动后，自动取消相关的今日交换请求并返还次数（保留 v2.x 行为）
+
+### 修复
+
+- 修复 `OwnershipStore.remove_by_wid` 不就地修改的潜在 bug（原返回新列表，
+  调用方仍在原引用操作，导致 NTR 成功后旧 ownership 残留——被 `set_primary` 降级
+  但未删除，Phase 3 多老婆功能会受污染）
+
+### Phase 1 验收
+
+- ✅ 清空数据后，旧 12 个扁平命令全部能跑通抽/查/牛/换/交换/重置/开关
+- ✅ 新数据结构完整生效（多老婆持有已就绪，UI 暂未完全暴露）
+- ✅ 单元测试覆盖：storage 层、registry 解析、归档逻辑、service 业务流程
+- ✅ README + CHANGELOG 同步更新
+- ✅ git tag: `v3.0.0-phase1`
+
+---
+
 ## v2.0.1
 
 **修复**
