@@ -47,9 +47,18 @@ async def handle_draw(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
         prefix=f"{nick}，你今天的老婆是",
         suffix="，请好好珍惜哦~",
     )
+
+    # Phase 3: 稀有度展示
+    rarity_line = f"\n稀有度：{result.rarity_emoji} {result.rarity}"
+    if result.pity_triggered:
+        rarity_line += "（保底触发！）"
+    if result.is_duplicate:
+        rarity_line += f"\n重复获得！补偿 {result.duplicate_coins} 老婆币"
+
+    full_text = intro + rarity_line
     yield event.chain_result(
         build_text_image_chain(
-            intro,
+            full_text,
             result.img,
             ctx.paths.img_dir,
             ctx.config.normalized_image_base_url,

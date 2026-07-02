@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from typing import Optional
 
@@ -16,7 +17,14 @@ __all__ = [
     "build_image_url",
     "build_wife_intro_text",
     "is_path_within_dir",
+    "wife_wid_for_img",
 ]
+
+
+def wife_wid_for_img(img: str) -> str:
+    """根据图片标识生成稳定的 wid：``w_<sha1(img)[:8]>``"""
+    h = hashlib.sha1(img.encode("utf-8")).hexdigest()[:8]
+    return f"w_{h}"
 
 
 def parse_wife_name(img: str) -> "tuple[str, Optional[str]]":

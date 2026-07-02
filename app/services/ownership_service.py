@@ -39,6 +39,7 @@ from ..utils.image import parse_wife_name
 from ..utils.time import now_ts
 from .cooldown_service import CooldownService
 from .plugin_config import PluginConfig
+from .rarity_service import RarityService
 from .wife_service import WifeService
 
 __all__ = [
@@ -109,6 +110,12 @@ class DrawResult:
     is_new: bool = False            # 是否本次新抽（False 表示已有当日老婆）
     reason: str = ""                # 失败原因：'fetch_failed' 等
     profile: Optional[UserProfile] = None
+    # Phase 3: 稀有度
+    rarity: str = "N"
+    rarity_emoji: str = "·"
+    is_duplicate: bool = False
+    duplicate_coins: int = 0
+    pity_triggered: bool = False
 
 
 @dataclass
@@ -326,7 +333,11 @@ class OwnershipService:
                 profile_store.save_all(profiles)
                 return DrawResult(ok=False, reason="fetch_failed", profile=profile)
 
-            wid = self._ensure_wife_meta(img)
+            # Phase 3: 使用 RarityService 抽稀有度 + 处理保底/重复
+            rarity_svc = RarityService(self._paths, self._config)
+            draw_result = rarity_svc.draw(img, profile, profile.collection)
+
+            wid = draw_result.wife.wid
             new_o = Ownership(
                 wid=wid,
                 uid=uid,
@@ -336,10 +347,14 @@ class OwnershipService:
             )
             ownership_store.add(ownerships, new_o)
 
-            if wid not in profile.collection:
+            if draw_result.is_new and wid not in profile.collection:
                 profile.collection.append(wid)
             profile.last_draw_date = today
             profile.total_draws += 1
+
+            # 重复角色补偿
+            if draw_result.duplicate_coins > 0:
+                profile.coins += draw_result.duplicate_coins
 
             activity_logs = activity_store.load_all()
             ActivityStore.log(activity_logs, uid, today, Action.DRAW, 1)
@@ -352,7 +367,18 @@ class OwnershipService:
             if self._cooldown and self._config.draw_cooldown > 0:
                 self._cooldown.update(gid, uid, CooldownAction.DRAW)
 
-            return DrawResult(ok=True, img=img, wid=wid, is_new=True, profile=profile)
+            return DrawResult(
+                ok=True,
+                img=img,
+                wid=wid,
+                is_new=draw_result.is_new,
+                profile=profile,
+                rarity=draw_result.rarity,
+                rarity_emoji=draw_result.rarity_emoji,
+                is_duplicate=not draw_result.is_new,
+                duplicate_coins=draw_result.duplicate_coins,
+                pity_triggered=draw_result.pity_triggered,
+            )
 
     # ---------- 牛老婆 ----------
 
