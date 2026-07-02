@@ -12,6 +12,14 @@ Phase 2 注册：
 * ``老婆 复仇 @x`` — 复仇
 * ``老婆 摸头`` — 亲密度互动（摸头）
 * ``老婆 送礼`` — 亲密度互动（送礼）
+
+Phase 3 注册：
+
+* ``老婆 签到`` — 每日签到
+* ``老婆 任务`` — 每日任务
+* ``老婆 商城`` — 商城列表
+* ``老婆 购买 <道具>`` — 购买道具
+* ``老婆 背包`` — 查看背包
 """
 
 from __future__ import annotations
@@ -20,6 +28,13 @@ from .admin import handle_help, handle_reset_change, handle_reset_ntr, handle_sw
 from .change import handle_change
 from .context import CommandContext
 from .draw import handle_draw
+from .economy import (
+    handle_backpack,
+    handle_buy,
+    handle_checkin,
+    handle_quest,
+    handle_shop,
+)
 from .grouped_stubs import (
     NOT_IMPLEMENTED_SUBCOMMANDS,
     make_not_implemented_handler,
@@ -41,7 +56,7 @@ __all__ = ["build_registry"]
 
 
 def build_registry() -> CommandRegistry:
-    """构造 Phase 2 完整命令注册表"""
+    """构造 Phase 3 完整命令注册表"""
     registry = CommandRegistry()
 
     # ---------- 旧扁平命令 ----------
@@ -67,6 +82,13 @@ def build_registry() -> CommandRegistry:
     registry.register_grouped("复仇", handle_revenge)
     registry.register_grouped("摸头", handle_pet)
     registry.register_grouped("送礼", handle_gift)
+
+    # ---------- Phase 3 分组命令 ----------
+    registry.register_grouped("签到", handle_checkin)
+    registry.register_grouped("任务", handle_quest)
+    registry.register_grouped("商城", handle_shop)
+    registry.register_grouped("购买", handle_buy)
+    registry.register_grouped("背包", handle_backpack)
 
     # ---------- Phase 2/3 剩余占位子命令 ----------
     for sub in NOT_IMPLEMENTED_SUBCOMMANDS:
