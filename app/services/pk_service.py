@@ -16,6 +16,7 @@ from ..models.enums import Action, AcquireVia
 from ..models.ownership import Ownership
 from ..models.profile import UserProfile
 from ..models.wife import WifeMeta
+from ..storage.locks import GroupLocks
 from ..storage.paths import Paths
 from ..storage.stores import (
     ActivityStore,
@@ -51,17 +52,18 @@ class PkResult:
 class PkService:
     """PK 战斗服务。"""
 
-    def __init__(self, paths: Paths, config: PluginConfig, cooldown: Optional[CooldownService] = None):
+    def __init__(self, paths: Paths, config: PluginConfig, locks: GroupLocks | None = None, cooldown: Optional[CooldownService] = None):
         self._paths = paths
         self._config = config
+        self._locks = locks
         self._cooldown = cooldown
         self._rng = random.Random()
-        self._economy = EconomyService(paths, config)
+        self._economy = EconomyService(paths, config, locks)
 
     def set_rng(self, rng: random.Random) -> None:
         self._rng = rng
 
-    def pk(
+    async def pk(
         self,
         gid: str,
         attacker_uid: str,
@@ -77,6 +79,20 @@ class PkService:
                 remaining = self._cooldown.remaining(gid, attacker_uid, "pk", self._config.pk_cooldown)
                 return PkResult(ok=False, reason="cooldown", msg=f"PK 冷却中，还需等待 {remaining} 秒~")
 
+        if self._locks:
+            async with self._locks.acquire(gid):
+                return self._pk_inner(gid, attacker_uid, defender_uid, attacker_nick, defender_nick, today)
+        return self._pk_inner(gid, attacker_uid, defender_uid, attacker_nick, defender_nick, today)
+
+    def _pk_inner(
+        self,
+        gid: str,
+        attacker_uid: str,
+        defender_uid: str,
+        attacker_nick: str,
+        defender_nick: str,
+        today: str,
+    ) -> PkResult:
         # 检查每日次数
         daily_store = DailyCountStore(self._paths, gid)
         daily_data = daily_store.load_all()
@@ -116,25 +132,34 @@ class PkService:
         if atk_final > def_final:
             winner_uid = attacker_uid
             winner_nick = attacker_nick
+            loser_uid = defender_uid
         elif def_final > atk_final:
             winner_uid = defender_uid
             winner_nick = defender_nick
+            loser_uid = attacker_uid
         else:
             # 平局随机
             winner_uid = self._rng.choice([attacker_uid, defender_uid])
             winner_nick = attacker_nick if winner_uid == attacker_uid else defender_nick
+            loser_uid = defender_uid if winner_uid == attacker_uid else attacker_uid
 
-        # 发放奖励
+        # C2: 更新 PK 胜负统计 + 发放奖励
         reward = self._config.pk_winner_reward
-        self._economy.earn(gid, winner_uid, reward, winner_nick, "pk_win")
-
-        # 双方图鉴互通（胜方收集对方 wid）
         profile_store = ProfileStore(self._paths, gid)
         profiles = profile_store.load_all()
         winner_profile = ProfileStore.get_or_create(
             profiles, winner_uid, winner_nick,
             self._config.default_capacity, self._config.initial_coins
         )
+        loser_profile = ProfileStore.get_or_create(
+            profiles, loser_uid, defender_nick if loser_uid == defender_uid else attacker_nick,
+            self._config.default_capacity, self._config.initial_coins
+        )
+        winner_profile.total_pk_win = winner_profile.total_pk_win + 1
+        loser_profile.total_pk_lost = loser_profile.total_pk_lost + 1
+        winner_profile.coins += reward
+
+        # 双方图鉴互通（胜方收集对方 wid）
         loser_wid = def_primary.wid if winner_uid == attacker_uid else atk_primary.wid
         if loser_wid not in winner_profile.collection:
             winner_profile.collection.append(loser_wid)
@@ -175,3 +200,22 @@ class PkService:
         stats = wife.base_stats
         intimacy = ownership.intimacy if ownership else 0
         return stats.atk + stats.defense + stats.hp * 0.5 + intimacy * 2
+
+    # ---------- 同步别名（测试/无锁场景兼容） ----------
+
+    def pk_sync(
+        self,
+        gid: str,
+        attacker_uid: str,
+        defender_uid: str,
+        attacker_nick: str,
+        defender_nick: str,
+        today: str,
+    ) -> PkResult:
+        """同步版 pk（不经过锁）。"""
+        # 检查冷却
+        if self._cooldown and self._config.pk_cooldown > 0:
+            if not self._cooldown.check(gid, attacker_uid, "pk", self._config.pk_cooldown):
+                remaining = self._cooldown.remaining(gid, attacker_uid, "pk", self._config.pk_cooldown)
+                return PkResult(ok=False, reason="cooldown", msg=f"PK 冷却中，还需等待 {remaining} 秒~")
+        return self._pk_inner(gid, attacker_uid, defender_uid, attacker_nick, defender_nick, today)

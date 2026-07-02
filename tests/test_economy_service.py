@@ -42,7 +42,7 @@ class TestBalance:
 
     def test_balance_after_earn(self, economy):
         """earn 后余额正确。"""
-        economy.earn("g1", "u1", 100, nick="Alice")
+        economy.earn_sync("g1", "u1", 100, nick="Alice")
         assert economy.balance("g1", "u1") == 100
 
 
@@ -51,36 +51,36 @@ class TestEarn:
 
     def test_earn_positive_amount(self, economy):
         """正常发放。"""
-        balance = economy.earn("g1", "u1", 50, nick="Alice")
+        balance = economy.earn_sync("g1", "u1", 50, nick="Alice")
         assert balance == 50
 
     def test_earn_multiple_times(self, economy):
         """多次发放累加。"""
-        economy.earn("g1", "u1", 30, nick="Alice")
-        balance = economy.earn("g1", "u1", 20, nick="Alice")
+        economy.earn_sync("g1", "u1", 30, nick="Alice")
+        balance = economy.earn_sync("g1", "u1", 20, nick="Alice")
         assert balance == 50
 
     def test_earn_zero_amount_is_noop(self, economy):
         """发放 0 不改变余额。"""
-        economy.earn("g1", "u1", 50, nick="Alice")
-        balance = economy.earn("g1", "u1", 0, nick="Alice")
+        economy.earn_sync("g1", "u1", 50, nick="Alice")
+        balance = economy.earn_sync("g1", "u1", 0, nick="Alice")
         assert balance == 50
 
     def test_earn_negative_amount_is_noop(self, economy):
         """发放负数不改变余额。"""
-        economy.earn("g1", "u1", 50, nick="Alice")
-        balance = economy.earn("g1", "u1", -10, nick="Alice")
+        economy.earn_sync("g1", "u1", 50, nick="Alice")
+        balance = economy.earn_sync("g1", "u1", -10, nick="Alice")
         assert balance == 50
 
     def test_earn_creates_profile_if_needed(self, economy):
         """不存在的用户自动创建 profile。"""
-        economy.earn("g1", "u1", 10, nick="Alice")
+        economy.earn_sync("g1", "u1", 10, nick="Alice")
         assert economy.balance("g1", "u1") == 10
 
     def test_earn_returns_new_balance(self, economy):
         """返回发放后的余额。"""
-        assert economy.earn("g1", "u1", 30) == 30
-        assert economy.earn("g1", "u1", 20) == 50
+        assert economy.earn_sync("g1", "u1", 30) == 30
+        assert economy.earn_sync("g1", "u1", 20) == 50
 
 
 class TestSpend:
@@ -88,37 +88,37 @@ class TestSpend:
 
     def test_spend_success(self, economy):
         """余额充足时扣款成功。"""
-        economy.earn("g1", "u1", 100, nick="Alice")
-        assert economy.spend("g1", "u1", 30) is True
+        economy.earn_sync("g1", "u1", 100, nick="Alice")
+        assert economy.spend_sync("g1", "u1", 30) is True
         assert economy.balance("g1", "u1") == 70
 
     def test_spend_insufficient_balance(self, economy):
         """余额不足返回 False，不扣款。"""
-        economy.earn("g1", "u1", 20, nick="Alice")
-        assert economy.spend("g1", "u1", 30) is False
+        economy.earn_sync("g1", "u1", 20, nick="Alice")
+        assert economy.spend_sync("g1", "u1", 30) is False
         assert economy.balance("g1", "u1") == 20
 
     def test_spend_exact_balance(self, economy):
         """余额刚好够时扣款成功。"""
-        economy.earn("g1", "u1", 30, nick="Alice")
-        assert economy.spend("g1", "u1", 30) is True
+        economy.earn_sync("g1", "u1", 30, nick="Alice")
+        assert economy.spend_sync("g1", "u1", 30) is True
         assert economy.balance("g1", "u1") == 0
 
     def test_spend_zero_amount_is_noop(self, economy):
         """扣款 0 返回 True，不改变余额。"""
-        economy.earn("g1", "u1", 50, nick="Alice")
-        assert economy.spend("g1", "u1", 0) is True
+        economy.earn_sync("g1", "u1", 50, nick="Alice")
+        assert economy.spend_sync("g1", "u1", 0) is True
         assert economy.balance("g1", "u1") == 50
 
     def test_spend_negative_amount_is_noop(self, economy):
         """扣款负数返回 True，不改变余额。"""
-        economy.earn("g1", "u1", 50, nick="Alice")
-        assert economy.spend("g1", "u1", -10) is True
+        economy.earn_sync("g1", "u1", 50, nick="Alice")
+        assert economy.spend_sync("g1", "u1", -10) is True
         assert economy.balance("g1", "u1") == 50
 
     def test_spend_nonexistent_user(self, economy):
         """不存在的用户扣款失败。"""
-        assert economy.spend("g1", "u1", 10) is False
+        assert economy.spend_sync("g1", "u1", 10) is False
 
 
 class TestDailyCheckin:
@@ -126,22 +126,22 @@ class TestDailyCheckin:
 
     def test_checkin_first_time(self, economy):
         """首次签到成功，返回奖励金额。"""
-        reward = economy.daily_checkin("g1", "u1", nick="Alice")
+        reward = economy.daily_checkin_sync("g1", "u1", nick="Alice")
         assert reward == 20  # daily_checkin_coins 默认值
 
     def test_checkin_twice_same_day(self, economy):
         """同一天签到两次，第二次返回 None。"""
-        economy.daily_checkin("g1", "u1", nick="Alice")
-        assert economy.daily_checkin("g1", "u1", nick="Alice") is None
+        economy.daily_checkin_sync("g1", "u1", nick="Alice")
+        assert economy.daily_checkin_sync("g1", "u1", nick="Alice") is None
 
     def test_checkin_adds_coins(self, economy):
         """签到后余额增加。"""
-        economy.daily_checkin("g1", "u1", nick="Alice")
+        economy.daily_checkin_sync("g1", "u1", nick="Alice")
         assert economy.balance("g1", "u1") == 20
 
     def test_checkin_creates_profile(self, economy):
         """不存在的用户签到自动创建 profile。"""
-        economy.daily_checkin("g1", "u1", nick="Alice")
+        economy.daily_checkin_sync("g1", "u1", nick="Alice")
         assert economy.balance("g1", "u1") == 20
 
     def test_has_checked_in_false_initially(self, economy):
@@ -150,7 +150,7 @@ class TestDailyCheckin:
 
     def test_has_checked_in_true_after_checkin(self, economy):
         """签到后返回 True。"""
-        economy.daily_checkin("g1", "u1", nick="Alice")
+        economy.daily_checkin_sync("g1", "u1", nick="Alice")
         assert economy.has_checked_in("g1", "u1") is True
 
     def test_has_checked_in_nonexistent_user(self, economy):

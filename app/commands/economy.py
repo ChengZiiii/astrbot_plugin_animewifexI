@@ -32,8 +32,8 @@ async def handle_checkin(
     uid = str(event.get_sender_id())
     nick = get_sender_nick(event)
 
-    economy = EconomyService(ctx.paths, ctx.config)
-    reward = economy.daily_checkin(gid, uid, nick)
+    economy = EconomyService(ctx.paths, ctx.config, ctx.locks)
+    reward = await economy.daily_checkin(gid, uid, nick)
 
     if reward is None:
         yield event.plain_result("今天已经签到过了，明天再来吧~")
@@ -57,10 +57,10 @@ async def handle_quest(
     uid = str(event.get_sender_id())
     nick = get_sender_nick(event)
 
-    quest = QuestService(ctx.paths, ctx.config)
+    quest = QuestService(ctx.paths, ctx.config, ctx.locks)
 
     # 先尝试领取
-    reward = quest.check_and_complete(gid, uid, nick)
+    reward = await quest.check_and_complete(gid, uid, nick)
     if reward is not None:
         economy = EconomyService(ctx.paths, ctx.config)
         balance = economy.balance(gid, uid)
@@ -93,11 +93,11 @@ async def handle_shop(
     if not gid:
         return
 
-    shop = ShopService(ctx.paths, ctx.config)
+    shop = ShopService(ctx.paths, ctx.config, ctx.locks)
     items = shop.list_items()
 
     uid = str(event.get_sender_id())
-    economy = EconomyService(ctx.paths, ctx.config)
+    economy = EconomyService(ctx.paths, ctx.config, ctx.locks)
     balance = economy.balance(gid, uid)
 
     lines = [f"【商城】余额：{balance} 币\n"]
@@ -153,11 +153,11 @@ async def handle_buy(
         yield event.plain_result(f"道具「{item_name}」不存在，可用：老婆 商城")
         return
 
-    shop = ShopService(ctx.paths, ctx.config)
-    ok, msg_text = shop.buy(gid, uid, item_key, quantity, nick)
+    shop = ShopService(ctx.paths, ctx.config, ctx.locks)
+    ok, msg_text = await shop.buy(gid, uid, item_key, quantity, nick)
 
     if ok:
-        economy = EconomyService(ctx.paths, ctx.config)
+        economy = EconomyService(ctx.paths, ctx.config, ctx.locks)
         balance = economy.balance(gid, uid)
         yield event.plain_result(f"{msg_text}\n余额：{balance} 币")
     else:
@@ -173,7 +173,7 @@ async def handle_backpack(
         return
 
     uid = str(event.get_sender_id())
-    shop = ShopService(ctx.paths, ctx.config)
+    shop = ShopService(ctx.paths, ctx.config, ctx.locks)
     inv = shop.get_inventory(gid, uid)
 
     if not inv:

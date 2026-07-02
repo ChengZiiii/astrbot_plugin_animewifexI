@@ -78,7 +78,7 @@ class TestPk:
         _seed_profile(tmp_paths, "g1", "u1", coins=0)
         _seed_profile(tmp_paths, "g1", "u2", coins=0)
 
-        result = pk_service.pk("g1", "u1", "u2", "Alice", "Bob", "2026-07-03")
+        result = pk_service.pk_sync("g1", "u1", "u2", "Alice", "Bob", "2026-07-03")
         assert result.ok is True
         # 强角色应该赢
         assert result.winner_uid == "u1"
@@ -90,14 +90,14 @@ class TestPk:
         _seed_profile(tmp_paths, "g1", "u1")
         _seed_profile(tmp_paths, "g1", "u2")
 
-        result = pk_service.pk("g1", "u1", "u2", "Alice", "Bob", "2026-07-03")
+        result = pk_service.pk_sync("g1", "u1", "u2", "Alice", "Bob", "2026-07-03")
         assert result.ok is False
         assert "对方还没有老婆" in result.msg
 
     def test_pk_self_no_wife(self, pk_service, tmp_paths):
         _seed_profile(tmp_paths, "g1", "u1")
 
-        result = pk_service.pk("g1", "u1", "u2", "Alice", "Bob", "2026-07-03")
+        result = pk_service.pk_sync("g1", "u1", "u2", "Alice", "Bob", "2026-07-03")
         assert result.ok is False
         assert "你还没有老婆" in result.msg
 
@@ -109,7 +109,7 @@ class TestPk:
         _seed_profile(tmp_paths, "g1", "u1", coins=0)
         _seed_profile(tmp_paths, "g1", "u2", coins=0)
 
-        pk_service.pk("g1", "u1", "u2", "Alice", "Bob", "2026-07-03")
+        pk_service.pk_sync("g1", "u1", "u2", "Alice", "Bob", "2026-07-03")
 
         store = ProfileStore(tmp_paths, "g1")
         profiles = store.load_all()
@@ -123,7 +123,7 @@ class TestPk:
         _seed_profile(tmp_paths, "g1", "u1", coins=0)
         _seed_profile(tmp_paths, "g1", "u2", coins=0)
 
-        pk_service.pk("g1", "u1", "u2", "Alice", "Bob", "2026-07-03")
+        pk_service.pk_sync("g1", "u1", "u2", "Alice", "Bob", "2026-07-03")
 
         store = ProfileStore(tmp_paths, "g1")
         profiles = store.load_all()

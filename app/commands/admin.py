@@ -267,8 +267,12 @@ async def handle_admin_reset_draw(
         yield event.plain_result("目标用户没有老婆数据~")
         return
 
-    # 清除今日抽卡日期
+    # 清除今日抽卡日期（Phase 1 字段）
     target.last_draw_date = ""
+    # H3: 清除 Phase 3 抽卡计数字段
+    target.today_draw_date = ""
+    target.today_draws = 0
+    target.today_free_draws = 0
     profile_store.save_all(profiles)
 
     # 清除主老婆记录（否则 draw_or_get_primary 仍会返回旧老婆）

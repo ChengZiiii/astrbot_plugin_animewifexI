@@ -29,8 +29,8 @@ async def handle_propose(
         yield event.plain_result("请输入正确的老婆编号，如：老婆 求婚 1")
         return
 
-    marry = MarryService(ctx.paths, ctx.config)
-    result = marry.propose(gid, uid, wid, nick)
+    marry = MarryService(ctx.paths, ctx.config, ctx.locks)
+    result = await marry.propose(gid, uid, wid, nick)
     yield event.plain_result(result.msg)
 
 
@@ -49,8 +49,8 @@ async def handle_lock(
         yield event.plain_result("请输入正确的老婆编号，如：老婆 锁 1")
         return
 
-    marry = MarryService(ctx.paths, ctx.config)
-    result = marry.lock(gid, uid, wid, nick)
+    marry = MarryService(ctx.paths, ctx.config, ctx.locks)
+    result = await marry.lock(gid, uid, wid, nick)
     yield event.plain_result(result.msg)
 
 
@@ -68,6 +68,6 @@ async def handle_unlock(
         yield event.plain_result("请输入正确的老婆编号，如：老婆 解锁 1")
         return
 
-    marry = MarryService(ctx.paths, ctx.config)
-    result = marry.unlock(gid, uid, wid)
+    marry = MarryService(ctx.paths, ctx.config, ctx.locks)
+    result = await marry.unlock(gid, uid, wid)
     yield event.plain_result(result.msg)

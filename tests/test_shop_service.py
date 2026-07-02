@@ -75,14 +75,14 @@ class TestBuy:
     def test_buy_success(self, shop, tmp_paths):
         """购买成功。"""
         _seed_profile(tmp_paths, "g1", "u1", coins=200)
-        ok, msg = shop.buy("g1", "u1", "reroll_ticket", quantity=1)
+        ok, msg = shop.buy_sync("g1", "u1", "reroll_ticket", quantity=1)
         assert ok is True
         assert "购买成功" in msg
 
     def test_buy_deducts_coins(self, shop, tmp_paths):
         """购买扣款正确。"""
         _seed_profile(tmp_paths, "g1", "u1", coins=200)
-        shop.buy("g1", "u1", "reroll_ticket", quantity=1)  # 30 币
+        shop.buy_sync("g1", "u1", "reroll_ticket", quantity=1)  # 30 币
         store = ProfileStore(tmp_paths, "g1")
         profiles = store.load_all()
         assert profiles["u1"].coins == 170
@@ -90,50 +90,50 @@ class TestBuy:
     def test_buy_adds_to_inventory(self, shop, tmp_paths):
         """购买后背包增加。"""
         _seed_profile(tmp_paths, "g1", "u1", coins=200)
-        shop.buy("g1", "u1", "reroll_ticket", quantity=2)
+        shop.buy_sync("g1", "u1", "reroll_ticket", quantity=2)
         inv = shop.get_inventory("g1", "u1")
         assert inv.get("reroll_ticket") == 2
 
     def test_buy_insufficient_balance(self, shop, tmp_paths):
         """余额不足。"""
         _seed_profile(tmp_paths, "g1", "u1", coins=10)
-        ok, msg = shop.buy("g1", "u1", "reroll_ticket", quantity=1)
+        ok, msg = shop.buy_sync("g1", "u1", "reroll_ticket", quantity=1)
         assert ok is False
         assert "余额不足" in msg
 
     def test_buy_nonexistent_item(self, shop, tmp_paths):
         """不存在的道具。"""
         _seed_profile(tmp_paths, "g1", "u1", coins=200)
-        ok, msg = shop.buy("g1", "u1", "nonexistent_item", quantity=1)
+        ok, msg = shop.buy_sync("g1", "u1", "nonexistent_item", quantity=1)
         assert ok is False
         assert "不存在" in msg
 
     def test_buy_zero_quantity(self, shop, tmp_paths):
         """数量为 0 失败。"""
         _seed_profile(tmp_paths, "g1", "u1", coins=200)
-        ok, msg = shop.buy("g1", "u1", "reroll_ticket", quantity=0)
+        ok, msg = shop.buy_sync("g1", "u1", "reroll_ticket", quantity=0)
         assert ok is False
 
     def test_buy_negative_quantity(self, shop, tmp_paths):
         """数量为负失败。"""
         _seed_profile(tmp_paths, "g1", "u1", coins=200)
-        ok, msg = shop.buy("g1", "u1", "reroll_ticket", quantity=-1)
+        ok, msg = shop.buy_sync("g1", "u1", "reroll_ticket", quantity=-1)
         assert ok is False
 
     def test_buy_protection_charm_limit(self, shop, tmp_paths):
         """保护符持有上限。"""
         _seed_profile(tmp_paths, "g1", "u1", coins=500)
         # 第一个成功
-        ok1, _ = shop.buy("g1", "u1", "protection_charm", quantity=1)
+        ok1, _ = shop.buy_sync("g1", "u1", "protection_charm", quantity=1)
         assert ok1 is True
         # 第二个失败（上限 1）
-        ok2, msg = shop.buy("g1", "u1", "protection_charm", quantity=1)
+        ok2, msg = shop.buy_sync("g1", "u1", "protection_charm", quantity=1)
         assert ok2 is False
         assert "上限" in msg
 
     def test_buy_creates_profile_if_needed(self, shop, tmp_paths):
         """不存在的用户自动创建。"""
-        ok, _ = shop.buy("g1", "u1", "reroll_ticket", quantity=1, nick="Alice")
+        ok, _ = shop.buy_sync("g1", "u1", "reroll_ticket", quantity=1, nick="Alice")
         assert ok is True
 
 
@@ -143,29 +143,29 @@ class TestUseItem:
     def test_use_success(self, shop, tmp_paths):
         """使用成功。"""
         _seed_profile(tmp_paths, "g1", "u1", coins=200)
-        shop.buy("g1", "u1", "reroll_ticket", quantity=2)
-        ok, msg = shop.use_item("g1", "u1", "reroll_ticket")
+        shop.buy_sync("g1", "u1", "reroll_ticket", quantity=2)
+        ok, msg = shop.use_item_sync("g1", "u1", "reroll_ticket")
         assert ok is True
         assert "剩余 1" in msg
 
     def test_use_empty_inventory(self, shop, tmp_paths):
         """背包为空时使用失败。"""
         _seed_profile(tmp_paths, "g1", "u1", coins=200)
-        ok, msg = shop.use_item("g1", "u1", "reroll_ticket")
+        ok, msg = shop.use_item_sync("g1", "u1", "reroll_ticket")
         assert ok is False
         assert "没有" in msg
 
     def test_use_nonexistent_item(self, shop, tmp_paths):
         """不存在的道具。"""
         _seed_profile(tmp_paths, "g1", "u1", coins=200)
-        ok, msg = shop.use_item("g1", "u1", "nonexistent")
+        ok, msg = shop.use_item_sync("g1", "u1", "nonexistent")
         assert ok is False
 
     def test_use_deducts_inventory(self, shop, tmp_paths):
         """使用后背包减少。"""
         _seed_profile(tmp_paths, "g1", "u1", coins=200)
-        shop.buy("g1", "u1", "reroll_ticket", quantity=2)
-        shop.use_item("g1", "u1", "reroll_ticket")
+        shop.buy_sync("g1", "u1", "reroll_ticket", quantity=2)
+        shop.use_item_sync("g1", "u1", "reroll_ticket")
         inv = shop.get_inventory("g1", "u1")
         assert inv.get("reroll_ticket") == 1
 
@@ -182,8 +182,8 @@ class TestGetInventory:
     def test_inventory_after_buy(self, shop, tmp_paths):
         """购买后背包正确。"""
         _seed_profile(tmp_paths, "g1", "u1", coins=500)
-        shop.buy("g1", "u1", "reroll_ticket", quantity=2)
-        shop.buy("g1", "u1", "lock_item", quantity=1)
+        shop.buy_sync("g1", "u1", "reroll_ticket", quantity=2)
+        shop.buy_sync("g1", "u1", "lock_item", quantity=1)
         inv = shop.get_inventory("g1", "u1")
         assert inv["reroll_ticket"] == 2
         assert inv["lock_item"] == 1

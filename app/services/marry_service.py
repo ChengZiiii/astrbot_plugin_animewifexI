@@ -15,6 +15,7 @@ from typing import Optional
 
 from ..models.ownership import Ownership
 from ..models.profile import UserProfile
+from ..storage.locks import GroupLocks
 from ..storage.paths import Paths
 from ..storage.stores import OwnershipStore, ProfileStore
 from .economy_service import EconomyService
@@ -38,15 +39,22 @@ class MarryResult:
 class MarryService:
     """求婚/锁定服务。"""
 
-    def __init__(self, paths: Paths, config: PluginConfig):
+    def __init__(self, paths: Paths, config: PluginConfig, locks: GroupLocks | None = None):
         self._paths = paths
         self._config = config
-        self._economy = EconomyService(paths, config)
+        self._locks = locks
+        self._economy = EconomyService(paths, config, locks)
 
-    def propose(
+    async def propose(
         self, gid: str, uid: str, wid: str, nick: str = ""
     ) -> MarryResult:
         """求婚：永久锁定（消耗 marry_coin_cost 币 + 亲密度 ≥ 阈值）"""
+        if self._locks:
+            async with self._locks.acquire(gid):
+                return self._propose_inner(gid, uid, wid, nick)
+        return self._propose_inner(gid, uid, wid, nick)
+
+    def _propose_inner(self, gid: str, uid: str, wid: str, nick: str) -> MarryResult:
         store = OwnershipStore(self._paths, gid)
         ownerships = store.load_all()
         ownership = store.find_by_wid(wid, ownerships)
@@ -65,9 +73,9 @@ class MarryService:
                 msg=f"亲密度不足（需要 {self._config.intimacy_marry_threshold}，当前 {ownership.intimacy}）",
             )
 
-        # 扣币
+        # 扣币（同步调用 _spend_inner 避免死锁）
         cost = self._config.marry_coin_cost
-        if not self._economy.spend(gid, uid, cost, nick, "propose"):
+        if not self._economy._spend_inner(gid, uid, cost, nick, "propose"):
             return MarryResult(
                 ok=False,
                 reason="insufficient",
@@ -82,10 +90,16 @@ class MarryService:
         logger.debug("propose: gid=%s uid=%s wid=%s -> locked permanently", gid, uid, wid)
         return MarryResult(ok=True, msg=f"求婚成功！花费 {cost} 币，老婆已永久锁定 💍")
 
-    def lock(
+    async def lock(
         self, gid: str, uid: str, wid: str, nick: str = ""
     ) -> MarryResult:
         """使用锁定卡，限期锁定 7 天"""
+        if self._locks:
+            async with self._locks.acquire(gid):
+                return self._lock_inner(gid, uid, wid, nick)
+        return self._lock_inner(gid, uid, wid, nick)
+
+    def _lock_inner(self, gid: str, uid: str, wid: str, nick: str) -> MarryResult:
         store = OwnershipStore(self._paths, gid)
         ownerships = store.load_all()
         ownership = store.find_by_wid(wid, ownerships)
@@ -93,6 +107,9 @@ class MarryService:
             return MarryResult(ok=False, reason="not_found", msg="未找到该老婆")
         if ownership.uid != uid:
             return MarryResult(ok=False, reason="not_owner", msg="这不是你的老婆")
+
+        # 清除过期锁
+        self.clear_expired_lock(ownership)
 
         # 已永久锁定
         if ownership.is_locked and ownership.lock_expires_at is None:
@@ -122,8 +139,14 @@ class MarryService:
         logger.debug("lock: gid=%s uid=%s wid=%s -> locked for %d days", gid, uid, wid, LOCK_DAYS)
         return MarryResult(ok=True, msg=f"锁定成功！消耗 1 张锁定卡，老婆锁定 {LOCK_DAYS} 天 🔒")
 
-    def unlock(self, gid: str, uid: str, wid: str) -> MarryResult:
+    async def unlock(self, gid: str, uid: str, wid: str) -> MarryResult:
         """主动解锁"""
+        if self._locks:
+            async with self._locks.acquire(gid):
+                return self._unlock_inner(gid, uid, wid)
+        return self._unlock_inner(gid, uid, wid)
+
+    def _unlock_inner(self, gid: str, uid: str, wid: str) -> MarryResult:
         store = OwnershipStore(self._paths, gid)
         ownerships = store.load_all()
         ownership = store.find_by_wid(wid, ownerships)
@@ -143,16 +166,42 @@ class MarryService:
 
     @staticmethod
     def is_locked(ownership: Ownership) -> bool:
-        """检查老婆是否处于锁定状态（含过期判断）"""
+        """检查老婆是否处于锁定状态（纯检查，不修改 ownership）"""
         if not ownership.is_locked:
             return False
         # 永久锁定
         if ownership.lock_expires_at is None:
             return True
         # 限期锁定：检查是否过期
+        return ownership.lock_expires_at > int(time.time())
+
+    @staticmethod
+    def clear_expired_lock(ownership: Ownership) -> bool:
+        """清除过期的限期锁定。返回 True 表示确实清除了一个过期锁。"""
+        if not ownership.is_locked:
+            return False
+        if ownership.lock_expires_at is None:
+            return False  # 永久锁定不清除
         if ownership.lock_expires_at > int(time.time()):
-            return True
-        # 过期自动解锁
+            return False  # 未过期
         ownership.is_locked = False
         ownership.lock_expires_at = None
-        return False
+        return True
+
+    # ---------- 同步别名（测试/无锁场景兼容） ----------
+
+    def propose_sync(
+        self, gid: str, uid: str, wid: str, nick: str = ""
+    ) -> MarryResult:
+        """同步版 propose（不经过锁）。"""
+        return self._propose_inner(gid, uid, wid, nick)
+
+    def lock_sync(
+        self, gid: str, uid: str, wid: str, nick: str = ""
+    ) -> MarryResult:
+        """同步版 lock（不经过锁）。"""
+        return self._lock_inner(gid, uid, wid, nick)
+
+    def unlock_sync(self, gid: str, uid: str, wid: str) -> MarryResult:
+        """同步版 unlock（不经过锁）。"""
+        return self._unlock_inner(gid, uid, wid)

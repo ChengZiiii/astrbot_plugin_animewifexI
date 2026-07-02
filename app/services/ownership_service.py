@@ -298,8 +298,8 @@ class OwnershipService:
         Phase 3: 支持多次抽卡，每日免费次数 + 抽卡券
         skip_check: 跳过免费/券检查（用于十连抽卡，券已在外部消耗）
         """
-        # P2.1: 抽老婆冷却检查
-        if self._cooldown and self._config.draw_cooldown > 0:
+        # H2: skip_check 时也跳过冷却
+        if not skip_check and self._cooldown and self._config.draw_cooldown > 0:
             if not self._cooldown.check(
                 gid, uid, CooldownAction.DRAW, self._config.draw_cooldown
             ):
@@ -420,6 +420,97 @@ class OwnershipService:
                 pity_triggered=draw_result.pity_triggered,
             )
 
+    # ---------- 十连抽卡 ----------
+
+    async def draw_ten(
+        self, gid: str, uid: str, nick: str, today: str
+    ) -> list[DrawResult]:
+        """十连抽卡：检查+消耗十连券，在单次锁内完成 10 次抽卡
+
+        返回 DrawResult 列表（可能 < 10 张，抽取失败时中断）。
+        券在锁内检查+消耗，避免并发 double-spend。
+        """
+        async with self._locks.acquire(gid):
+            ownership_store = self._ownership_store(gid)
+            profile_store = self._profile_store(gid)
+            activity_store = self._activity_store(gid)
+
+            profiles = profile_store.load_all()
+            profile = ProfileStore.get_or_create(
+                profiles, uid, nick,
+                capacity=self._config.default_capacity,
+                coins=self._config.initial_coins,
+            )
+
+            # 检查十连券
+            if profile.inventory.get("draw_ticket_ten", 0) <= 0:
+                return []
+
+            # 消耗十连券
+            profile.inventory["draw_ticket_ten"] -= 1
+            profile_store.save_all(profiles)
+
+            # 重置今日计数（跨天）
+            if profile.today_draw_date != today:
+                profile.today_draws = 0
+                profile.today_free_draws = 0
+                profile.today_draw_date = today
+
+            results: list[DrawResult] = []
+            ownerships = ownership_store.load_all()
+
+            for i in range(10):
+                img = await self._wife_service.fetch_image()
+                if not img:
+                    break
+
+                # Phase 3: 使用 RarityService 抽稀有度
+                rarity_svc = RarityService(self._paths, self._config)
+                draw_result = rarity_svc.draw(img, profile, profile.collection)
+
+                wid = draw_result.wife.wid
+                user_has_wife = any(o.uid == uid for o in ownerships)
+                new_o = Ownership(
+                    wid=wid,
+                    uid=uid,
+                    acquired_at=now_ts(),
+                    acquired_via=AcquireVia.DRAW,
+                    is_primary=not user_has_wife,
+                )
+                ownership_store.add(ownerships, new_o)
+
+                if draw_result.is_new and wid not in profile.collection:
+                    profile.collection.append(wid)
+                profile.last_draw_date = today
+                profile.total_draws += 1
+                profile.today_draws += 1
+
+                if draw_result.duplicate_coins > 0:
+                    profile.coins += draw_result.duplicate_coins
+
+                results.append(DrawResult(
+                    ok=True,
+                    img=img,
+                    wid=wid,
+                    is_new=draw_result.is_new,
+                    profile=profile,
+                    rarity=draw_result.rarity,
+                    rarity_emoji=draw_result.rarity_emoji,
+                    is_duplicate=not draw_result.is_new,
+                    duplicate_coins=draw_result.duplicate_coins,
+                    pity_triggered=draw_result.pity_triggered,
+                ))
+
+            if results:
+                activity_logs = activity_store.load_all()
+                ActivityStore.log(activity_logs, uid, today, Action.DRAW, len(results))
+                activity_store.save_all(activity_logs)
+
+            ownership_store.save_all(ownerships)
+            profile_store.save_all(profiles)
+
+            return results
+
     # ---------- 牛老婆 ----------
 
     async def try_ntr(
@@ -502,6 +593,20 @@ class OwnershipService:
                     success=False,
                     consumed_attempt=True,
                     reason="target_no_wife",
+                    remaining_attempts=remaining,
+                    profile=attacker_profile,
+                )
+
+            # H1: 检查目标老婆是否被锁定
+            from .marry_service import MarryService
+            if MarryService.is_locked(target_primary):
+                profile_store.save_all(profiles)
+                daily_store.save_all(daily_counts)
+                return NtrResult(
+                    ok=True,
+                    success=False,
+                    consumed_attempt=True,
+                    reason="target_locked",
                     remaining_attempts=remaining,
                     profile=attacker_profile,
                 )

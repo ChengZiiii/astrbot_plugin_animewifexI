@@ -61,36 +61,36 @@ class TestPropose:
     def test_propose_success(self, marry, tmp_paths):
         _seed_ownership(tmp_paths, "g1", "u1", "w1", intimacy=80)
         _seed_profile(tmp_paths, "g1", "u1", coins=200)
-        result = marry.propose("g1", "u1", "w1", "Alice")
+        result = marry.propose_sync("g1", "u1", "w1", "Alice")
         assert result.ok is True
         assert "永久锁定" in result.msg
 
     def test_propose_insufficient_intimacy(self, marry, tmp_paths):
         _seed_ownership(tmp_paths, "g1", "u1", "w1", intimacy=30)
         _seed_profile(tmp_paths, "g1", "u1", coins=200)
-        result = marry.propose("g1", "u1", "w1")
+        result = marry.propose_sync("g1", "u1", "w1")
         assert result.ok is False
         assert "亲密度不足" in result.msg
 
     def test_propose_insufficient_coins(self, marry, tmp_paths):
         _seed_ownership(tmp_paths, "g1", "u1", "w1", intimacy=80)
         _seed_profile(tmp_paths, "g1", "u1", coins=50)
-        result = marry.propose("g1", "u1", "w1")
+        result = marry.propose_sync("g1", "u1", "w1")
         assert result.ok is False
         assert "余额不足" in result.msg
 
     def test_propose_not_owner(self, marry, tmp_paths):
         _seed_ownership(tmp_paths, "g1", "u1", "w1", intimacy=80)
         _seed_profile(tmp_paths, "g2", "u2", coins=200)
-        result = marry.propose("g1", "u2", "w1")
+        result = marry.propose_sync("g1", "u2", "w1")
         assert result.ok is False
         assert "不是你的" in result.msg
 
     def test_propose_already_married(self, marry, tmp_paths):
         _seed_ownership(tmp_paths, "g1", "u1", "w1", intimacy=80)
         _seed_profile(tmp_paths, "g1", "u1", coins=200)
-        marry.propose("g1", "u1", "w1", "Alice")
-        result = marry.propose("g1", "u1", "w1")
+        marry.propose_sync("g1", "u1", "w1", "Alice")
+        result = marry.propose_sync("g1", "u1", "w1")
         assert result.ok is False
         assert "已经求婚" in result.msg
 
@@ -99,21 +99,21 @@ class TestLock:
     def test_lock_success(self, marry, tmp_paths):
         _seed_ownership(tmp_paths, "g1", "u1", "w1")
         _seed_profile(tmp_paths, "g1", "u1", coins=200, lock_item=2)
-        result = marry.lock("g1", "u1", "w1", "Alice")
+        result = marry.lock_sync("g1", "u1", "w1", "Alice")
         assert result.ok is True
         assert "锁定成功" in result.msg
 
     def test_lock_no_item(self, marry, tmp_paths):
         _seed_ownership(tmp_paths, "g1", "u1", "w1")
         _seed_profile(tmp_paths, "g1", "u1", coins=200, lock_item=0)
-        result = marry.lock("g1", "u1", "w1")
+        result = marry.lock_sync("g1", "u1", "w1")
         assert result.ok is False
         assert "没有锁定卡" in result.msg
 
     def test_lock_deducts_item(self, marry, tmp_paths):
         _seed_ownership(tmp_paths, "g1", "u1", "w1")
         _seed_profile(tmp_paths, "g1", "u1", coins=200, lock_item=2)
-        marry.lock("g1", "u1", "w1", "Alice")
+        marry.lock_sync("g1", "u1", "w1", "Alice")
         store = ProfileStore(tmp_paths, "g1")
         profiles = store.load_all()
         assert profiles["u1"].inventory["lock_item"] == 1
@@ -123,14 +123,14 @@ class TestUnlock:
     def test_unlock_success(self, marry, tmp_paths):
         _seed_ownership(tmp_paths, "g1", "u1", "w1")
         _seed_profile(tmp_paths, "g1", "u1", coins=200, lock_item=1)
-        marry.lock("g1", "u1", "w1")
-        result = marry.unlock("g1", "u1", "w1")
+        marry.lock_sync("g1", "u1", "w1")
+        result = marry.unlock_sync("g1", "u1", "w1")
         assert result.ok is True
         assert "解锁成功" in result.msg
 
     def test_unlock_not_locked(self, marry, tmp_paths):
         _seed_ownership(tmp_paths, "g1", "u1", "w1")
-        result = marry.unlock("g1", "u1", "w1")
+        result = marry.unlock_sync("g1", "u1", "w1")
         assert result.ok is False
         assert "没有被锁定" in result.msg
 
@@ -151,4 +151,7 @@ class TestIsLocked:
     def test_timed_lock_expired(self, marry):
         o = Ownership(wid="w1", uid="u1", acquired_at=0, acquired_via="draw", is_locked=True, lock_expires_at=int(time.time()) - 100)
         assert marry.is_locked(o) is False
+        # H4: is_locked 是纯检查，需要 clear_expired_lock 来清除过期状态
+        cleared = marry.clear_expired_lock(o)
+        assert cleared is True
         assert o.is_locked is False

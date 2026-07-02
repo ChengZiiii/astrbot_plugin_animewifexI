@@ -17,6 +17,7 @@ import logging
 from typing import Dict, List, Optional, Tuple
 
 from ..models.profile import UserProfile
+from ..storage.locks import GroupLocks
 from ..storage.paths import Paths
 from ..storage.stores import ProfileStore
 from .economy_service import EconomyService
@@ -50,10 +51,11 @@ ITEM_USE_LIMITS: Dict[str, int] = {
 class ShopService:
     """商城服务。"""
 
-    def __init__(self, paths: Paths, config: PluginConfig):
+    def __init__(self, paths: Paths, config: PluginConfig, locks: GroupLocks | None = None):
         self._paths = paths
         self._config = config
-        self._economy = EconomyService(paths, config)
+        self._locks = locks
+        self._economy = EconomyService(paths, config, locks)
 
     def list_items(self) -> List[Tuple[str, str, int]]:
         """返回道具列表 [(key, name, price), ...]。"""
@@ -69,7 +71,7 @@ class ShopService:
             return None
         return self._config.shop_prices.get(item_key, 0)
 
-    def buy(
+    async def buy(
         self,
         gid: str,
         uid: str,
@@ -84,6 +86,19 @@ class ShopService:
         if quantity <= 0:
             return False, "数量必须大于 0"
 
+        if self._locks:
+            async with self._locks.acquire(gid):
+                return self._buy_inner(gid, uid, item_key, quantity, nick)
+        return self._buy_inner(gid, uid, item_key, quantity, nick)
+
+    def _buy_inner(
+        self,
+        gid: str,
+        uid: str,
+        item_key: str,
+        quantity: int,
+        nick: str,
+    ) -> Tuple[bool, str]:
         price = self._config.shop_prices.get(item_key, 0)
         total_cost = price * quantity
 
@@ -118,7 +133,7 @@ class ShopService:
                      gid, uid, item_key, quantity, total_cost, profile.coins, profile.inventory[item_key])
         return True, f"购买成功！获得 {ITEM_NAMES[item_key]} x{quantity}，花费 {total_cost} 币"
 
-    def use_item(
+    async def use_item(
         self,
         gid: str,
         uid: str,
@@ -129,6 +144,18 @@ class ShopService:
         if item_key not in ITEM_NAMES:
             return False, f"道具 {item_key} 不存在"
 
+        if self._locks:
+            async with self._locks.acquire(gid):
+                return self._use_item_inner(gid, uid, item_key, nick)
+        return self._use_item_inner(gid, uid, item_key, nick)
+
+    def _use_item_inner(
+        self,
+        gid: str,
+        uid: str,
+        item_key: str,
+        nick: str,
+    ) -> Tuple[bool, str]:
         store = ProfileStore(self._paths, gid)
         profiles = store.load_all()
         profile = ProfileStore.get_or_create(
@@ -155,3 +182,23 @@ class ShopService:
         if not profile:
             return {}
         return {k: v for k, v in profile.inventory.items() if v > 0}
+
+    # ---------- 同步别名（测试/无锁场景兼容） ----------
+
+    def buy_sync(
+        self, gid: str, uid: str, item_key: str, quantity: int = 1, nick: str = ""
+    ) -> Tuple[bool, str]:
+        """同步版 buy（不经过锁）。"""
+        if item_key not in ITEM_NAMES:
+            return False, f"道具 {item_key} 不存在"
+        if quantity <= 0:
+            return False, "数量必须大于 0"
+        return self._buy_inner(gid, uid, item_key, quantity, nick)
+
+    def use_item_sync(
+        self, gid: str, uid: str, item_key: str, nick: str = ""
+    ) -> Tuple[bool, str]:
+        """同步版 use_item（不经过锁）。"""
+        if item_key not in ITEM_NAMES:
+            return False, f"道具 {item_key} 不存在"
+        return self._use_item_inner(gid, uid, item_key, nick)

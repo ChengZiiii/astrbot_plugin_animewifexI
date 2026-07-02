@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 import time
@@ -78,6 +79,9 @@ class DrawResult:
 
 class RarityService:
     """稀有度抽卡服务。"""
+
+    # C4: 全局锁保护 wives_master 文件并发写入
+    _wives_master_lock = asyncio.Lock()
 
     def __init__(self, paths: Paths, config: PluginConfig):
         self._paths = paths
@@ -152,35 +156,8 @@ class RarityService:
         # 2. 生成 wid
         wid = wife_wid_for_img(img)
 
-        # 3. 查找或创建 WifeMeta
-        store = WivesMasterStore(self._paths)
-        all_wives = store.load_all()
-        wife = all_wives.get(wid)
-
-        is_new_wife = wife is None
-        if wife is None:
-            # 首次出现的角色，创建元数据
-            chara, source = parse_wife_name(img)
-            wife = WifeMeta(
-                wid=wid,
-                img=img,
-                source=source or "",
-                chara=chara or "",
-                rarity=rarity,
-                base_stats=self._generate_stats(rarity),
-                first_seen=int(time.time()),
-            )
-            all_wives[wid] = wife
-            store.save_all(all_wives)
-            logger.debug("draw: new wife created wid=%s rarity=%s", wid, rarity)
-        else:
-            # 已存在的角色，如果抽到更高稀有度则升级
-            if self._rarity_gt(rarity, wife.rarity):
-                logger.debug("draw: wife %s upgraded %s -> %s", wid, wife.rarity, rarity)
-                wife.rarity = rarity
-                wife.base_stats = self._generate_stats(rarity)
-                all_wives[wid] = wife
-                store.save_all(all_wives)
+        # 3. C4: 使用全局锁保护 wives_master 读写
+        wife, is_new_wife = self._ensure_wife_in_master(wid, img, rarity)
 
         # 4. 检查重复
         is_new = wid not in collection
@@ -203,6 +180,42 @@ class RarityService:
             pity_triggered=pity_triggered,
             img=img,
         )
+
+    def _ensure_wife_in_master(
+        self, wid: str, img: str, rarity: str
+    ) -> Tuple[WifeMeta, bool]:
+        """查找或创建/升级 wives_master 中的角色元数据。
+
+        返回 (wife, is_new_wife)。
+        """
+        store = WivesMasterStore(self._paths)
+        all_wives = store.load_all()
+        wife = all_wives.get(wid)
+
+        is_new_wife = wife is None
+        if wife is None:
+            chara, source = parse_wife_name(img)
+            wife = WifeMeta(
+                wid=wid,
+                img=img,
+                source=source or "",
+                chara=chara or "",
+                rarity=rarity,
+                base_stats=self._generate_stats(rarity),
+                first_seen=int(time.time()),
+            )
+            all_wives[wid] = wife
+            store.save_all(all_wives)
+            logger.debug("draw: new wife created wid=%s rarity=%s", wid, rarity)
+        else:
+            if self._rarity_gt(rarity, wife.rarity):
+                logger.debug("draw: wife %s upgraded %s -> %s", wid, wife.rarity, rarity)
+                wife.rarity = rarity
+                wife.base_stats = self._generate_stats(rarity)
+                all_wives[wid] = wife
+                store.save_all(all_wives)
+
+        return wife, is_new_wife
 
     def _generate_stats(self, rarity: str) -> BaseStats:
         """根据稀有度随机生成基础战力"""

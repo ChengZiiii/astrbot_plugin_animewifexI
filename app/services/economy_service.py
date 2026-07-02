@@ -9,6 +9,7 @@ import logging
 from typing import Dict, Optional
 
 from ..models.profile import UserProfile
+from ..storage.locks import GroupLocks
 from ..storage.paths import Paths
 from ..storage.stores import ProfileStore
 from .plugin_config import PluginConfig
@@ -21,9 +22,10 @@ __all__ = ["EconomyService"]
 class EconomyService:
     """老婆币经济服务。"""
 
-    def __init__(self, paths: Paths, config: PluginConfig):
+    def __init__(self, paths: Paths, config: PluginConfig, locks: GroupLocks | None = None):
         self._paths = paths
         self._config = config
+        self._locks = locks
 
     def balance(self, gid: str, uid: str) -> int:
         """查询用户余额（不存在返回 0）。"""
@@ -32,7 +34,7 @@ class EconomyService:
         profile = profiles.get(uid)
         return profile.coins if profile else 0
 
-    def earn(
+    async def earn(
         self,
         gid: str,
         uid: str,
@@ -44,6 +46,12 @@ class EconomyService:
         if amount <= 0:
             return self.balance(gid, uid)
 
+        if self._locks:
+            async with self._locks.acquire(gid):
+                return self._earn_inner(gid, uid, amount, nick, reason)
+        return self._earn_inner(gid, uid, amount, nick, reason)
+
+    def _earn_inner(self, gid: str, uid: str, amount: int, nick: str, reason: str) -> int:
         store = ProfileStore(self._paths, gid)
         profiles = store.load_all()
         profile = ProfileStore.get_or_create(
@@ -56,7 +64,7 @@ class EconomyService:
                       gid, uid, amount, reason, profile.coins)
         return profile.coins
 
-    def spend(
+    async def spend(
         self,
         gid: str,
         uid: str,
@@ -68,6 +76,12 @@ class EconomyService:
         if amount <= 0:
             return True
 
+        if self._locks:
+            async with self._locks.acquire(gid):
+                return self._spend_inner(gid, uid, amount, nick, reason)
+        return self._spend_inner(gid, uid, amount, nick, reason)
+
+    def _spend_inner(self, gid: str, uid: str, amount: int, nick: str, reason: str) -> bool:
         store = ProfileStore(self._paths, gid)
         profiles = store.load_all()
         profile = ProfileStore.get_or_create(
@@ -86,8 +100,14 @@ class EconomyService:
                       gid, uid, amount, reason, profile.coins)
         return True
 
-    def daily_checkin(self, gid: str, uid: str, nick: str = "") -> Optional[int]:
+    async def daily_checkin(self, gid: str, uid: str, nick: str = "") -> Optional[int]:
         """每日签到。返回发放金额，已签到返回 None。"""
+        if self._locks:
+            async with self._locks.acquire(gid):
+                return self._daily_checkin_inner(gid, uid, nick)
+        return self._daily_checkin_inner(gid, uid, nick)
+
+    def _daily_checkin_inner(self, gid: str, uid: str, nick: str) -> Optional[int]:
         today = self._today()
         store = ProfileStore(self._paths, gid)
         profiles = store.load_all()
@@ -131,6 +151,28 @@ class EconomyService:
             return False
         profile.coins -= amount
         return True
+
+    # ---------- 同步别名（测试/无锁场景兼容） ----------
+
+    def earn_sync(
+        self, gid: str, uid: str, amount: int, nick: str = "", reason: str = ""
+    ) -> int:
+        """同步版 earn（不经过锁）。"""
+        if amount <= 0:
+            return self.balance(gid, uid)
+        return self._earn_inner(gid, uid, amount, nick, reason)
+
+    def spend_sync(
+        self, gid: str, uid: str, amount: int, nick: str = "", reason: str = ""
+    ) -> bool:
+        """同步版 spend（不经过锁）。"""
+        if amount <= 0:
+            return True
+        return self._spend_inner(gid, uid, amount, nick, reason)
+
+    def daily_checkin_sync(self, gid: str, uid: str, nick: str = "") -> Optional[int]:
+        """同步版 daily_checkin（不经过锁）。"""
+        return self._daily_checkin_inner(gid, uid, nick)
 
     def _today(self) -> str:
         """获取今日日期字符串（YYYY-MM-DD）。"""

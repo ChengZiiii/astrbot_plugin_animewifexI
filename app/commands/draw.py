@@ -94,38 +94,14 @@ async def handle_draw_ten(event: AstrMessageEvent, ctx: CommandContext) -> Async
     uid = get_sender_uid(event)
     nick = get_sender_nick(event)
 
-    # 检查十连券
-    from ..storage.stores import ProfileStore
-    profile_store = ProfileStore(ctx.paths, gid)
-    profiles = profile_store.load_all()
-    profile = profiles.get(uid)
-    if not profile or profile.inventory.get("draw_ticket_ten", 0) <= 0:
+    # 委托给 ownership_service.draw_ten（券检查+消耗在锁内完成）
+    results = await ctx.ownership_service.draw_ten(gid, uid, nick, ctx.today())
+
+    if not results:
         yield event.plain_result(
             f"{nick}，你没有十连券，去商城购买吧~\n"
             f"十连券价格：{ctx.config.shop_prices.get('draw_ticket_ten', 270)} 币（9折优惠）"
         )
-        return
-
-    # 消耗十连券
-    profile.inventory["draw_ticket_ten"] -= 1
-    profile_store.save_all(profiles)
-
-    # 执行10次抽卡
-    results: List[DrawResult] = []
-    for i in range(10):
-        result = await ctx.ownership_service.draw_or_get_primary(
-            gid, uid, nick, ctx.today(), skip_check=True
-        )
-        if result.ok and result.img:
-            results.append(result)
-        else:
-            break
-
-    if not results:
-        # 回退
-        profile.inventory["draw_ticket_ten"] += 1
-        profile_store.save_all(profiles)
-        yield event.plain_result("十连抽卡失败，已退还十连券~")
         return
 
     # 格式化结果（文字部分）

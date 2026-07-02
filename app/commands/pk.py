@@ -52,8 +52,8 @@ async def handle_pk(
     target_profile = profiles.get(tid)
     defender_nick = target_profile.nick if target_profile else "对方"
 
-    pk_svc = PkService(ctx.paths, ctx.config, ctx.cooldown_service)
-    result = pk_svc.pk(
+    pk_svc = PkService(ctx.paths, ctx.config, ctx.locks, ctx.cooldown_service)
+    result = await pk_svc.pk(
         gid, attacker_uid, tid, attacker_nick, defender_nick, ctx.today()
     )
 

@@ -17,6 +17,7 @@ from typing import Dict, Optional
 
 from ..models.enums import Action
 from ..models.profile import UserProfile
+from ..storage.locks import GroupLocks
 from ..storage.paths import Paths
 from ..storage.stores import ActivityStore, ProfileStore
 from .economy_service import EconomyService
@@ -38,18 +39,25 @@ QUEST_TEMPLATES = [
 class QuestService:
     """每日任务服务。"""
 
-    def __init__(self, paths: Paths, config: PluginConfig):
+    def __init__(self, paths: Paths, config: PluginConfig, locks: GroupLocks | None = None):
         self._paths = paths
         self._config = config
-        self._economy = EconomyService(paths, config)
+        self._locks = locks
+        self._economy = EconomyService(paths, config, locks)
 
-    def check_and_complete(
+    async def check_and_complete(
         self, gid: str, uid: str, nick: str = ""
     ) -> Optional[int]:
         """检查任务完成状态，完成则发币并返回奖励金额。
 
         已完成返回 None（防重领）。
         """
+        if self._locks:
+            async with self._locks.acquire(gid):
+                return self._check_and_complete_inner(gid, uid, nick)
+        return self._check_and_complete_inner(gid, uid, nick)
+
+    def _check_and_complete_inner(self, gid: str, uid: str, nick: str) -> Optional[int]:
         today = self._today()
 
         store = ProfileStore(self._paths, gid)
@@ -145,3 +153,11 @@ class QuestService:
     def _today(self) -> str:
         from datetime import datetime
         return datetime.now().strftime("%Y-%m-%d")
+
+    # ---------- 同步别名（测试/无锁场景兼容） ----------
+
+    def check_and_complete_sync(
+        self, gid: str, uid: str, nick: str = ""
+    ) -> Optional[int]:
+        """同步版 check_and_complete（不经过锁）。"""
+        return self._check_and_complete_inner(gid, uid, nick)
