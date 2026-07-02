@@ -12,7 +12,8 @@ from ..api.events import (
     get_sender_uid,
     parse_at_target,
 )
-from ..api.messaging import build_text_image_chain
+from ..api.messaging import build_multi_image_chain, build_text_image_chain
+from ..storage.stores import OwnershipStore, WivesMasterStore
 from ..utils.image import build_wife_intro_text
 from .context import CommandContext
 
@@ -20,54 +21,71 @@ __all__ = ["handle_view", "find_uid_by_owner_nick"]
 
 
 async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGenerator:
-    """``查老婆 [@用户 | 昵称]``：查看自己或他人的主老婆"""
+    """``查老婆 [@用户 | 昵称]``：查看自己或他人的所有老婆"""
     gid = get_group_id(event)
     if not gid:
         return
 
     sender_uid = get_sender_uid(event)
     at_target = parse_at_target(event)
-    # 是否查询他人（@ 或昵称）
     target_uid = _resolve_target(event, ctx)
     if target_uid is None:
-        # 昵称匹配失败（明确指定了昵称但没命中）
         yield event.plain_result("没有找到该昵称的群友老婆哦~")
-        return
-
-    img = ctx.ownership_service.get_primary_img(gid, target_uid)
-    if not img:
-        # 区分自查 / 查他人，给不同文案
-        if target_uid == sender_uid or at_target is None:
-            yield event.plain_result("没有发现老婆的踪迹，快去抽一个试试吧~")
-        else:
-            target_profile = ctx.ownership_service.get_profile(gid, target_uid)
-            target_name = target_profile.nick or "对方"
-            yield event.plain_result(f"{target_name}今天还没有老婆哦~")
         return
 
     target_profile = ctx.ownership_service.get_profile(gid, target_uid)
     owner = target_profile.nick or "未知用户"
 
-    # P2.3: 显示亲密度等级
-    from ..services.ownership_service import OwnershipService
-    wid = ctx.ownership_service.get_primary_wid(gid, target_uid)
-    intimacy_emoji = ""
-    if wid:
-        ownerships_data = ctx.ownership_service._ownership_store(gid).load_all()
-        for o in ownerships_data:
-            if o.wid == wid and o.uid == target_uid and o.is_primary:
-                intimacy_emoji = " " + OwnershipService.intimacy_level_emoji(o.intimacy)
-                break
+    # 获取该用户所有老婆
+    ownership_store = OwnershipStore(ctx.paths, gid)
+    ownerships = ownership_store.load_all()
+    my_wives = ownership_store.list_by_user(target_uid, ownerships)
 
-    intro = build_wife_intro_text(img, prefix=f"{owner}的老婆是", suffix=f"，羡慕吗？{intimacy_emoji}")
-    yield event.chain_result(
-        build_text_image_chain(
-            intro,
-            img,
-            ctx.paths.img_dir,
-            ctx.config.normalized_image_base_url,
+    if not my_wives:
+        if target_uid == sender_uid or at_target is None:
+            yield event.plain_result("没有发现老婆的踪迹，快去抽一个试试吧~")
+        else:
+            yield event.plain_result(f"{owner}今天还没有老婆哦~")
+        return
+
+    # 加载老婆元数据
+    wives_meta = WivesMasterStore(ctx.paths).load_all()
+
+    # 格式化所有老婆
+    lines = [f"【{owner} 的老婆】共 {len(my_wives)} 位\n"]
+    imgs = []
+    seen_imgs = set()
+
+    from ..services.ownership_service import OwnershipService
+    for i, o in enumerate(my_wives, 1):
+        wife = wives_meta.get(o.wid)
+        if not wife:
+            continue
+        emoji = {"SSR": "✨", "SR": "🌟", "R": "⭐", "N": "·"}.get(wife.rarity, "·")
+        name = wife.chara or wife.img
+        lock_icon = " 🔒" if o.is_locked else ""
+        primary_icon = " 👑" if o.is_primary else ""
+        intimacy_str = OwnershipService.intimacy_level_emoji(o.intimacy)
+        lines.append(f"{i}. {emoji} {name} (❤️{o.intimacy}{intimacy_str}){lock_icon}{primary_icon}")
+
+        # 收集图片（去重）
+        if wife.img and wife.img not in seen_imgs:
+            imgs.append(wife.img)
+            seen_imgs.add(wife.img)
+
+    text = "\n".join(lines)
+
+    if imgs:
+        yield event.chain_result(
+            build_multi_image_chain(
+                text,
+                imgs,
+                ctx.paths.img_dir,
+                ctx.config.normalized_image_base_url,
+            )
         )
-    )
+    else:
+        yield event.plain_result(text)
 
 
 def _resolve_target(event: AstrMessageEvent, ctx: CommandContext) -> Optional[str]:
