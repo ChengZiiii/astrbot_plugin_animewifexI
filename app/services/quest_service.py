@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from ..models.enums import Action
@@ -32,19 +33,25 @@ from .plugin_config import PluginConfig
 
 logger = logging.getLogger("astrbot_plugin_animewifex.quest")
 
-__all__ = ["QuestService"]
+__all__ = ["QuestService", "QuestCompletionResult"]
+
+NEWBIE_GUIDE_ORDER = (
+    "day1_draw_once",
+    "day2_pet_and_chat",
+    "day3_pk_once",
+)
 
 # 新手任务模板：(action_key, 需要的次数, 显示名)
 NEWBIE_QUESTS = {
-    1: [  # Day 1
+    "day1_draw_once": [
         (Action.DRAW, 1, "抽老婆 1 次"),
     ],
-    2: [  # Day 2
+    "day2_pet_and_chat": [
         (Action.INTIMACY, 1, "撸老婆 1 次"),
         (Action.CHAT, 1, "对话 1 次"),
     ],
-    3: [  # Day 3
-        (Action.PK_WIN, 1, "PK 1 次"),  # PK_WIN 或 PK_LOST 或 PK_TIE 都算
+    "day3_pk_once": [
+        (Action.PK_WIN, 1, "PK 1 次"),
     ],
 }
 
@@ -57,6 +64,16 @@ STANDARD_QUESTS = [
 ]
 
 
+@dataclass
+class QuestCompletionResult:
+    """任务完成奖励结果。"""
+
+    coins: int
+    item: str | None = None
+    is_newbie: bool = False
+    guide_key: str = ""
+
+
 class QuestService:
     """每日任务服务。"""
 
@@ -66,29 +83,44 @@ class QuestService:
         self._locks = locks
         self._economy = EconomyService(paths, config, locks)
 
-    def _get_newbie_day(self, profile: UserProfile) -> int:
-        """获取新手天数（1-3），如果不是新手期返回 0。"""
+    def _get_active_newbie_key(self, profile: UserProfile) -> str | None:
+        """获取当前未完成的新手引导 key；旧玩家或已做完返回 None。"""
         if profile.registered_at <= 0:
-            return 0  # 旧玩家，无注册时间
-        days_since_reg = (now_ts() - profile.registered_at) / 86400
-        if days_since_reg < 1:
-            return 1
-        elif days_since_reg < 2:
-            return 2
-        elif days_since_reg < 3:
-            return 3
-        return 0  # 超过 3 天
+            return None
+
+        claimed = set(profile.newbie_guide_claimed)
+        for key in NEWBIE_GUIDE_ORDER:
+            if key not in claimed:
+                return key
+        return None
 
     def _get_quests_for_profile(self, profile: UserProfile) -> List[Tuple[str, int, str]]:
         """根据用户 profile 返回对应的任务列表。"""
-        newbie_day = self._get_newbie_day(profile)
-        if newbie_day > 0 and newbie_day in NEWBIE_QUESTS:
-            return NEWBIE_QUESTS[newbie_day]
+        active_newbie_key = self._get_active_newbie_key(profile)
+        if active_newbie_key:
+            return NEWBIE_QUESTS[active_newbie_key]
         return STANDARD_QUESTS
+
+    def get_track_title(self, gid: str, uid: str) -> str:
+        """获取当前任务标题。"""
+        store = ProfileStore(self._paths, gid)
+        profiles = store.load_all()
+        profile = profiles.get(uid)
+        if not profile:
+            return "【每日任务】"
+
+        active_newbie_key = self._get_active_newbie_key(profile)
+        if active_newbie_key == "day1_draw_once":
+            return "【新手引导 Day 1】"
+        if active_newbie_key == "day2_pet_and_chat":
+            return "【新手引导 Day 2】"
+        if active_newbie_key == "day3_pk_once":
+            return "【新手引导 Day 3】"
+        return "【每日任务】"
 
     async def check_and_complete(
         self, gid: str, uid: str, nick: str = ""
-    ) -> Optional[int]:
+    ) -> Optional[QuestCompletionResult]:
         """检查任务完成状态，完成则发币并返回奖励金额。
 
         已完成返回 None（防重领）。
@@ -98,7 +130,7 @@ class QuestService:
                 return self._check_and_complete_inner(gid, uid, nick)
         return self._check_and_complete_inner(gid, uid, nick)
 
-    def _check_and_complete_inner(self, gid: str, uid: str, nick: str) -> Optional[int]:
+    def _check_and_complete_inner(self, gid: str, uid: str, nick: str) -> Optional[QuestCompletionResult]:
         today = self._today()
 
         store = ProfileStore(self._paths, gid)
@@ -108,8 +140,10 @@ class QuestService:
             self._config.initial_coins
         )
 
-        # 已完成则跳过
-        if profile.quest_completed_date == today:
+        active_newbie_key = self._get_active_newbie_key(profile)
+
+        # 标准任务已完成则跳过
+        if active_newbie_key is None and profile.quest_completed_date == today:
             logger.debug("quest: gid=%s uid=%s already completed", gid, uid)
             return None
 
@@ -122,10 +156,29 @@ class QuestService:
         quests = self._get_quests_for_profile(profile)
 
         if not self._all_quests_done(log, today, quests):
+            store.save_all(profiles)
             logger.debug("quest: gid=%s uid=%s not all quests done", gid, uid)
             return None
 
         # 全部完成，发币
+        if active_newbie_key is not None:
+            reward_conf = dict(self._config.newbie_guide.get(active_newbie_key) or {})
+            reward = int(reward_conf.get("coins", 0) or 0)
+            reward_item = str(reward_conf.get("item", "") or "") or None
+            profile.coins += reward
+            if reward_item:
+                profile.inventory[reward_item] = profile.inventory.get(reward_item, 0) + 1
+            if active_newbie_key not in profile.newbie_guide_claimed:
+                profile.newbie_guide_claimed.append(active_newbie_key)
+            store.save_all(profiles)
+            logger.debug("quest: gid=%s uid=%s newbie=%s reward=%d", gid, uid, active_newbie_key, reward)
+            return QuestCompletionResult(
+                coins=reward,
+                item=reward_item,
+                is_newbie=True,
+                guide_key=active_newbie_key,
+            )
+
         reward = self._config.quest_complete_coins
         profile.coins += reward
         profile.quest_completed_date = today
@@ -133,7 +186,7 @@ class QuestService:
 
         logger.debug("quest: gid=%s uid=%s reward=%d -> balance=%d",
                       gid, uid, reward, profile.coins)
-        return reward
+        return QuestCompletionResult(coins=reward)
 
     def get_quest_status(self, gid: str, uid: str) -> Dict[str, bool]:
         """获取各任务完成状态（用于展示进度）。"""
@@ -146,7 +199,9 @@ class QuestService:
             # 不存在的用户，返回默认状态
             return {q[2]: False for q in STANDARD_QUESTS}
 
-        if profile.quest_completed_date == today:
+        active_newbie_key = self._get_active_newbie_key(profile)
+
+        if active_newbie_key is None and profile.quest_completed_date == today:
             quests = self._get_quests_for_profile(profile)
             return {q[2]: True for q in quests}
 
@@ -217,6 +272,6 @@ class QuestService:
 
     def check_and_complete_sync(
         self, gid: str, uid: str, nick: str = ""
-    ) -> Optional[int]:
+    ) -> Optional[QuestCompletionResult]:
         """同步版 check_and_complete（不经过锁）。"""
         return self._check_and_complete_inner(gid, uid, nick)

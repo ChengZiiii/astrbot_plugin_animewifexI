@@ -46,9 +46,16 @@ async def handle_checkin(
     if bonus_coins > 0:
         lines[0] += f"（含额外奖励 {bonus_coins} 币）"
     if bonus_item:
-        from ..services.shop_service import ITEM_NAMES
         item_name = ITEM_NAMES.get(bonus_item, bonus_item)
         lines.append(f"🎁 额外获得：{item_name}")
+
+    weekly_box = economy.claim_weekly_surprise_box_sync(gid, uid, nick)
+    if weekly_box is not None:
+        box_coins, box_item = weekly_box
+        lines.append(f"📦 本周惊喜宝箱：+{box_coins} 币")
+        if box_item:
+            item_name = ITEM_NAMES.get(box_item, box_item)
+            lines.append(f"📦 宝箱额外获得：{item_name}")
     lines.append(f"当前余额：{balance} 币")
 
     yield event.plain_result("\n".join(lines))
@@ -66,21 +73,38 @@ async def handle_quest(
     nick = get_sender_nick(event)
 
     quest = QuestService(ctx.paths, ctx.config, ctx.locks)
+    economy = EconomyService(ctx.paths, ctx.config)
+    weekly_box = economy.claim_weekly_surprise_box_sync(gid, uid, nick)
 
     # 先尝试领取
     reward = await quest.check_and_complete(gid, uid, nick)
     if reward is not None:
-        economy = EconomyService(ctx.paths, ctx.config)
         balance = economy.balance(gid, uid)
-        yield event.plain_result(
-            f"所有任务已完成！获得 {reward} 老婆币\n"
-            f"当前余额：{balance} 币"
-        )
+        lines = [f"任务完成！获得 {reward.coins} 老婆币"]
+        if reward.item:
+            item_name = ITEM_NAMES.get(reward.item, reward.item)
+            lines.append(f"🎁 额外获得：{item_name}")
+        if weekly_box is not None:
+            box_coins, box_item = weekly_box
+            lines.append(f"📦 本周惊喜宝箱：+{box_coins} 币")
+            if box_item:
+                item_name = ITEM_NAMES.get(box_item, box_item)
+                lines.append(f"📦 宝箱额外获得：{item_name}")
+        lines.append(f"当前余额：{balance} 币")
+        yield event.plain_result("\n".join(lines))
         return
+
+    if weekly_box is not None:
+        box_coins, box_item = weekly_box
+        lines = [f"📦 本周惊喜宝箱已领取：+{box_coins} 币"]
+        if box_item:
+            item_name = ITEM_NAMES.get(box_item, box_item)
+            lines.append(f"📦 宝箱额外获得：{item_name}")
+        yield event.plain_result("\n".join(lines))
 
     # 展示任务进度
     status = quest.get_quest_status(gid, uid)
-    lines = ["【每日任务】"]
+    lines = [quest.get_track_title(gid, uid)]
     for label, done in status.items():
         icon = "✅" if done else "❌"
         lines.append(f"{icon} {label}")
@@ -112,7 +136,6 @@ async def handle_shop(
     for key, name, price in items:
         lines.append(f"• {name} — {price} 币  （老婆 购买 {name}）")
 
-    lines.append("\n使用道具：老婆 使用 <道具名>")
     yield event.plain_result("\n".join(lines))
 
 

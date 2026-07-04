@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.models.enums import Action
 from app.models.profile import UserProfile
 from app.services.plugin_config import PluginConfig
-from app.services.quest_service import QuestService
+from app.services.quest_service import QuestCompletionResult, QuestService
 from app.storage.paths import Paths
 from app.storage.stores import ActivityStore, ProfileStore
 
@@ -29,7 +29,15 @@ def tmp_paths(tmp_path):
 
 @pytest.fixture
 def config():
-    return PluginConfig(initial_coins=0, quest_complete_coins=10)
+    return PluginConfig(
+        initial_coins=0,
+        quest_complete_coins=10,
+        newbie_guide={
+            "day1_draw_once": {"coins": 20},
+            "day2_pet_and_chat": {"coins": 20},
+            "day3_pk_once": {"coins": 30, "item": "draw_ticket_single"},
+        },
+    )
 
 
 @pytest.fixture
@@ -65,42 +73,57 @@ class TestNewbieQuests:
 
     def test_day1_draw_once(self, quest, tmp_paths):
         """Day 1 新手任务：抽老婆 1 次。"""
-        # 注册时间设置为现在（新手 Day 1）
         _seed_profile(tmp_paths, "g1", "u1", registered_at=1000000000)
         _log_activity(tmp_paths, "g1", "u1", Action.DRAW, 1)
 
-        with patch("app.services.quest_service.now_ts", return_value=1000000000 + 3600):
-            reward = quest.check_and_complete_sync("g1", "u1")
-            assert reward == 10
+        reward = quest.check_and_complete_sync("g1", "u1")
+        assert reward == QuestCompletionResult(coins=20, is_newbie=True, guide_key="day1_draw_once")
 
     def test_day1_incomplete_returns_none(self, quest, tmp_paths):
         """Day 1 新手任务未完成返回 None。"""
         _seed_profile(tmp_paths, "g1", "u1", registered_at=1000000000)
 
-        with patch("app.services.quest_service.now_ts", return_value=1000000000 + 3600):
-            reward = quest.check_and_complete_sync("g1", "u1")
-            assert reward is None
+        reward = quest.check_and_complete_sync("g1", "u1")
+        assert reward is None
 
     def test_day2_pet_and_chat(self, quest, tmp_paths):
         """Day 2 新手任务：撸老婆 + 对话。"""
-        # 注册时间设置为 1 天前（新手 Day 2）
         _seed_profile(tmp_paths, "g1", "u1", registered_at=1000000000)
+        store = ProfileStore(tmp_paths, "g1")
+        profiles = store.load_all()
+        profiles["u1"].newbie_guide_claimed = ["day1_draw_once"]
+        store.save_all(profiles)
         _log_activity(tmp_paths, "g1", "u1", Action.INTIMACY, 1)
         _log_activity(tmp_paths, "g1", "u1", Action.CHAT, 1)
 
-        with patch("app.services.quest_service.now_ts", return_value=1000000000 + 86400 + 3600):
-            reward = quest.check_and_complete_sync("g1", "u1")
-            assert reward == 10
+        reward = quest.check_and_complete_sync("g1", "u1")
+        assert reward == QuestCompletionResult(coins=20, is_newbie=True, guide_key="day2_pet_and_chat")
 
     def test_day3_pk_once(self, quest, tmp_paths):
         """Day 3 新手任务：PK 1 次。"""
-        # 注册时间设置为 2 天前（新手 Day 3）
         _seed_profile(tmp_paths, "g1", "u1", registered_at=1000000000)
+        store = ProfileStore(tmp_paths, "g1")
+        profiles = store.load_all()
+        profiles["u1"].newbie_guide_claimed = ["day1_draw_once", "day2_pet_and_chat"]
+        store.save_all(profiles)
         _log_activity(tmp_paths, "g1", "u1", Action.PK_WIN, 1)
 
-        with patch("app.services.quest_service.now_ts", return_value=1000000000 + 2 * 86400 + 3600):
+        reward = quest.check_and_complete_sync("g1", "u1")
+        assert reward == QuestCompletionResult(
+            coins=30,
+            item="draw_ticket_single",
+            is_newbie=True,
+            guide_key="day3_pk_once",
+        )
+
+    def test_newbie_guide_does_not_expire_after_three_days(self, quest, tmp_paths):
+        _seed_profile(tmp_paths, "g1", "u1", registered_at=1000000000)
+        _log_activity(tmp_paths, "g1", "u1", Action.DRAW, 1)
+
+        with patch("app.services.quest_service.now_ts", return_value=1000000000 + 10 * 86400):
             reward = quest.check_and_complete_sync("g1", "u1")
-            assert reward == 10
+            assert reward is not None
+            assert reward.guide_key == "day1_draw_once"
 
 
 class TestStandardQuests:
@@ -108,39 +131,53 @@ class TestStandardQuests:
 
     def test_standard_quests_all_complete(self, quest, tmp_paths):
         """标准任务：全部完成。"""
-        # 注册时间设置为 4 天前（标准任务）
         _seed_profile(tmp_paths, "g1", "u1", registered_at=1000000000)
+        store = ProfileStore(tmp_paths, "g1")
+        profiles = store.load_all()
+        profiles["u1"].newbie_guide_claimed = [
+            "day1_draw_once", "day2_pet_and_chat", "day3_pk_once"
+        ]
+        store.save_all(profiles)
         _log_activity(tmp_paths, "g1", "u1", Action.DRAW, 1)
         _log_activity(tmp_paths, "g1", "u1", Action.INTIMACY, 2)
         _log_activity(tmp_paths, "g1", "u1", Action.PK_WIN, 1)
         _log_activity(tmp_paths, "g1", "u1", Action.WORK_START, 1)
 
-        with patch("app.services.quest_service.now_ts", return_value=1000000000 + 4 * 86400 + 3600):
-            reward = quest.check_and_complete_sync("g1", "u1")
-            assert reward == 10
+        reward = quest.check_and_complete_sync("g1", "u1")
+        assert reward == QuestCompletionResult(coins=10)
 
     def test_standard_quests_partial(self, quest, tmp_paths):
         """标准任务：部分完成返回 None。"""
         _seed_profile(tmp_paths, "g1", "u1", registered_at=1000000000)
+        store = ProfileStore(tmp_paths, "g1")
+        profiles = store.load_all()
+        profiles["u1"].newbie_guide_claimed = [
+            "day1_draw_once", "day2_pet_and_chat", "day3_pk_once"
+        ]
+        store.save_all(profiles)
         _log_activity(tmp_paths, "g1", "u1", Action.DRAW, 1)
         _log_activity(tmp_paths, "g1", "u1", Action.INTIMACY, 2)
         # 缺少 PK 和 打工
 
-        with patch("app.services.quest_service.now_ts", return_value=1000000000 + 4 * 86400 + 3600):
-            reward = quest.check_and_complete_sync("g1", "u1")
-            assert reward is None
+        reward = quest.check_and_complete_sync("g1", "u1")
+        assert reward is None
 
     def test_standard_quests_pk_any(self, quest, tmp_paths):
         """标准任务：PK_WIN + PK_LOST + PK_TIE 都算。"""
         _seed_profile(tmp_paths, "g1", "u1", registered_at=1000000000)
+        store = ProfileStore(tmp_paths, "g1")
+        profiles = store.load_all()
+        profiles["u1"].newbie_guide_claimed = [
+            "day1_draw_once", "day2_pet_and_chat", "day3_pk_once"
+        ]
+        store.save_all(profiles)
         _log_activity(tmp_paths, "g1", "u1", Action.DRAW, 1)
         _log_activity(tmp_paths, "g1", "u1", Action.INTIMACY, 2)
         _log_activity(tmp_paths, "g1", "u1", Action.PK_LOST, 1)  # 用 PK_LOST
         _log_activity(tmp_paths, "g1", "u1", Action.WORK_START, 1)
 
-        with patch("app.services.quest_service.now_ts", return_value=1000000000 + 4 * 86400 + 3600):
-            reward = quest.check_and_complete_sync("g1", "u1")
-            assert reward == 10
+        reward = quest.check_and_complete_sync("g1", "u1")
+        assert reward == QuestCompletionResult(coins=10)
 
 
 class TestGetQuestStatus:
@@ -149,33 +186,49 @@ class TestGetQuestStatus:
     def test_empty_status_standard(self, quest, tmp_paths):
         """无活动时，标准任务状态。"""
         _seed_profile(tmp_paths, "g1", "u1", registered_at=1000000000)
-
-        with patch("app.services.quest_service.now_ts", return_value=1000000000 + 4 * 86400):
-            status = quest.get_quest_status("g1", "u1")
-            assert len(status) == 4
-            assert all(v is False for v in status.values())
+        store = ProfileStore(tmp_paths, "g1")
+        profiles = store.load_all()
+        profiles["u1"].newbie_guide_claimed = [
+            "day1_draw_once", "day2_pet_and_chat", "day3_pk_once"
+        ]
+        store.save_all(profiles)
+        status = quest.get_quest_status("g1", "u1")
+        assert len(status) == 4
+        assert all(v is False for v in status.values())
 
     def test_partial_status_standard(self, quest, tmp_paths):
         """部分完成标准任务。"""
         _seed_profile(tmp_paths, "g1", "u1", registered_at=1000000000)
+        store = ProfileStore(tmp_paths, "g1")
+        profiles = store.load_all()
+        profiles["u1"].newbie_guide_claimed = [
+            "day1_draw_once", "day2_pet_and_chat", "day3_pk_once"
+        ]
+        store.save_all(profiles)
         _log_activity(tmp_paths, "g1", "u1", Action.DRAW, 1)
-
-        with patch("app.services.quest_service.now_ts", return_value=1000000000 + 4 * 86400):
-            status = quest.get_quest_status("g1", "u1")
-            assert status["抽老婆 1 次"] is True
-            assert status["亲密互动 2 次"] is False
+        status = quest.get_quest_status("g1", "u1")
+        assert status["抽老婆 1 次"] is True
+        assert status["亲密互动 2 次"] is False
 
     def test_all_done_status_standard(self, quest, tmp_paths):
         """全部完成标准任务。"""
         _seed_profile(tmp_paths, "g1", "u1", registered_at=1000000000)
+        store = ProfileStore(tmp_paths, "g1")
+        profiles = store.load_all()
+        profiles["u1"].newbie_guide_claimed = [
+            "day1_draw_once", "day2_pet_and_chat", "day3_pk_once"
+        ]
+        store.save_all(profiles)
         _log_activity(tmp_paths, "g1", "u1", Action.DRAW, 1)
         _log_activity(tmp_paths, "g1", "u1", Action.INTIMACY, 2)
         _log_activity(tmp_paths, "g1", "u1", Action.PK_WIN, 1)
         _log_activity(tmp_paths, "g1", "u1", Action.WORK_START, 1)
+        status = quest.get_quest_status("g1", "u1")
+        assert all(status.values())
 
-        with patch("app.services.quest_service.now_ts", return_value=1000000000 + 4 * 86400):
-            status = quest.get_quest_status("g1", "u1")
-            assert all(status.values())
+    def test_get_track_title_newbie(self, quest, tmp_paths):
+        _seed_profile(tmp_paths, "g1", "u1", registered_at=1000000000)
+        assert quest.get_track_title("g1", "u1") == "【新手引导 Day 1】"
 
 
 class TestIsCompleted:
@@ -187,11 +240,15 @@ class TestIsCompleted:
 
     def test_completed_after_all_quests(self, quest, tmp_paths):
         _seed_profile(tmp_paths, "g1", "u1", registered_at=1000000000)
+        store = ProfileStore(tmp_paths, "g1")
+        profiles = store.load_all()
+        profiles["u1"].newbie_guide_claimed = [
+            "day1_draw_once", "day2_pet_and_chat", "day3_pk_once"
+        ]
+        store.save_all(profiles)
         _log_activity(tmp_paths, "g1", "u1", Action.DRAW, 1)
         _log_activity(tmp_paths, "g1", "u1", Action.INTIMACY, 2)
         _log_activity(tmp_paths, "g1", "u1", Action.PK_WIN, 1)
         _log_activity(tmp_paths, "g1", "u1", Action.WORK_START, 1)
-
-        with patch("app.services.quest_service.now_ts", return_value=1000000000 + 4 * 86400 + 3600):
-            quest.check_and_complete_sync("g1", "u1")
-            assert quest.is_completed("g1", "u1") is True
+        quest.check_and_complete_sync("g1", "u1")
+        assert quest.is_completed("g1", "u1") is True
