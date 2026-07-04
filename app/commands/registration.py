@@ -41,6 +41,7 @@ from .swap import (
     handle_swap_request,
     handle_swap_view,
 )
+from .switch import handle_switch_primary
 from .view import handle_view
 from .work import handle_work
 
@@ -88,6 +89,7 @@ def build_registry() -> CommandRegistry:
     # ---------- 分组命令：锁定 / PK / 图鉴 / 面板 ----------
     registry.register_grouped("锁定", handle_lock)
     registry.register_grouped("解锁", handle_unlock)
+    registry.register_grouped("切换", handle_switch_primary)
     registry.register_grouped("pk", handle_pk)
     registry.register_grouped("PK", handle_pk)
     registry.register_grouped("图鉴", handle_collection)

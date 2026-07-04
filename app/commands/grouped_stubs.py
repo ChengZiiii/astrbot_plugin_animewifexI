@@ -16,7 +16,7 @@ __all__ = [
 
 
 NOT_IMPLEMENTED_SUBCOMMANDS = (
-    "列表", "查", "切换",
+    "列表", "查",
 )
 
 

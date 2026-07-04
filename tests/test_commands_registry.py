@@ -112,6 +112,7 @@ class TestRegistryParse:
         assert "老婆 对话" in all_names
         assert "老婆 约会" in all_names
         assert "老婆 打工" in all_names
+        assert "老婆 切换" in all_names
 
     def test_help_text_matches_current_features(self):
         help_text = build_help_text()
@@ -119,9 +120,11 @@ class TestRegistryParse:
         assert "老婆 对话" in help_text
         assert "老婆 约会" in help_text
         assert "老婆 打工" in help_text
+        assert "老婆 切换" in help_text
         assert "老婆 重置抽卡" in help_text
         assert "老婆 列表" in help_text
         assert "当前仍未开放" in help_text
+        assert "老婆 切换 当前仍未开放" not in help_text
 
         assert "求婚" not in help_text
         assert "后续开放" not in help_text
