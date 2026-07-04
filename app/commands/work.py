@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 import re
 from typing import AsyncGenerator, Optional
 
@@ -21,7 +22,16 @@ MODE_ALIASES = {
     "远征": "expedition",
 }
 
-# 打工风味台词（{name} 会被替换为老婆名）
+# 打工结算风味台词（{name} 会被替换为老婆名，{reward} 为奖励币数）
+_WORK_SETTLE_FLAVOR = [
+    "{name}回来了！赚了{reward}币，累得趴在桌子上了……",
+    "{name}：打工好累啊……但是赚到钱了！{reward}币！",
+    "{name}拖着疲惫的身体回来了，但看到{reward}币的工资条就笑了~",
+    "{name}：老板说我很能干！还多给了小费~ {reward}币到手！",
+    "{name}回来了，衣服上沾满了灰尘，但钱包鼓鼓的~ {reward}币！",
+    "{name}：我回来了~ {reward}币！虽然累但是值得的！",
+]
+
 _WORK_TAUNTS = {
     "normal": [
         "{name}一个人出去打工了，好像很忙的样子……有没有人想去「关心」一下？",
@@ -60,10 +70,12 @@ async def try_settle_work(
     if result and result.ok:
         wife_name = _wife_name(ctx, result.wid)
         mode_name = _mode_name(result.mode)
+        taunt = random.choice(_WORK_SETTLE_FLAVOR).format(name=wife_name, reward=result.reward)
         return (
             f"🎉 {wife_name} 的{mode_name}打工结算完成！获得 {result.reward} 币，"
             f"亲密度 +{result.intimacy_gain}\n"
             f"余额：{result.coin_balance} 币"
+            f"\n\n💬 {taunt}"
         )
     return None
 
@@ -128,11 +140,13 @@ async def handle_work(
             bonus_lines.append("📜 打工合约生效，本次收益提升！")
         if settle_result.partner_bonus_used:
             bonus_lines.append("🤝 打工搭档加成生效，本次收益提升！")
+        taunt = random.choice(_WORK_SETTLE_FLAVOR).format(name=wife_name, reward=settle_result.reward)
         yield event.plain_result(
             f"🎉 {wife_name} 的{mode_name}打工结算完成！获得 {settle_result.reward} 币\n"
             f"亲密度 +{settle_result.intimacy_gain}，连续打工 {settle_result.streak} 天\n"
             f"余额：{settle_result.coin_balance} 币"
             + ("\n" + "\n".join(bonus_lines) if bonus_lines else "")
+            + f"\n\n💬 {taunt}"
         )
 
     # 启动新的打工
@@ -162,7 +176,6 @@ async def handle_work(
     # 打工成功
     mode_name = _mode_name(mode)
     wife_name = _wife_name(ctx, result.wid)
-    import random
     taunt = random.choice(_WORK_TAUNTS.get(mode, _WORK_TAUNTS["normal"]))
     yield event.plain_result(
         f"🔨 {nick} 派 {wife_name} 开始{mode_name}打工！\n"
