@@ -61,9 +61,9 @@ def build_help_text(config=None) -> str:
     if config and hasattr(config, 'work_modes'):
         work_modes = config.work_modes or {}
     default_modes = {
-        "normal": {"duration": 7200, "ntr_multiplier": 1.5, "pk_penalty": 0.10},
-        "overtime": {"duration": 14400, "ntr_multiplier": 2.0, "pk_penalty": 0.20},
-        "expedition": {"duration": 28800, "ntr_multiplier": 2.5, "pk_penalty": 0.30},
+        "normal": {"duration": 7200, "ntr_multiplier": 1.5, "pk_penalty": 0.10, "reward_min": 20, "reward_max": 40},
+        "overtime": {"duration": 14400, "ntr_multiplier": 2.0, "pk_penalty": 0.20, "reward_min": 30, "reward_max": 60},
+        "expedition": {"duration": 28800, "ntr_multiplier": 2.5, "pk_penalty": 0.30, "reward_min": 50, "reward_max": 100},
     }
     for key, default in default_modes.items():
         if key not in work_modes:
@@ -83,6 +83,12 @@ def build_help_text(config=None) -> str:
     normal_pk = int(work_modes["normal"]["pk_penalty"] * 100)
     overtime_pk = int(work_modes["overtime"]["pk_penalty"] * 100)
     expedition_pk = int(work_modes["expedition"]["pk_penalty"] * 100)
+    normal_reward_min = work_modes["normal"]["reward_min"]
+    normal_reward_max = work_modes["normal"]["reward_max"]
+    overtime_reward_min = work_modes["overtime"]["reward_min"]
+    overtime_reward_max = work_modes["overtime"]["reward_max"]
+    expedition_reward_min = work_modes["expedition"]["reward_min"]
+    expedition_reward_max = work_modes["expedition"]["reward_max"]
 
     return f"""
 【基础命令】
@@ -144,9 +150,9 @@ def build_help_text(config=None) -> str:
   战力 = 攻击 + 防御 + 血量×0.5，再受亲密度/元素/打工状态加成。属性可在「查老婆」和「面板」中查看。
 
 【打工风险】老婆出去打工时，被牛（NTR）的概率大幅提升！
-  • 普通打工（{normal_h}）：被牛概率 ×{normal_ntr}
-  • 加班打工（{overtime_h}）：被牛概率 ×{overtime_ntr}
-  • 远征打工（{expedition_h}）：被牛概率 ×{expedition_ntr}
+  • 普通打工（{normal_h}）：被牛概率 ×{normal_ntr}，收益 {normal_reward_min}-{normal_reward_max} 币
+  • 加班打工（{overtime_h}）：被牛概率 ×{overtime_ntr}，收益 {overtime_reward_min}-{overtime_reward_max} 币
+  • 远征打工（{expedition_h}）：被牛概率 ×{expedition_ntr}，收益 {expedition_reward_min}-{expedition_reward_max} 币
   打工中的老婆 PK 战力也会扣减（普通-{normal_pk}%，加班-{overtime_pk}%，远征-{expedition_pk}%）。
   可以同时派多位老婆打工（默认上限3位），也可以用「老婆 打工 中断」召回（但奖励没收）。
 
