@@ -223,5 +223,330 @@
             "draw_ticket_single": {"type": "int", "default": 30},
             "draw_ticket_ten": {"type": "int", "default": 270}
         }
+    },
+    "checkin_streak_3day_bonus": {
+        "description": "连续签到第3天额外奖励",
+        "type": "int",
+        "default": 30,
+        "hint": "Phase 4: 连续签到第3天额外发放的老婆币"
+    },
+    "checkin_streak_7day_bonus": {
+        "description": "连续签到第7天额外奖励",
+        "type": "int",
+        "default": 100,
+        "hint": "Phase 4: 连续签到第7天额外发放的老婆币"
+    },
+    "checkin_streak_7day_item": {
+        "description": "连续签到第7天道具奖励",
+        "type": "string",
+        "default": "draw_ticket_single",
+        "hint": "Phase 4: 连续签到第7天额外发放的道具"
+    },
+    "chat_cooldown": {
+        "description": "对话冷却（秒）",
+        "type": "int",
+        "default": 7200,
+        "hint": "Phase 4: 「老婆 对话」冷却时间，2小时"
+    },
+    "chat_intimacy_gain": {
+        "description": "对话亲密度增量",
+        "type": "int",
+        "default": 1,
+        "hint": "Phase 4: 「老婆 对话」增加的亲密度"
+    },
+    "chat_coin_reward": {
+        "description": "对话老婆币奖励",
+        "type": "int",
+        "default": 5,
+        "hint": "Phase 4: 「老婆 对话」获得的老婆币"
+    },
+    "date_cooldown": {
+        "description": "约会冷却（秒）",
+        "type": "int",
+        "default": 43200,
+        "hint": "Phase 4: 「老婆 约会」冷却时间，12小时"
+    },
+    "date_intimacy_gain": {
+        "description": "约会亲密度增量",
+        "type": "int",
+        "default": 8,
+        "hint": "Phase 4: 「老婆 约会」增加的亲密度"
+    },
+    "date_coin_cost": {
+        "description": "约会消耗老婆币",
+        "type": "int",
+        "default": 10,
+        "hint": "Phase 4: 「老婆 约会」消耗的老婆币"
+    },
+    "ntr_intimacy_retain_ratio": {
+        "description": "被牛后亲密度保留比例",
+        "type": "float",
+        "default": 0.50,
+        "hint": "Phase 4: 被牛成功后，被牛方保留的亲密度比例"
+    },
+    "ntr_coin_compensation_per_intimacy": {
+        "description": "被牛每点亲密度补偿",
+        "type": "int",
+        "default": 2,
+        "hint": "Phase 4: 被牛后每点失去的亲密度补偿的老婆币"
+    },
+    "ntr_coin_compensation_max": {
+        "description": "被牛补偿上限",
+        "type": "int",
+        "default": 50,
+        "hint": "Phase 4: 被牛后补偿老婆币的上限"
+    },
+    "ntr_streak_penalty": {
+        "description": "连续成功牛人惩罚",
+        "type": "float",
+        "default": 0.10,
+        "hint": "Phase 4: 对同一目标连续牛成功时每次额外降低的概率"
+    },
+    "intimacy_shield_threshold": {
+        "description": "亲密度护盾触发阈值",
+        "type": "int",
+        "default": 60,
+        "hint": "Phase 4: 亲密度达到此值时触发护盾，降低被牛概率"
+    },
+    "intimacy_shield_reduction": {
+        "description": "亲密度护盾降低比例",
+        "type": "float",
+        "default": 0.30,
+        "hint": "Phase 4: 亲密度护盾触发时降低的NTR概率比例"
+    },
+    "newbie_ntr_protection_days": {
+        "description": "新手保护天数",
+        "type": "int",
+        "default": 1,
+        "hint": "Phase 4: 新注册用户前N天免疫NTR"
+    },
+    "newbie_ntr_retain_ratio": {
+        "description": "新手被牛亲密度保留比例",
+        "type": "float",
+        "default": 0.75,
+        "hint": "Phase 4: 新手玩家被牛时额外保留的亲密度比例"
+    },
+    "revenge_token_bonus": {
+        "description": "复仇令牌加成",
+        "type": "float",
+        "default": 0.20,
+        "hint": "Phase 4: 消耗复仇令牌时额外增加的复仇成功率"
+    },
+    "revenge_success_intimacy_restore": {
+        "description": "复仇成功亲密度恢复比例",
+        "type": "float",
+        "default": 0.75,
+        "hint": "Phase 4: 复仇成功时恢复被牛前亲密度的比例"
+    },
+    "revenge_fail_consolation_coins": {
+        "description": "复仇失败安慰奖",
+        "type": "int",
+        "default": 5,
+        "hint": "Phase 4: 复仇失败时发放的安慰老婆币"
+    },
+    "evil_points_broadcast_threshold": {
+        "description": "作恶值播报阈值",
+        "type": "int",
+        "default": 5,
+        "hint": "Phase 4: 作恶值达到此值时触发群播报"
+    },
+    "evil_points_compensation_multiplier": {
+        "description": "作恶值补偿倍率",
+        "type": "float",
+        "default": 2.0,
+        "hint": "Phase 4: 作恶值达到阈值时受害者补偿翻倍"
+    },
+    "pk_loser_reward": {
+        "description": "PK败方奖励",
+        "type": "int",
+        "default": 5,
+        "hint": "Phase 4: PK失败方获得的老婆币（战力差接近时）"
+    },
+    "pk_loser_reward_close_threshold": {
+        "description": "PK败方奖励战力差阈值",
+        "type": "float",
+        "default": 0.50,
+        "hint": "Phase 4: 战力差比例低于此值时败方可获得奖励"
+    },
+    "pk_tie_reward": {
+        "description": "PK平局奖励",
+        "type": "int",
+        "default": 8,
+        "hint": "Phase 4: PK平局时双方获得的老婆币"
+    },
+    "pk_random_variance": {
+        "description": "PK随机波动",
+        "type": "float",
+        "default": 0.10,
+        "hint": "Phase 4: PK战力计算时的随机波动比例"
+    },
+    "pk_score_per_win": {
+        "description": "PK胜方积分",
+        "type": "int",
+        "default": 5,
+        "hint": "Phase 4: PK胜利获得的段位积分"
+    },
+    "pk_score_per_lose": {
+        "description": "PK败方积分",
+        "type": "int",
+        "default": 1,
+        "hint": "Phase 4: PK失败获得的段位积分（战力差接近时）"
+    },
+    "pk_pair_cooldown_hours": {
+        "description": "同对手PK冷却（小时）",
+        "type": "int",
+        "default": 24,
+        "hint": "Phase 4: 对同一对手发起PK的冷却时间"
+    },
+    "pk_score_decay_days": {
+        "description": "PK积分衰减天数",
+        "type": "int",
+        "default": 30,
+        "hint": "Phase 4: PK积分超过此天数未活跃开始衰减"
+    },
+    "pk_score_decay_amount": {
+        "description": "PK积分衰减数量",
+        "type": "int",
+        "default": 50,
+        "hint": "Phase 4: PK积分衰减时扣除的数量"
+    },
+    "pk_element_advantage": {
+        "description": "元素克制倍率",
+        "type": "float",
+        "default": 1.20,
+        "hint": "Phase 4: PK中克制对方元素时的战力倍率"
+    },
+    "pk_element_disadvantage": {
+        "description": "元素被克倍率",
+        "type": "float",
+        "default": 0.80,
+        "hint": "Phase 4: PK中被对方元素克制时的战力倍率"
+    },
+    "duplicate_coin_compensation": {
+        "description": "重复抽卡补偿",
+        "type": "object",
+        "hint": "Phase 4: 抽到重复老婆时按稀有度补偿的老婆币",
+        "items": {
+            "N": {"type": "int", "default": 5},
+            "R": {"type": "int", "default": 10},
+            "SR": {"type": "int", "default": 20},
+            "SSR": {"type": "int", "default": 50}
+        }
+    },
+    "work_enabled": {
+        "description": "打工系统开关",
+        "type": "bool",
+        "default": true,
+        "hint": "Phase 4: 是否启用打工系统"
+    },
+    "work_modes": {
+        "description": "打工模式配置",
+        "type": "object",
+        "hint": "Phase 4: 各打工模式的参数配置",
+        "items": {
+            "normal": {
+                "type": "object",
+                "items": {
+                    "duration": {"type": "int", "default": 14400},
+                    "start_cost": {"type": "int", "default": 10},
+                    "reward_min": {"type": "int", "default": 20},
+                    "reward_max": {"type": "int", "default": 40},
+                    "ntr_multiplier": {"type": "float", "default": 1.5},
+                    "pk_penalty": {"type": "float", "default": 0.10},
+                    "intimacy_gain": {"type": "int", "default": 5}
+                }
+            },
+            "overtime": {
+                "type": "object",
+                "items": {
+                    "duration": {"type": "int", "default": 7200},
+                    "start_cost": {"type": "int", "default": 20},
+                    "reward_min": {"type": "int", "default": 30},
+                    "reward_max": {"type": "int", "default": 60},
+                    "ntr_multiplier": {"type": "float", "default": 2.0},
+                    "pk_penalty": {"type": "float", "default": 0.20},
+                    "intimacy_gain": {"type": "int", "default": 3}
+                }
+            },
+            "expedition": {
+                "type": "object",
+                "items": {
+                    "duration": {"type": "int", "default": 28800},
+                    "start_cost": {"type": "int", "default": 30},
+                    "reward_min": {"type": "int", "default": 50},
+                    "reward_max": {"type": "int", "default": 100},
+                    "ntr_multiplier": {"type": "float", "default": 2.5},
+                    "pk_penalty": {"type": "float", "default": 0.30},
+                    "intimacy_gain": {"type": "int", "default": 10}
+                }
+            }
+        }
+    },
+    "work_streak_bonus": {
+        "description": "打工连续加成",
+        "type": "float",
+        "default": 0.05,
+        "hint": "Phase 4: 每连续完成一次打工，收益额外增加的比例"
+    },
+    "intimacy_levelup_rewards": {
+        "description": "亲密度升级奖励",
+        "type": "object",
+        "hint": "Phase 4: 亲密度等级提升时发放的奖励",
+        "items": {
+            "2": {"type": "object", "items": {"coins": {"type": "int", "default": 20}}},
+            "3": {"type": "object", "items": {"coins": {"type": "int", "default": 50}}},
+            "4": {"type": "object", "items": {"coins": {"type": "int", "default": 100}, "item": {"type": "string", "default": "draw_ticket_single"}}},
+            "5": {"type": "object", "items": {"coins": {"type": "int", "default": 200}, "item": {"type": "string", "default": "draw_ticket_ten"}}}
+        }
+    },
+    "weekly_surprise_box": {
+        "description": "周惊喜宝箱",
+        "type": "object",
+        "hint": "Phase 4: 每周签到达标后可领取的宝箱",
+        "items": {
+            "min_checkin_days": {"type": "int", "default": 5},
+            "coins": {"type": "int", "default": 100},
+            "item": {"type": "string", "default": "draw_ticket_single"}
+        }
+    },
+    "newbie_guide": {
+        "description": "新手引导任务奖励",
+        "type": "object",
+        "hint": "Phase 4: 新手3日引导任务的奖励配置",
+        "items": {
+            "day1_draw_once": {"type": "object", "items": {"coins": {"type": "int", "default": 50}, "item": {"type": "string", "default": "draw_ticket_single"}}},
+            "day2_pet_and_chat": {"type": "object", "items": {"coins": {"type": "int", "default": 30}}},
+            "day3_pk_once": {"type": "object", "items": {"coins": {"type": "int", "default": 50}, "item": {"type": "string", "default": "protection_charm"}}}
+        }
+    },
+    "work_contract_cost": {
+        "description": "打工合约费用（暂未启用）",
+        "type": "int",
+        "default": 50,
+        "hint": "Phase 4 第二波: 预订打工合约消耗的老婆币"
+    },
+    "work_contract_reward_multiplier": {
+        "description": "打工合约收益倍率（暂未启用）",
+        "type": "float",
+        "default": 1.5,
+        "hint": "Phase 4 第二波: 有合约时打工收益的倍率"
+    },
+    "work_partner_bonus": {
+        "description": "打工搭档加成（暂未启用）",
+        "type": "float",
+        "default": 0.20,
+        "hint": "Phase 4 第二波: 有搭档时打工收益额外增加的比例"
+    },
+    "work_partner_daily_limit": {
+        "description": "打工搭档每日次数（暂未启用）",
+        "type": "int",
+        "default": 1,
+        "hint": "Phase 4 第二波: 每日可与搭档一起打工的次数"
+    },
+    "intimacy_decay": {
+        "description": "亲密度自然衰减（暂未启用）",
+        "type": "int",
+        "default": 0,
+        "hint": "Phase 4 第二波: 每日亲密度自然衰减值，0 表示不衰减"
     }
 }

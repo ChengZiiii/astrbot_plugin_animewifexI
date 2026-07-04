@@ -2,10 +2,10 @@
 
 # astrbot_plugin_animewifexI
 
-> ⚠️ **v3.0.0-phase2 已发布（核心玩法上线）**
+> ⚠️ **Phase 4 玩法升级开发中**
 >
-> Phase 2 新增：冷却参数化、排行榜、亲密度系统、复仇机制。
-> 详见 [CHANGELOG.md](CHANGELOG.md) 与 [ROADMAP.md](ROADMAP.md)。
+> Phase 4 目标：连续签到、对话/约会、NTR 降级补偿、打工系统、PK 重构、新排行榜。
+> 详见 [ROADMAP_PHASE4_DETAILED.md](ROADMAP_PHASE4_DETAILED.md) 与 [PHASE4_EXECUTION_TICKETS.md](PHASE4_EXECUTION_TICKETS.md)。
 >
 > **升级注意（Phase 1 不兼容变更）**：
 > - 旧 v2.x 数据启动时自动归档到 `data/archive_v1/<时间戳>/`，**不做语义迁移**。

@@ -1,5 +1,14 @@
 # 更新日志
 
+## v3.0.0-phase4 (开发中)
+
+**Phase 4 玩法升级开发中**
+
+- 基线测试：275 passed, 0 failed
+- 详见 [ROADMAP_PHASE4_DETAILED.md](ROADMAP_PHASE4_DETAILED.md) 与 [PHASE4_EXECUTION_TICKETS.md](PHASE4_EXECUTION_TICKETS.md)
+
+---
+
 ## v3.0.0-phase2
 
 **Phase 2 核心玩法上线（参考 [ROADMAP.md](ROADMAP.md) §四）**
