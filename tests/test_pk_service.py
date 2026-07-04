@@ -130,26 +130,6 @@ class TestPk:
         # Winner should have loser's wid in collection
         assert "w2" in profiles["u1"].collection
 
-    def test_pk_can_use_specified_non_primary_wives(self, pk_service, tmp_paths):
-        _seed_wife(tmp_paths, "w1", "主力A", "SSR", atk=50, defense=50, hp=100)
-        _seed_wife(tmp_paths, "w2", "替补A", "N", atk=5, defense=5, hp=10)
-        _seed_wife(tmp_paths, "w3", "主力B", "SSR", atk=45, defense=45, hp=90)
-        _seed_wife(tmp_paths, "w4", "替补B", "N", atk=4, defense=4, hp=10)
-        _seed_ownership(tmp_paths, "g1", "u1", "w1", is_primary=True)
-        _seed_ownership(tmp_paths, "g1", "u1", "w2", is_primary=False)
-        _seed_ownership(tmp_paths, "g1", "u2", "w3", is_primary=True)
-        _seed_ownership(tmp_paths, "g1", "u2", "w4", is_primary=False)
-        _seed_profile(tmp_paths, "g1", "u1", coins=0)
-        _seed_profile(tmp_paths, "g1", "u2", coins=0)
-
-        result = pk_service.pk_sync(
-            "g1", "u1", "u2", "Alice", "Bob", "2026-07-03", "w2", "w4"
-        )
-
-        assert result.ok is True
-        assert result.attacker_name == "替补A"
-        assert result.defender_name == "替补B"
-
 
 class TestCalcPower:
     def test_power_formula(self, pk_service):

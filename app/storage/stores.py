@@ -137,7 +137,7 @@ class OwnershipStore:
         若同一 uid 已有同 wid，按幂等语义忽略。
         """
         for existing in ownerships:
-            if existing.wid == new_o.wid:
+            if existing.uid == new_o.uid and existing.wid == new_o.wid:
                 return ownerships
         ownerships.append(new_o)
         return ownerships

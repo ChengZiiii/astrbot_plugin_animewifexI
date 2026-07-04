@@ -9,11 +9,8 @@ from .admin import (
     handle_admin_test_draw,
     handle_admin_test_intimacy,
     handle_help,
-    handle_reset_change,
-    handle_reset_ntr,
     handle_switch_ntr,
 )
-from .change import handle_change
 from .context import CommandContext
 from .draw import handle_draw, handle_draw_ten
 from .economy import (
@@ -57,9 +54,6 @@ def build_registry() -> CommandRegistry:
     registry.register_legacy("抽老婆", handle_draw)
     registry.register_legacy("查老婆", handle_view)
     registry.register_legacy("牛老婆", handle_ntr)
-    registry.register_legacy("重置牛", handle_reset_ntr)
-    registry.register_legacy("换老婆", handle_change)
-    registry.register_legacy("重置换", handle_reset_change)
     registry.register_legacy("交换老婆", handle_swap_request)
     registry.register_legacy("同意交换", handle_swap_accept)
     registry.register_legacy("拒绝交换", handle_swap_reject)

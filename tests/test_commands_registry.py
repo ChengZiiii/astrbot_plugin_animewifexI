@@ -48,10 +48,8 @@ class TestRegistryParse:
         """长命令优先匹配（避免 "查老婆" 截胡 "查老婆状态" 之类）"""
         reg = build_registry()
         # "查看交换请求" 不应被 "查老婆" 截胡（前缀不同）
-        # 但 "重置换" 与 "重置牛" 前缀 "重置" 相同，应正确区分
-        assert reg.parse("重置换").name == "重置换"
-        assert reg.parse("重置牛").name == "重置牛"
-        assert reg.parse("重置换 @x").name == "重置换"
+        assert reg.parse("查看交换请求").name == "查看交换请求"
+        assert reg.parse("查看交换请求 @x").name == "查看交换请求"
 
     def test_grouped_command_help(self):
         reg = build_registry()
@@ -95,7 +93,6 @@ class TestRegistryParse:
         names = set(reg.legacy_commands.keys())
         expected = {
             "老婆帮助", "抽老婆", "查老婆", "牛老婆",
-            "重置牛", "换老婆", "重置换",
             "交换老婆", "同意交换", "拒绝交换", "查看交换请求",
             "切换ntr开关状态", "切换NTR开关状态",
         }

@@ -26,6 +26,7 @@ from ..storage.stores import (
     ProfileStore,
     WivesMasterStore,
 )
+from ..utils.time import now_ts
 from .cooldown_service import CooldownService
 from .economy_service import EconomyService
 from .plugin_config import PluginConfig
@@ -82,10 +83,8 @@ class PkService:
         attacker_nick: str,
         defender_nick: str,
         today: str,
-        attacker_wid: str | None = None,
-        defender_wid: str | None = None,
     ) -> PkResult:
-        """发起 PK：attacker vs defender"""
+        """发起 PK：attacker vs defender（双方主老婆对战）"""
         # 检查冷却
         if self._cooldown and self._config.pk_cooldown > 0:
             if not self._cooldown.check(gid, attacker_uid, "pk", self._config.pk_cooldown):
@@ -101,8 +100,6 @@ class PkService:
                     attacker_nick,
                     defender_nick,
                     today,
-                    attacker_wid,
-                    defender_wid,
                 )
         return self._pk_inner(
             gid,
@@ -111,8 +108,6 @@ class PkService:
             attacker_nick,
             defender_nick,
             today,
-            attacker_wid,
-            defender_wid,
         )
 
     def _pk_inner(
@@ -123,8 +118,6 @@ class PkService:
         attacker_nick: str,
         defender_nick: str,
         today: str,
-        attacker_wid: str | None = None,
-        defender_wid: str | None = None,
     ) -> PkResult:
         # 检查每日次数
         daily_store = DailyCountStore(self._paths, gid)
@@ -139,19 +132,12 @@ class PkService:
         if not pk_pair_store.can_pk(pk_pairs, attacker_uid, defender_uid, self._config.pk_pair_cooldown_hours):
             return PkResult(ok=False, reason="same_target", msg=f"24小时内不能对同一对手重复 PK 哦~")
 
-        # 获取双方出战老婆（未指定时默认主老婆）
+        # 获取双方主老婆
         ownership_store = OwnershipStore(self._paths, gid)
         ownerships = ownership_store.load_all()
 
-        atk_primary = ownership_store.get_primary(attacker_uid, ownerships)
-        def_primary = ownership_store.get_primary(defender_uid, ownerships)
-        atk_selected = ownership_store.find_by_wid(attacker_wid, ownerships) if attacker_wid else atk_primary
-        def_selected = ownership_store.find_by_wid(defender_wid, ownerships) if defender_wid else def_primary
-
-        if attacker_wid and (atk_selected is None or atk_selected.uid != attacker_uid):
-            return PkResult(ok=False, reason="attacker_wife_not_found", msg="你指定的出战老婆编号不存在哦~")
-        if defender_wid and (def_selected is None or def_selected.uid != defender_uid):
-            return PkResult(ok=False, reason="defender_wife_not_found", msg="对方指定的老婆编号不存在哦~")
+        atk_selected = ownership_store.get_primary(attacker_uid, ownerships)
+        def_selected = ownership_store.get_primary(defender_uid, ownerships)
 
         if not atk_selected:
             return PkResult(ok=False, reason="no_wife", msg="你还没有老婆，先去抽一个吧~")
@@ -416,8 +402,6 @@ class PkService:
         attacker_nick: str,
         defender_nick: str,
         today: str,
-        attacker_wid: str | None = None,
-        defender_wid: str | None = None,
     ) -> PkResult:
         """同步版 pk（不经过锁）。"""
         # 检查冷却
@@ -432,6 +416,4 @@ class PkService:
             attacker_nick,
             defender_nick,
             today,
-            attacker_wid,
-            defender_wid,
         )

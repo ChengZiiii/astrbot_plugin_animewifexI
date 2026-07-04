@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import AsyncGenerator
 
 from astrbot.api.event import AstrMessageEvent
@@ -10,7 +9,7 @@ from astrbot.api.event import AstrMessageEvent
 from ..api.events import get_group_id, get_sender_nick, get_sender_uid, parse_at_target
 from ..services.pk_service import PkService
 from .context import CommandContext
-from .view import find_uid_by_owner_nick, find_wid_by_position
+from .view import find_uid_by_owner_nick
 
 __all__ = ["handle_pk"]
 
@@ -18,14 +17,14 @@ __all__ = ["handle_pk"]
 async def handle_pk(
     event: AstrMessageEvent, ctx: CommandContext
 ) -> AsyncGenerator:
-    """``老婆 PK @某人 [我方编号] [对方编号]``"""
+    """``老婆 PK @某人``：双方主老婆对战"""
     gid = get_group_id(event)
     if not gid:
         return
     attacker_uid = get_sender_uid(event)
     attacker_nick = get_sender_nick(event)
 
-    tid, attacker_index, defender_index = _resolve_target_and_indices(event, ctx, gid)
+    tid = _resolve_target(event, ctx, gid)
 
     if not tid:
         yield event.plain_result(f"{attacker_nick}，请@你想PK的对象哦~")
@@ -33,19 +32,6 @@ async def handle_pk(
     if tid == attacker_uid:
         yield event.plain_result(f"{attacker_nick}，不能和自己PK哦~")
         return
-
-    attacker_wid = None
-    defender_wid = None
-    if attacker_index is not None:
-        attacker_wid = find_wid_by_position(ctx, gid, attacker_uid, attacker_index)
-        if attacker_wid is None:
-            yield event.plain_result(f"{attacker_nick}，你指定的出战老婆编号不存在哦~")
-            return
-    if defender_index is not None:
-        defender_wid = find_wid_by_position(ctx, gid, tid, defender_index)
-        if defender_wid is None:
-            yield event.plain_result(f"{attacker_nick}，对方指定的老婆编号不存在哦~")
-            return
 
     # 获取对方昵称
     from ..storage.stores import ProfileStore
@@ -62,8 +48,6 @@ async def handle_pk(
         attacker_nick,
         defender_nick,
         ctx.today(),
-        attacker_wid,
-        defender_wid,
     )
 
     if not result.ok:
@@ -121,12 +105,12 @@ async def handle_pk(
     yield event.plain_result("\n".join(lines))
 
 
-def _resolve_target_and_indices(
+def _resolve_target(
     event: AstrMessageEvent, ctx: CommandContext, gid: str
-) -> tuple[str | None, int | None, int | None]:
-    """解析 PK 目标与可选编号。
+) -> str | None:
+    """解析 PK 目标。
 
-    语法：``老婆 PK @某人 [我方编号] [对方编号]``。
+    语法：``老婆 PK @某人`` 或 ``老婆 PK 昵称``。
     """
     msg = (event.message_str or "").strip()
     rest = msg
@@ -137,18 +121,9 @@ def _resolve_target_and_indices(
     rest = rest.strip()
 
     tid = parse_at_target(event)
-    args_text = ""
-    if tid:
-        parts = rest.split(maxsplit=1)
-        args_text = parts[1] if len(parts) > 1 else ""
-    else:
+    if not tid:
         parts = rest.split(maxsplit=1)
         target_nick = parts[0].strip() if parts else ""
         if target_nick:
             tid = find_uid_by_owner_nick(ctx, gid, target_nick)
-        args_text = parts[1] if len(parts) > 1 else ""
-
-    numbers = [int(x) for x in re.findall(r"\d+", args_text)]
-    attacker_index = numbers[0] if len(numbers) >= 1 else None
-    defender_index = numbers[1] if len(numbers) >= 2 else None
-    return tid, attacker_index, defender_index
+    return tid

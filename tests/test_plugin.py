@@ -64,8 +64,8 @@ def test_plugin_init_with_default_config(tmp_path, monkeypatch):
     assert plugin.ownership_service is not None
     assert plugin.registry is not None
     assert plugin.cmd_ctx is not None
-    # 注册了 12+ 个旧扁平命令
-    assert len(plugin.registry.legacy_commands) >= 12
+    # 注册了 10 个旧扁平命令
+    assert len(plugin.registry.legacy_commands) >= 10
 
     # 清理后台任务
     loop = asyncio.new_event_loop()
@@ -133,8 +133,8 @@ def test_plugin_parse_commands_via_context(tmp_path, monkeypatch):
     plugin = WifePluginCore(context, raw_config)
 
     # 关键命令都能解析
-    for cmd in ["抽老婆", "查老婆", "牛老婆", "换老婆", "交换老婆",
-                "同意交换", "拒绝交换", "查看交换请求", "重置牛", "重置换",
+    for cmd in ["抽老婆", "查老婆", "牛老婆", "交换老婆",
+                "同意交换", "拒绝交换", "查看交换请求",
                 "老婆帮助", "切换ntr开关状态"]:
         result = plugin.registry.parse(cmd)
         assert result is not None, f"command not parsed: {cmd}"

@@ -1,4 +1,4 @@
-"""管理员 + 重置 + 帮助命令处理器。"""
+"""管理员 + 帮助命令处理器。"""
 
 from __future__ import annotations
 
@@ -13,12 +13,9 @@ from ..api.events import (
     get_sender_uid,
     parse_at_target,
 )
-from ..services.ownership_service import DailyAction
 from .context import CommandContext
 
 __all__ = [
-    "handle_reset_ntr",
-    "handle_reset_change",
     "handle_switch_ntr",
     "handle_help",
     "build_help_text",
@@ -28,96 +25,6 @@ __all__ = [
     "handle_admin_test_intimacy",
     "handle_admin_test_coins",
 ]
-
-
-# ==================== 重置 ====================
-
-
-async def _do_reset(
-    event: AstrMessageEvent,
-    ctx: CommandContext,
-    action: str,
-    label: str,
-    short: str,
-) -> AsyncGenerator:
-    """通用重置命令：管理员直接成功；普通用户按概率（失败禁言）
-
-    ``action``: DailyAction 常量（如 ``DailyAction.NTR_ATTEMPT``）
-    ``label``:  消息中的完整名称（如 "牛老婆"）
-    ``short``:  失败提示中的简称（如 "牛"）
-    """
-    gid = get_group_id(event)
-    if not gid:
-        return
-    uid = get_sender_uid(event)
-    nick = get_sender_nick(event)
-    tid = parse_at_target(event) or uid
-    is_admin = ctx.config.is_admin(uid)
-
-    result = await ctx.ownership_service.reset_user_action(
-        gid=gid,
-        operator_uid=uid,
-        operator_is_admin=is_admin,
-        target_uid=tid,
-        action=action,
-        today=ctx.today(),
-    )
-
-    if not result["ok"]:
-        if result["reason"] == "limit_reached":
-            yield event.plain_result(
-                f"{nick}，你今天已经用完{ctx.config.reset_max_uses_per_day}次重置机会啦，明天再来吧~"
-            )
-            return
-        # 其他失败原因（roll_failed）走 do_mute 分支
-
-    if result["ok"]:
-        # 成功消息
-        prefix = "管理员操作：已重置" if is_admin else "已重置"
-        if is_admin:
-            yield event.chain_result(
-                [Plain(prefix), At(qq=tid), Plain(f"的{label}次数。")]
-            )
-        else:
-            yield event.chain_result(
-                [Plain(prefix), At(qq=tid), Plain(f"的{label}次数。")]
-            )
-        return
-
-    # 失败 + 需禁言
-    yield event.plain_result(
-        f"{nick}，重置{short}失败，被禁言{ctx.config.reset_mute_duration}秒，下次记得再接再厉哦~"
-    )
-    if result["do_mute"]:
-        try:
-            await event.bot.set_group_ban(
-                group_id=int(gid),
-                user_id=int(uid),
-                duration=result["mute_duration"],
-            )
-        except Exception:
-            # 禁言失败（权限不足/平台不支持）静默忽略
-            pass
-
-
-async def handle_reset_ntr(
-    event: AstrMessageEvent, ctx: CommandContext
-) -> AsyncGenerator:
-    """``重置牛 [@用户]``"""
-    async for reply in _do_reset(
-        event, ctx, DailyAction.NTR_ATTEMPT, "牛老婆", "牛"
-    ):
-        yield reply
-
-
-async def handle_reset_change(
-    event: AstrMessageEvent, ctx: CommandContext
-) -> AsyncGenerator:
-    """``重置换 [@用户]``"""
-    async for reply in _do_reset(
-        event, ctx, DailyAction.CHANGE_ATTEMPT, "换老婆", "换"
-    ):
-        yield reply
 
 
 # ==================== NTR 开关 ====================
@@ -178,15 +85,12 @@ def build_help_text() -> str:
 
 【对抗 / 社交】
 • 牛老婆 [@用户] [编号] - 有概率抢走别人的老婆（不指定编号随机牛）
-• 重置牛 [@用户] - 重置牛的次数(失败会禁言)
 • 老婆 复仇 [@用户] - 在被牛24小时内复仇，成功率翻倍
-• 换老婆 - 丢弃当前老婆换新的
-• 重置换 [@用户] - 重置换老婆的次数(失败会禁言)
 • 交换老婆 [@用户] - 向别人发起老婆交换请求
 • 同意交换 [@发起者] - 同意交换请求
 • 拒绝交换 [@发起者] - 拒绝交换请求
 • 查看交换请求 - 查看当前的交换请求
-• 老婆 PK @某人 [我方编号] [对方编号] - 老婆PK对战；不写编号默认双方主老婆
+• 老婆 PK @某人 - 双方主老婆对战
 
 【信息 / 管理】
 • 老婆 排行 [日|周|总] [牛|被牛|PK|收集]
