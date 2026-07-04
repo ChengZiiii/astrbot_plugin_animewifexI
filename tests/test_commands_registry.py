@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.commands.admin import build_help_text
 from app.commands.registration import build_registry
 from app.commands.registry import CommandRegistry
 
@@ -108,6 +109,23 @@ class TestRegistryParse:
         # 分组（带 "老婆 " 前缀）
         assert "老婆 列表" in all_names
         assert "老婆 摸头" in all_names
+        assert "老婆 对话" in all_names
+        assert "老婆 约会" in all_names
+        assert "老婆 打工" in all_names
+
+    def test_help_text_matches_current_features(self):
+        help_text = build_help_text()
+
+        assert "老婆 对话" in help_text
+        assert "老婆 约会" in help_text
+        assert "老婆 打工" in help_text
+        assert "老婆 重置抽卡" in help_text
+        assert "老婆 列表" in help_text
+        assert "当前仍未开放" in help_text
+
+        assert "求婚" not in help_text
+        assert "后续开放" not in help_text
+        assert "Phase 2/3" not in help_text
 
 
 class TestRegistryRegister:

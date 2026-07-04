@@ -1,7 +1,4 @@
-"""Phase 2/3 分组命令占位（亲密度/经济/PK/图鉴/面板/任务/商城/求婚）。
-
-Phase 1 仅注册 ``老婆帮助`` 与未实现提示，避免命令解析失败。
-"""
+"""当前仍保留的分组命令占位处理器。"""
 
 from __future__ import annotations
 
@@ -28,7 +25,7 @@ async def handle_not_implemented(
 ) -> AsyncGenerator:
     """通用"功能未开放"提示"""
     yield event.plain_result(
-        "该功能将在 Phase 2/3 开放，敬请期待~ 当前可用命令见「老婆帮助」"
+        "该功能当前还未开放，请先使用「老婆帮助」查看现有命令。"
     )
 
 
@@ -37,7 +34,7 @@ def make_not_implemented_handler(subcommand: str):
 
     async def _handler(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGenerator:
         yield event.plain_result(
-            f"「老婆 {subcommand}」将在 Phase 2/3 开放，敬请期待~"
+            f"「老婆 {subcommand}」当前还未开放，请先使用「老婆帮助」查看现有命令。"
         )
 
     return _handler
