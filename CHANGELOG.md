@@ -1,10 +1,12 @@
 # 更新日志
 
-## v3.0.0-phase4 (开发中)
+## v3.0.0-phase4
 
-**Phase 4 玩法升级开发中**
+**Phase 4 玩法升级已完成**
 
-- 基线测试：275 passed, 0 failed
+- 新增：连续签到奖励、对话/约会、打工系统、NTR 补偿、扩展排行榜
+- 命令级 QA：全量 86/86、深度 17/17
+- 单元测试：338 passed
 - 详见 [ROADMAP_PHASE4_DETAILED.md](ROADMAP_PHASE4_DETAILED.md) 与 [PHASE4_EXECUTION_TICKETS.md](PHASE4_EXECUTION_TICKETS.md)
 
 ---
