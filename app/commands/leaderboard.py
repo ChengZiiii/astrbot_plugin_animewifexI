@@ -153,7 +153,7 @@ async def handle_leaderboard(
         yield event.plain_result("暂无排行数据，快去试试吧~")
         return
 
-    lines = [f"━━━━ {rank_label}速览 ━━━━\n"]
+    lines = [f"🏆 {rank_label}速览"]
 
     for dim in all_dims:
         if not dim.has_data:
@@ -161,7 +161,7 @@ async def handle_leaderboard(
         lines.append(_format_compact_dim(dim, uid))
 
     lines.append("")
-    lines.append("发送「老婆 排行 收集/牛/被牛/亲密度/PK/作恶」看详细排行+点评~")
+    lines.append("💡 详情 → 老婆 排行 收集/牛/被牛/亲密度/PK/作恶")
 
     yield event.plain_result("\n".join(lines))
 
@@ -223,7 +223,7 @@ def _get_unit(action: str) -> str:
 
 def _format_single_dimension(result: DimensionResult, uid: Optional[str]) -> str:
     """格式化单维度详细排行（含点评）"""
-    lines = [f"━━━━ 【{result.label}】Top {len(result.entries)} ━━━━\n"]
+    lines = [f"【{result.label}】Top {len(result.entries)}"]
 
     for entry in result.entries:
         medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(entry.rank, f"{entry.rank}.")
@@ -242,7 +242,6 @@ def _format_single_dimension(result: DimensionResult, uid: Optional[str]) -> str
         comment = _get_comment(result.label, entry.rank, entry.value, result.unit)
         if comment:
             lines.append(f"   {comment}")
-        lines.append("")
 
     # 显示请求者自己的排名（如果不在 Top-N 中）
     if uid:
@@ -250,7 +249,7 @@ def _format_single_dimension(result: DimensionResult, uid: Optional[str]) -> str
         if my_line:
             lines.append(f"📍 你的排名：{my_line}")
 
-    return "\n".join(lines).rstrip()
+    return "\n".join(lines)
 
 
 def _build_extra_line(entry: LeaderboardEntry, dim_label: str) -> str:
@@ -310,17 +309,9 @@ def _format_compact_dim(dim: DimensionResult, uid: Optional[str]) -> str:
     # 检查请求者是否在 Top 3 中
     my_marker = ""
     if uid and any(e.uid == uid for e in top3):
-        my_marker = " 👈你"
+        my_marker = " 👈"
 
-    # 加一条简短点评
-    comment = ""
-    if dim.entries:
-        comment = _get_compact_comment(dim.label, dim.entries[0])
-
-    result = f"• {dim.label}：{items}{my_marker}"
-    if comment:
-        result += f"\n  {comment}"
-    return result
+    return f"{dim.label} {items}{my_marker}"
 
 
 def _get_compact_comment(dim_label: str, top: LeaderboardEntry) -> str:
