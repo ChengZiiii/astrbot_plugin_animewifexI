@@ -233,12 +233,19 @@ class ProfileStore:
         nick: str,
         coins: int = 50,
     ) -> UserProfile:
-        """获取或创建用户档案（不落盘，调用方在临界区内决定何时 save）"""
+        """获取或创建用户档案（不落盘，调用方在临界区内决定何时 save）
+
+        新建档案时自动写入 ``registered_at``（当前 Unix 时间戳），
+        老档案缺失该字段时保持默认值 0（视为老玩家，不享受新手保护）。
+        """
+        from ..utils.time import now_ts
+
         profile = profiles.get(uid)
         if profile is None:
             profile = UserProfile.new_with_defaults(
                 uid=uid, nick=nick, coins=coins
             )
+            profile.registered_at = now_ts()
             profiles[uid] = profile
         elif nick and profile.nick != nick:
             # 同步最新昵称（每次发消息都更新，避免改名后显示旧昵称）
@@ -435,3 +442,32 @@ class DailyCountStore:
                 del data[uid]
                 changed = True
         return changed
+
+
+class PkPairStore:
+    """PK 对对手记录：{attacker_uid: {defender_uid: timestamp}}"""
+
+    def __init__(self, paths: "Paths", gid: str):
+        self._file = paths.group_pk_pairs_file(gid)
+
+    def load_all(self) -> Dict[str, Dict[str, float]]:
+        return json_store.load_json(self._file, default={})
+
+    def save_all(self, data: Dict[str, Dict[str, float]]) -> None:
+        json_store.save_json(self._file, data)
+
+    def can_pk(self, data: Dict[str, Dict[str, float]], attacker: str, defender: str, cooldown_hours: int = 24) -> bool:
+        """检查是否可以 PK（24h 内同对手限制）"""
+        attacker_pairs = data.get(attacker, {})
+        last_ts = attacker_pairs.get(defender, 0)
+        if last_ts <= 0:
+            return True
+        from ..utils.time import now_ts
+        return (now_ts() - last_ts) >= cooldown_hours * 3600
+
+    def record_pk(self, data: Dict[str, Dict[str, float]], attacker: str, defender: str) -> None:
+        """记录 PK 对手"""
+        from ..utils.time import now_ts
+        if attacker not in data:
+            data[attacker] = {}
+        data[attacker][defender] = now_ts()

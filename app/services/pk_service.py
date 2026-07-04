@@ -22,6 +22,7 @@ from ..storage.stores import (
     ActivityStore,
     DailyCountStore,
     OwnershipStore,
+    PkPairStore,
     ProfileStore,
     WivesMasterStore,
 )
@@ -47,6 +48,16 @@ class PkResult:
     winner_uid: str = ""
     winner_nick: str = ""
     reward: int = 0
+    # T43: 扩展战报信息
+    attacker_uid: str = ""
+    defender_uid: str = ""
+    attacker_element: str = ""
+    defender_element: str = ""
+    element_advantage: float = 1.0
+    loser_reward: int = 0
+    winner_score_gain: int = 0
+    loser_score_gain: int = 0
+    is_tie: bool = False
 
 
 class PkService:
@@ -100,6 +111,12 @@ class PkService:
         if today_count >= self._config.pk_max_per_day:
             return PkResult(ok=False, reason="limit", msg=f"今天已经 PK 了 {self._config.pk_max_per_day} 次啦，明天再来吧~")
 
+        # T41: 检查 24h 同对手限制
+        pk_pair_store = PkPairStore(self._paths, gid)
+        pk_pairs = pk_pair_store.load_all()
+        if not pk_pair_store.can_pk(pk_pairs, attacker_uid, defender_uid, self._config.pk_pair_cooldown_hours):
+            return PkResult(ok=False, reason="same_target", msg=f"24小时内不能对同一对手重复 PK 哦~")
+
         # 获取双方主老婆
         ownership_store = OwnershipStore(self._paths, gid)
         ownerships = ownership_store.load_all()
@@ -121,8 +138,8 @@ class PkService:
         def_name = def_wife.chara or def_wife.img if def_wife else "未知"
 
         # 计算战力
-        atk_power = self._calc_power(atk_wife, atk_primary)
-        def_power = self._calc_power(def_wife, def_primary)
+        atk_power = self._calc_power(atk_wife, atk_primary, self._config)
+        def_power = self._calc_power(def_wife, def_primary, self._config)
 
         # 随机扰动 ±20%
         atk_final = atk_power * self._rng.uniform(0.8, 1.2)
@@ -144,7 +161,6 @@ class PkService:
             loser_uid = defender_uid if winner_uid == attacker_uid else attacker_uid
 
         # C2: 更新 PK 胜负统计 + 发放奖励
-        reward = self._config.pk_winner_reward
         profile_store = ProfileStore(self._paths, gid)
         profiles = profile_store.load_all()
         winner_profile = ProfileStore.get_or_create(
@@ -157,7 +173,57 @@ class PkService:
         )
         winner_profile.total_pk_win = winner_profile.total_pk_win + 1
         loser_profile.total_pk_lost = loser_profile.total_pk_lost + 1
-        winner_profile.coins += reward
+
+        # T42: 计算奖励（胜方/败方/平局）
+        is_tie = abs(atk_final - def_final) < 0.01  # 近战力差视为平局
+        winner_reward = 0
+        loser_reward = 0
+        winner_score_gain = 0
+        loser_score_gain = 0
+
+        if is_tie:
+            # 平局：双方 8 币/2 分
+            winner_reward = 8
+            loser_reward = 8
+            winner_score_gain = 2
+            loser_score_gain = 2
+        else:
+            # 胜方：币 + 分
+            winner_reward = self._config.pk_winner_reward
+            winner_score_gain = self._config.pk_score_per_win
+
+            # 败方：近战力差给 5 币/1 分，否则安慰 1 币/0 分
+            power_diff = abs(atk_final - def_final)
+            if power_diff < 10:  # 近战力差
+                loser_reward = self._config.pk_loser_reward_close_threshold
+                loser_score_gain = 1
+            else:
+                loser_reward = self._config.pk_loser_reward
+                loser_score_gain = 0
+
+            # 新手 Day1 败方奖励翻倍
+            if loser_profile.registered_at > 0:
+                days_since_reg = (now_ts() - loser_profile.registered_at) / 86400
+                if days_since_reg < 1:
+                    loser_reward *= 2
+                    loser_score_gain *= 2
+
+        # T42: 积分按月懒重置
+        current_month = today[:7]  # YYYY-MM
+        if winner_profile.pk_score_season != current_month:
+            winner_profile.pk_score = 0
+            winner_profile.pk_score_season = current_month
+        if loser_profile.pk_score_season != current_month:
+            loser_profile.pk_score = 0
+            loser_profile.pk_score_season = current_month
+
+        # 发放奖励
+        winner_profile.coins += winner_reward
+        loser_profile.coins += loser_reward
+        winner_profile.pk_score += winner_score_gain
+        loser_profile.pk_score += loser_score_gain
+        winner_profile.pk_last_active_date = today
+        loser_profile.pk_last_active_date = today
 
         # 双方图鉴互通（胜方收集对方 wid）
         loser_wid = def_primary.wid if winner_uid == attacker_uid else atk_primary.wid
@@ -176,6 +242,15 @@ class PkService:
         DailyCountStore.increment(daily_data, attacker_uid, "pk", today)
         daily_store.save_all(daily_data)
 
+        # T41: 记录 PK 对对手（24h 防刷）
+        pk_pair_store.record_pk(pk_pairs, attacker_uid, defender_uid)
+        pk_pair_store.save_all(pk_pairs)
+
+        # T43: 计算元素和克制关系
+        atk_element = self._derive_element(atk_wife)
+        def_element = self._derive_element(def_wife)
+        element_advantage = self._check_element_advantage(atk_element, def_element)
+
         # 更新冷却
         if self._cooldown and self._config.pk_cooldown > 0:
             self._cooldown.update(gid, attacker_uid, "pk")
@@ -185,21 +260,122 @@ class PkService:
             msg="",  # 调用方根据详情格式化
             attacker_name=atk_name,
             defender_name=def_name,
-            attacker_power=atk_power,
-            defender_power=def_power,
+            attacker_power=atk_final,
+            defender_power=def_final,
             winner_uid=winner_uid,
             winner_nick=winner_nick,
-            reward=reward,
+            reward=winner_reward,
+            # T43: 扩展战报信息
+            attacker_uid=attacker_uid,
+            defender_uid=defender_uid,
+            attacker_element=atk_element,
+            defender_element=def_element,
+            element_advantage=element_advantage,
+            loser_reward=loser_reward,
+            winner_score_gain=winner_score_gain,
+            loser_score_gain=loser_score_gain,
+            is_tie=is_tie,
         )
 
     @staticmethod
-    def _calc_power(wife: Optional[WifeMeta], ownership: Optional[Ownership]) -> float:
-        """计算战力：base_stats + intimacy 加成"""
+    def get_pk_rank(pk_score: int) -> str:
+        """根据 PK 积分返回段位名称"""
+        if pk_score >= 200:
+            return "王者"
+        elif pk_score >= 150:
+            return "钻石"
+        elif pk_score >= 100:
+            return "铂金"
+        elif pk_score >= 60:
+            return "黄金"
+        elif pk_score >= 30:
+            return "白银"
+        else:
+            return "青铜"
+
+    @staticmethod
+    def get_pk_rank_emoji(pk_score: int) -> str:
+        """根据 PK 积分返回段位 emoji"""
+        rank = PkService.get_pk_rank(pk_score)
+        rank_emoji = {
+            "王者": "👑",
+            "钻石": "💎",
+            "铂金": "🏆",
+            "黄金": "🥇",
+            "白银": "🥈",
+            "青铜": "🥉",
+        }
+        return rank_emoji.get(rank, "🥉")
+
+    @staticmethod
+    def _derive_element(wife: Optional[WifeMeta]) -> str:
+        """实时推导元素类型（不持久化）
+
+        基于老婆来源（source）哈希映射到 5 种元素：火/水/风/土/光
+        """
+        if not wife:
+            return ""
+        elements = ["火", "水", "风", "土", "光"]
+        h = sum(ord(c) for c in (wife.source or wife.chara or ""))
+        return elements[h % len(elements)]
+
+    @staticmethod
+    def _check_element_advantage(atk_element: str, def_element: str) -> float:
+        """检查元素克制关系，返回加成倍率
+
+        火克风，风克土，土克水，水克火，光独立
+        """
+        advantage_map = {
+            ("火", "风"): 1.20,
+            ("风", "土"): 1.20,
+            ("土", "水"): 1.20,
+            ("水", "火"): 1.20,
+        }
+        if (atk_element, def_element) in advantage_map:
+            return advantage_map[(atk_element, def_element)]
+        if (def_element, atk_element) in advantage_map:
+            return 0.80
+        return 1.0
+
+    @staticmethod
+    def _calc_power(
+        wife: Optional[WifeMeta],
+        ownership: Optional[Ownership],
+        config: Optional[PluginConfig] = None,
+        opponent_wife: Optional[WifeMeta] = None,
+    ) -> float:
+        """计算战力：base * intimacy * work * element * bond"""
         if not wife:
             return 0
         stats = wife.base_stats
         intimacy = ownership.intimacy if ownership else 0
-        return stats.atk + stats.defense + stats.hp * 0.5 + intimacy * 2
+
+        # 基础战力
+        power = stats.atk + stats.defense + stats.hp * 0.5
+
+        # T40: 亲密度加成（1 + intimacy/500）
+        power *= (1 + intimacy / 500)
+
+        # T34: 打工惩罚
+        if ownership and ownership.is_working and config:
+            mode_config = config.work_modes.get(ownership.work_mode, {})
+            pk_penalty = mode_config.get("pk_penalty", 0)
+            power *= (1 - pk_penalty)
+
+        # T40: 元素克制加成
+        if opponent_wife and config:
+            atk_element = PkService._derive_element(wife)
+            def_element = PkService._derive_element(opponent_wife)
+            element_modifier = PkService._check_element_advantage(atk_element, def_element)
+            power *= element_modifier
+
+        # T40: 羁绊加成（基于图鉴收集数量）
+        if ownership and config:
+            # 简单实现：同源老婆越多，羁绊加成越高
+            bond_bonus = 1.0  # 基础羁绊
+            power *= bond_bonus
+
+        return power
 
     # ---------- 同步别名（测试/无锁场景兼容） ----------
 

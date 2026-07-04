@@ -90,6 +90,10 @@ class Paths:
         """每日次数计数文件（NTR/换/交换/重置/PK 等动作的当日触发次数）"""
         return os.path.join(self.group_dir(gid), "daily_counts.json")
 
+    def group_pk_pairs_file(self, gid: str) -> str:
+        """PK 对对手记录文件（24h 同对手防刷）"""
+        return os.path.join(self.group_dir(gid), "pk_pairs.json")
+
     # ---------- 初始化 ----------
 
     def ensure_dirs(self) -> None:
