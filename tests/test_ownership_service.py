@@ -14,6 +14,7 @@ from __future__ import annotations
 import pytest
 
 from app.models.enums import AcquireVia
+from app.models.ownership import Ownership
 from app.services.ownership_service import (
     DailyAction,
     NtrResult,
@@ -255,6 +256,39 @@ class TestChangePrimary:
         assert r2.wid == wid_for_img("新!新.jpg")
         # 旧老婆所有权已删除
         assert ownership_service.get_primary_wid("g1", "u1") == r2.wid
+
+
+class TestSwitchPrimary:
+    @pytest.mark.asyncio
+    async def test_switch_primary_to_owned_wife(self, ownership_service):
+        wid_a = wid_for_img("作品A!A.jpg")
+        wid_b = wid_for_img("作品B!B.jpg")
+        ownership_store = ownership_service._ownership_store("g1")
+        ownerships = ownership_store.load_all()
+        ownerships.append(Ownership(wid=wid_a, uid="u1", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True))
+        ownerships.append(Ownership(wid=wid_b, uid="u1", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=False))
+        ownership_store.save_all(ownerships)
+
+        assert ownership_service.get_primary_wid("g1", "u1") == wid_a
+
+        result = await ownership_service.switch_primary("g1", "u1", wid_b)
+        assert result.ok is True
+        assert result.wid == wid_b
+        assert ownership_service.get_primary_wid("g1", "u1") == wid_b
+
+    @pytest.mark.asyncio
+    async def test_switch_primary_rejects_unowned_wife(self, ownership_service):
+        wid_self = wid_for_img("作品A!A.jpg")
+        other_wid = wid_for_img("作品B!B.jpg")
+        ownership_store = ownership_service._ownership_store("g1")
+        ownerships = ownership_store.load_all()
+        ownerships.append(Ownership(wid=wid_self, uid="u1", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True))
+        ownerships.append(Ownership(wid=other_wid, uid="u2", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True))
+        ownership_store.save_all(ownerships)
+
+        result = await ownership_service.switch_primary("g1", "u1", other_wid)
+        assert result.ok is False
+        assert result.reason == "wife_not_found"
 
     @pytest.mark.asyncio
     async def test_change_limit_reached(

@@ -48,6 +48,7 @@ __all__ = [
     "NtrResult",
     "ChangeResult",
     "SwapResult",
+    "SwitchPrimaryResult",
     "IntimacyResult",
     "wid_for_img",
     "DailyAction",
@@ -168,6 +169,16 @@ class IntimacyResult:
     intimacy: int = 0          # 操作后的亲密度
     reason: str = ""           # 失败原因
     coin_balance: int = 0      # 操作后的币余额
+
+
+@dataclass
+class SwitchPrimaryResult:
+    """切换主老婆结果。"""
+
+    ok: bool
+    reason: str = ""
+    wid: str = ""
+    wife_name: str = ""
 
 
 # ==================== 服务 ====================
@@ -293,6 +304,37 @@ class OwnershipService:
         data = store.load_all()
         DailyCountStore.reset_user_action(data, uid, action)
         store.save_all(data)
+
+    async def switch_primary(self, gid: str, uid: str, wid: str) -> SwitchPrimaryResult:
+        """将指定 wid 设为当前用户主老婆。"""
+        async with self._locks.acquire(gid):
+            ownership_store = self._ownership_store(gid)
+            ownerships = ownership_store.load_all()
+
+            current = ownership_store.get_primary(uid, ownerships)
+            if current is None:
+                return SwitchPrimaryResult(ok=False, reason="no_wife")
+
+            target = ownership_store.find_by_wid(wid, ownerships)
+            if target is None or target.uid != uid:
+                return SwitchPrimaryResult(ok=False, reason="wife_not_found")
+
+            wife_meta = self.get_wife_meta(wid)
+            wife_name = (
+                wife_meta.chara or wife_meta.img if wife_meta is not None else wid
+            )
+
+            if target.is_primary:
+                return SwitchPrimaryResult(
+                    ok=True,
+                    reason="already_primary",
+                    wid=wid,
+                    wife_name=wife_name,
+                )
+
+            ownership_store.set_primary(ownerships, uid, wid)
+            ownership_store.save_all(ownerships)
+            return SwitchPrimaryResult(ok=True, wid=wid, wife_name=wife_name)
 
     # ---------- 抽老婆 ----------
 
