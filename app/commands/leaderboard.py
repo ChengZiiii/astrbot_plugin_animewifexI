@@ -155,8 +155,9 @@ async def handle_leaderboard(
 
     lines = [f"🏆 {rank_label}速览"]
 
-    for dim in all_dims:
-        lines.append(_format_compact_dim(dim, uid))
+    for i, dim in enumerate(all_dims):
+        lines.append("")
+        lines.append(_format_compact_dim(dim, uid, is_first=(i == 0)))
 
     lines.append("")
     lines.append("💡 详情 → 老婆 排行 收集/牛/被牛/亲密度/PK/作恶")
@@ -296,7 +297,7 @@ def _build_extra_line(entry: LeaderboardEntry, dim_label: str) -> str:
 # ── 格式化：紧凑播报 ──────────────────────────────────────
 
 
-def _format_compact_dim(dim: DimensionResult, uid: Optional[str]) -> str:
+def _format_compact_dim(dim: DimensionResult, uid: Optional[str], is_first: bool = False) -> str:
     """紧凑模式：一行展示 Top 3 + 点评"""
     if not dim.has_data or not dim.entries:
         return f"{dim.label}  暂无数据"
@@ -314,7 +315,9 @@ def _format_compact_dim(dim: DimensionResult, uid: Optional[str]) -> str:
 
     comment = _get_compact_comment(dim.label, dim.entries[0])
 
-    return f"{dim.label}  {items}{my_marker}\n    {comment}" if comment else f"{dim.label}  {items}{my_marker}"
+    if comment:
+        return f"{dim.label}  {items}{my_marker}\n    {comment}"
+    return f"{dim.label}  {items}{my_marker}"
 
 
 def _get_compact_comment(dim_label: str, top: LeaderboardEntry) -> str:
