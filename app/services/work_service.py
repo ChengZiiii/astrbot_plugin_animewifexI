@@ -85,6 +85,17 @@ class WorkPartnerResult:
     partner_uid: str = ""
 
 
+@dataclass
+class WorkCancelResult:
+    """打工中断结果"""
+
+    ok: bool
+    reason: str = ""
+    wid: str = ""
+    mode: str = ""
+    forfeited_reward: int = 0  # 没收的预计奖励（仅供参考）
+
+
 class WorkService:
     """打工系统服务"""
 
@@ -637,3 +648,27 @@ class WorkService:
                 continue
 
         return results
+
+    async def cancel_work(
+        self,
+        gid: str,
+        uid: str,
+        selected_wid: str | None = None,
+    ) -> WorkCancelResult:
+        """中断打工（全额没收，无奖励无退费无亲密度）"""
+        async with self._locks.acquire(gid):
+            ownership_store = self._ownership_store(gid)
+            ownerships = ownership_store.load_all()
+
+            working = ownership_store.find_by_wid(selected_wid, ownerships) if selected_wid else next(
+                (o for o in ownerships if o.uid == uid and o.is_working),
+                None,
+            )
+            if working is None or working.uid != uid or not working.is_working:
+                return WorkCancelResult(ok=False, reason="not_working")
+
+            mode = working.work_mode
+            self.clear_work_state(working)
+            ownership_store.save_all(ownerships)
+
+            return WorkCancelResult(ok=True, wid=working.wid, mode=mode)

@@ -75,6 +75,11 @@ async def handle_work(
             yield item
         return
 
+    if rest.startswith("中断"):
+        async for item in _handle_work_cancel(event, ctx, work_service, gid, uid, nick, rest):
+            yield item
+        return
+
     mode = "normal"
     for alias, mode_key in MODE_ALIASES.items():
         if alias in rest:
@@ -238,4 +243,39 @@ async def _handle_work_partner(
     yield event.plain_result(
         f"🤝 {nick} 与 {partner_nick} 已绑定今日打工搭档！\n"
         f"双方今天都成功打工时，结算收益额外 +{int(ctx.config.work_partner_bonus * 100)}%"
+    )
+
+
+async def _handle_work_cancel(
+    event: AstrMessageEvent,
+    ctx: CommandContext,
+    work_service: WorkService,
+    gid: str,
+    uid: str,
+    nick: str,
+    rest: str,
+) -> AsyncGenerator:
+    """中断打工（全额没收）"""
+    selected_wid = None
+    number_match = re.search(r"\b(\d+)\b", rest)
+    if number_match:
+        index = int(number_match.group(1))
+        selected_wid = find_wid_by_position(ctx, gid, uid, index)
+        if selected_wid is None:
+            yield event.plain_result(f"{nick}，你指定的老婆编号不存在哦~")
+            return
+
+    result = await work_service.cancel_work(gid, uid, selected_wid)
+    if not result.ok:
+        if result.reason == "not_working":
+            yield event.plain_result(f"{nick}，没有老婆在打工中哦~")
+        else:
+            yield event.plain_result(f"{nick}，中断打工失败了~")
+        return
+
+    wife_name = _wife_name(ctx, result.wid)
+    mode_name = _mode_name(result.mode)
+    yield event.plain_result(
+        f"🚫 {nick} 中断了 {wife_name} 的{mode_name}打工！\n"
+        f"打工奖励已没收，启动费不退还~"
     )
