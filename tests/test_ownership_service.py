@@ -14,6 +14,7 @@ from __future__ import annotations
 import pytest
 
 from app.models.enums import AcquireVia
+from app.models.profile import UserProfile
 from app.models.ownership import Ownership
 from app.services.ownership_service import (
     DailyAction,
@@ -22,6 +23,8 @@ from app.services.ownership_service import (
     wid_for_img,
 )
 from app.storage.stores import DailyCountStore
+from app.storage.stores import OwnershipStore, ProfileStore
+from app.utils.time import now_ts
 
 
 # ==================== 抽老婆 ====================
@@ -233,6 +236,108 @@ class TestTryNtr:
         assert attacker.total_ntr_success == 1
         assert victim.total_ntr_lost == 1
         assert victim.last_ntr_by["uid"] == "u_attacker"
+
+    @pytest.mark.asyncio
+    async def test_ntr_success_steals_work_reward_and_voids_contract(self, ownership_service, mock_wife_service, tmp_paths):
+        mock_wife_service.set_images(["作品A!角色A.jpg"])
+        await ownership_service.draw_or_get_primary("g1", "u_victim", "受害者", "2026-07-03")
+        mock_wife_service.set_images(["作品B!角色B.jpg"])
+        await ownership_service.draw_or_get_primary("g1", "u_attacker", "攻击者", "2026-07-03")
+
+        ownership_store = OwnershipStore(tmp_paths, "g1")
+        ownerships = ownership_store.load_all()
+        ts = now_ts()
+        victim_wid = wid_for_img("作品A!角色A.jpg")
+        victim = next(o for o in ownerships if o.wid == victim_wid)
+        victim.is_working = True
+        victim.work_mode = "normal"
+        victim.work_started_at = ts - 7200
+        victim.work_ends_at = ts + 7200
+        ownership_store.save_all(ownerships)
+
+        profile_store = ProfileStore(tmp_paths, "g1")
+        profiles = profile_store.load_all()
+        profiles["u_victim"].work_contract_reserved = "normal"
+        profile_store.save_all(profiles)
+
+        result = await ownership_service.try_ntr(
+            "g1", "u_attacker", "u_victim", "攻击者", "2026-07-03", roll_seed=0.0
+        )
+
+        assert result.ok is True
+        assert result.success is True
+        assert result.stolen_work_reward > 0
+        assert result.contract_voided is True
+
+        profiles = profile_store.load_all()
+        assert profiles["u_victim"].work_contract_reserved == ""
+        assert profiles["u_attacker"].coins >= result.stolen_work_reward
+
+    @pytest.mark.asyncio
+    async def test_ntr_success_triggers_insurance_card(self, ownership_service, mock_wife_service, tmp_paths):
+        mock_wife_service.set_images(["作品A!角色A.jpg"])
+        await ownership_service.draw_or_get_primary("g1", "u_victim", "受害者", "2026-07-03")
+        mock_wife_service.set_images(["作品B!角色B.jpg"])
+        await ownership_service.draw_or_get_primary("g1", "u_attacker", "攻击者", "2026-07-03")
+
+        ownership_store = OwnershipStore(tmp_paths, "g1")
+        ownerships = ownership_store.load_all()
+        ts = now_ts()
+        victim_wid = wid_for_img("作品A!角色A.jpg")
+        victim = next(o for o in ownerships if o.wid == victim_wid)
+        victim.is_working = True
+        victim.work_mode = "normal"
+        victim.work_started_at = ts - 7200
+        victim.work_ends_at = ts + 7200
+        ownership_store.save_all(ownerships)
+
+        profile_store = ProfileStore(tmp_paths, "g1")
+        profiles = profile_store.load_all()
+        profiles["u_victim"].inventory["insurance_card"] = 1
+        profile_store.save_all(profiles)
+
+        result = await ownership_service.try_ntr(
+            "g1", "u_attacker", "u_victim", "攻击者", "2026-07-03", roll_seed=0.0
+        )
+
+        assert result.ok is True
+        assert result.insurance_used is True
+        assert result.insurance_bonus_coins == 20
+
+        profiles = profile_store.load_all()
+        assert profiles["u_victim"].inventory["insurance_card"] == 0
+        assert profiles["u_victim"].inventory["revenge_token"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_ntr_probability_includes_charm_and_same_target_streak(self, ownership_service, mock_wife_service, tmp_paths):
+        wid_v1 = ownership_service._ensure_wife_meta("作品A!角色A.jpg")
+        wid_v2 = ownership_service._ensure_wife_meta("作品A!角色B.jpg")
+        wid_a = ownership_service._ensure_wife_meta("作品B!角色C.jpg")
+        ownership_store = OwnershipStore(tmp_paths, "g1")
+        ownerships = [
+            Ownership(wid=wid_v1, uid="u_victim", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True),
+            Ownership(wid=wid_v2, uid="u_victim", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=False),
+            Ownership(wid=wid_a, uid="u_attacker", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True),
+        ]
+        ownership_store.save_all(ownerships)
+
+        attacker_primary = next(o for o in ownerships if o.uid == "u_attacker" and o.is_primary)
+        attacker_primary.intimacy = 60
+        ownership_store.save_all(ownerships)
+
+        first = await ownership_service.try_ntr(
+            "g1", "u_attacker", "u_victim", "攻击者", "2026-07-03", roll_seed=0.0, target_wid=wid_v1
+        )
+        assert first.ok is True
+        assert first.success is True
+        assert first.final_probability > 0.20
+
+        second = await ownership_service.try_ntr(
+            "g1", "u_attacker", "u_victim", "攻击者", "2026-07-03", roll_seed=0.19, target_wid=wid_v2
+        )
+        assert second.ok is True
+        assert second.success is False
+        assert second.final_probability < first.final_probability
 
 
 # ==================== 换老婆 ====================

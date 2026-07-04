@@ -137,6 +137,12 @@ class NtrResult:
     reason: str = ""                      # 失败/拒绝原因
     profile: Optional[UserProfile] = None
     final_probability: float = 0.0        # T20: 最终 NTR 概率
+    stolen_work_reward: int = 0
+    stolen_work_wid: str = ""
+    insurance_used: bool = False
+    insurance_bonus_coins: int = 0
+    contract_voided: bool = False
+    partner_broken: bool = False
 
 
 @dataclass
@@ -169,6 +175,7 @@ class IntimacyResult:
     intimacy: int = 0          # 操作后的亲密度
     reason: str = ""           # 失败原因
     coin_balance: int = 0      # 操作后的币余额
+    wid: str = ""
 
 
 @dataclass
@@ -304,6 +311,22 @@ class OwnershipService:
         data = store.load_all()
         DailyCountStore.reset_user_action(data, uid, action)
         store.save_all(data)
+
+    def _resolve_owned_target(
+        self,
+        gid: str,
+        uid: str,
+        ownerships: list[Ownership],
+        selected_wid: str | None,
+    ) -> Optional[Ownership]:
+        """解析用户指定老婆；未指定时回退主老婆。"""
+        ownership_store = self._ownership_store(gid)
+        if selected_wid:
+            target = ownership_store.find_by_wid(selected_wid, ownerships)
+            if target is None or target.uid != uid:
+                return None
+            return target
+        return ownership_store.get_primary(uid, ownerships)
 
     async def switch_primary(self, gid: str, uid: str, wid: str) -> SwitchPrimaryResult:
         """将指定 wid 设为当前用户主老婆。"""
@@ -713,8 +736,16 @@ class OwnershipService:
             if self.has_intimacy_shield(target_intimacy):
                 prob_shield = self._config.intimacy_shield_reduction
 
-            # 3. 魅力加成（暂未实现，占位）
+            # 3. 魅力加成（基于攻击方主老婆亲密度）
             prob_charm = 1.0
+            attacker_primary = ownership_store.get_primary(uid, ownerships)
+            attacker_intimacy = attacker_primary.intimacy if attacker_primary else 0
+            if attacker_intimacy >= 60:
+                prob_charm = 1.20
+            elif attacker_intimacy >= 40:
+                prob_charm = 1.10
+            elif attacker_intimacy >= 20:
+                prob_charm = 1.05
 
             # 4. 锁定检查（已前置拒绝，占位）
             prob_lock = 1.0
@@ -734,8 +765,10 @@ class OwnershipService:
                     if has_revenge_token:
                         prob_revenge *= (1 + self._config.revenge_token_bonus)
 
-            # 6. 连续被牛惩罚（占位）
+            # 6. 连续同目标成功衰减（防止对同一人连续霸凌）
             prob_streak = 1.0
+            if attacker_profile.last_ntr_target_uid == tid and attacker_profile.same_target_ntr_streak > 0:
+                prob_streak = 0.7 ** attacker_profile.same_target_ntr_streak
 
             # 7. 新手保护
             prob_newbie = 1.0
@@ -773,6 +806,8 @@ class OwnershipService:
             wid = target_wid
 
             if not success:
+                if attacker_profile.last_ntr_target_uid == tid:
+                    attacker_profile.same_target_ntr_streak = 0
                 # T23: 复仇失败 - 消耗令牌、给安慰币、清空 last_ntr_by
                 if revenge_valid:
                     if has_revenge_token:
@@ -799,6 +834,35 @@ class OwnershipService:
                 )
 
             # T21: 成功 - 转移所有权（攻击者保留旧老婆，只切主老婆）
+            stolen_work_reward = 0
+            insurance_used = False
+            insurance_bonus_coins = 0
+            contract_voided = False
+            partner_broken = False
+            stolen_work_wid = ""
+            if is_target_working and target_wife:
+                from .work_service import WorkService
+
+                work_service = WorkService(self._paths, self._config, self._locks)
+                stolen_result = work_service._resolve_stolen_work_inner(
+                    gid,
+                    tid,
+                    today,
+                    ownerships,
+                    profiles,
+                    activity_logs,
+                    selected_wid=target_wid,
+                    attacker_uid=uid,
+                    attacker_nick=nick,
+                )
+                if stolen_result is not None:
+                    stolen_work_reward = stolen_result.reward
+                    stolen_work_wid = stolen_result.wid
+                    insurance_used = stolen_result.insurance_used
+                    insurance_bonus_coins = stolen_result.insurance_bonus_coins
+                    contract_voided = stolen_result.contract_voided
+                    partner_broken = stolen_result.partner_broken
+
             ownership_store.transfer(
                 ownerships,
                 wid=wid,
@@ -810,6 +874,11 @@ class OwnershipService:
             if wid not in attacker_profile.collection:
                 attacker_profile.collection.append(wid)
             attacker_profile.total_ntr_success += 1
+            if attacker_profile.last_ntr_target_uid == tid:
+                attacker_profile.same_target_ntr_streak += 1
+            else:
+                attacker_profile.last_ntr_target_uid = tid
+                attacker_profile.same_target_ntr_streak = 1
 
             # T24: 作恶值 +1（按自然月懒重置）
             current_month = today[:7]  # YYYY-MM
@@ -883,13 +952,6 @@ class OwnershipService:
                 # 清空 last_ntr_by（防链式复仇）
                 attacker_profile.last_ntr_by = {}
 
-            # T34: NTR 成功且目标在打工中时，清空打工状态
-            if is_target_working and transferred:
-                transferred.is_working = False
-                transferred.work_mode = ""
-                transferred.work_started_at = 0
-                transferred.work_ends_at = 0
-
             ActivityStore.log(activity_logs, uid, today, Action.NTR_SUCCESS, 1)
             ActivityStore.log(activity_logs, tid, today, Action.NTR_LOST, 1)
 
@@ -907,6 +969,12 @@ class OwnershipService:
                 remaining_attempts=remaining,
                 profile=attacker_profile,
                 final_probability=ntr_prob,
+                stolen_work_reward=stolen_work_reward,
+                stolen_work_wid=stolen_work_wid,
+                insurance_used=insurance_used,
+                insurance_bonus_coins=insurance_bonus_coins,
+                contract_voided=contract_voided,
+                partner_broken=partner_broken,
             )
 
     # ---------- 换老婆 ----------
@@ -1281,7 +1349,7 @@ class OwnershipService:
     # ---------- 亲密度 ----------
 
     async def pet_wife(
-        self, gid: str, uid: str, nick: str, today: str
+        self, gid: str, uid: str, nick: str, today: str, selected_wid: str | None = None
     ) -> IntimacyResult:
         """摸头：消耗币增加亲密度
 
@@ -1295,9 +1363,10 @@ class OwnershipService:
             ownerships = ownership_store.load_all()
             profiles = profile_store.load_all()
 
-            primary = ownership_store.get_primary(uid, ownerships)
-            if primary is None:
-                return IntimacyResult(ok=False, reason="no_wife")
+            target = self._resolve_owned_target(gid, uid, ownerships, selected_wid)
+            if target is None:
+                reason = "wife_not_found" if selected_wid else "no_wife"
+                return IntimacyResult(ok=False, reason=reason)
 
             profile = ProfileStore.get_or_create(
                 profiles, uid, nick,
@@ -1308,26 +1377,26 @@ class OwnershipService:
             if profile.coins < self._config.intimacy_pet_coin_cost:
                 return IntimacyResult(
                     ok=False, reason="not_enough_coins",
-                    intimacy=primary.intimacy, coin_balance=profile.coins,
+                    intimacy=target.intimacy, coin_balance=profile.coins, wid=target.wid,
                 )
 
-            if primary.intimacy >= self._config.intimacy_max:
+            if target.intimacy >= self._config.intimacy_max:
                 return IntimacyResult(
                     ok=False, reason="intimacy_maxed",
-                    intimacy=primary.intimacy, coin_balance=profile.coins,
+                    intimacy=target.intimacy, coin_balance=profile.coins, wid=target.wid,
                 )
 
-            old_intimacy = primary.intimacy
+            old_intimacy = target.intimacy
             profile.coins -= self._config.intimacy_pet_coin_cost
-            primary.intimacy = min(
+            target.intimacy = min(
                 self._config.intimacy_max,
-                primary.intimacy + self._config.intimacy_pet_gain,
+                target.intimacy + self._config.intimacy_pet_gain,
             )
-            primary.intimacy_updated_date = today
+            target.intimacy_updated_date = today
 
             # T12: 检测跨级升级并发放奖励
             levelup_info = self._check_intimacy_levelup(
-                old_intimacy, primary.intimacy, profile
+                old_intimacy, target.intimacy, profile
             )
 
             # T12: 写行为日志
@@ -1339,11 +1408,11 @@ class OwnershipService:
             profile_store.save_all(profiles)
 
             return IntimacyResult(
-                ok=True, intimacy=primary.intimacy, coin_balance=profile.coins,
+                ok=True, intimacy=target.intimacy, coin_balance=profile.coins, wid=target.wid,
             )
 
     async def gift_wife(
-        self, gid: str, uid: str, nick: str, today: str
+        self, gid: str, uid: str, nick: str, today: str, selected_wid: str | None = None
     ) -> IntimacyResult:
         """送礼：高消耗高加成亲密度
 
@@ -1357,9 +1426,10 @@ class OwnershipService:
             ownerships = ownership_store.load_all()
             profiles = profile_store.load_all()
 
-            primary = ownership_store.get_primary(uid, ownerships)
-            if primary is None:
-                return IntimacyResult(ok=False, reason="no_wife")
+            target = self._resolve_owned_target(gid, uid, ownerships, selected_wid)
+            if target is None:
+                reason = "wife_not_found" if selected_wid else "no_wife"
+                return IntimacyResult(ok=False, reason=reason)
 
             profile = ProfileStore.get_or_create(
                 profiles, uid, nick,
@@ -1370,26 +1440,26 @@ class OwnershipService:
             if profile.coins < self._config.intimacy_gift_coin_cost:
                 return IntimacyResult(
                     ok=False, reason="not_enough_coins",
-                    intimacy=primary.intimacy, coin_balance=profile.coins,
+                    intimacy=target.intimacy, coin_balance=profile.coins, wid=target.wid,
                 )
 
-            if primary.intimacy >= self._config.intimacy_max:
+            if target.intimacy >= self._config.intimacy_max:
                 return IntimacyResult(
                     ok=False, reason="intimacy_maxed",
-                    intimacy=primary.intimacy, coin_balance=profile.coins,
+                    intimacy=target.intimacy, coin_balance=profile.coins, wid=target.wid,
                 )
 
-            old_intimacy = primary.intimacy
+            old_intimacy = target.intimacy
             profile.coins -= self._config.intimacy_gift_coin_cost
-            primary.intimacy = min(
+            target.intimacy = min(
                 self._config.intimacy_max,
-                primary.intimacy + self._config.intimacy_gift_gain,
+                target.intimacy + self._config.intimacy_gift_gain,
             )
-            primary.intimacy_updated_date = today
+            target.intimacy_updated_date = today
 
             # T12: 检测跨级升级并发放奖励
             levelup_info = self._check_intimacy_levelup(
-                old_intimacy, primary.intimacy, profile
+                old_intimacy, target.intimacy, profile
             )
 
             # T12: 写行为日志
@@ -1401,11 +1471,11 @@ class OwnershipService:
             profile_store.save_all(profiles)
 
             return IntimacyResult(
-                ok=True, intimacy=primary.intimacy, coin_balance=profile.coins,
+                ok=True, intimacy=target.intimacy, coin_balance=profile.coins, wid=target.wid,
             )
 
     async def chat_wife(
-        self, gid: str, uid: str, nick: str, today: str
+        self, gid: str, uid: str, nick: str, today: str, selected_wid: str | None = None
     ) -> IntimacyResult:
         """对话：2h 冷却，+1 亲密度，+5 币
 
@@ -1426,31 +1496,32 @@ class OwnershipService:
             ownerships = ownership_store.load_all()
             profiles = profile_store.load_all()
 
-            primary = ownership_store.get_primary(uid, ownerships)
-            if primary is None:
-                return IntimacyResult(ok=False, reason="no_wife")
+            target = self._resolve_owned_target(gid, uid, ownerships, selected_wid)
+            if target is None:
+                reason = "wife_not_found" if selected_wid else "no_wife"
+                return IntimacyResult(ok=False, reason=reason)
 
             profile = ProfileStore.get_or_create(
                 profiles, uid, nick,
                 coins=self._config.initial_coins,
             )
 
-            if primary.intimacy >= self._config.intimacy_max:
+            if target.intimacy >= self._config.intimacy_max:
                 return IntimacyResult(
                     ok=False, reason="intimacy_maxed",
-                    intimacy=primary.intimacy, coin_balance=profile.coins,
+                    intimacy=target.intimacy, coin_balance=profile.coins, wid=target.wid,
                 )
 
-            old_intimacy = primary.intimacy
-            primary.intimacy = min(
+            old_intimacy = target.intimacy
+            target.intimacy = min(
                 self._config.intimacy_max,
-                primary.intimacy + self._config.chat_intimacy_gain,
+                target.intimacy + self._config.chat_intimacy_gain,
             )
-            primary.intimacy_updated_date = today
+            target.intimacy_updated_date = today
             profile.coins += self._config.chat_coin_reward
 
             # 检测跨级升级
-            self._check_intimacy_levelup(old_intimacy, primary.intimacy, profile)
+            self._check_intimacy_levelup(old_intimacy, target.intimacy, profile)
 
             # 写行为日志
             activity_logs = activity_store.load_all()
@@ -1466,11 +1537,11 @@ class OwnershipService:
                 self._cooldown.update(gid, uid, CooldownAction.CHAT)
 
             return IntimacyResult(
-                ok=True, intimacy=primary.intimacy, coin_balance=profile.coins,
+                ok=True, intimacy=target.intimacy, coin_balance=profile.coins, wid=target.wid,
             )
 
     async def date_wife(
-        self, gid: str, uid: str, nick: str, today: str
+        self, gid: str, uid: str, nick: str, today: str, selected_wid: str | None = None
     ) -> IntimacyResult:
         """约会：12h 冷却，花 10 币，+8 亲密度
 
@@ -1491,9 +1562,10 @@ class OwnershipService:
             ownerships = ownership_store.load_all()
             profiles = profile_store.load_all()
 
-            primary = ownership_store.get_primary(uid, ownerships)
-            if primary is None:
-                return IntimacyResult(ok=False, reason="no_wife")
+            target = self._resolve_owned_target(gid, uid, ownerships, selected_wid)
+            if target is None:
+                reason = "wife_not_found" if selected_wid else "no_wife"
+                return IntimacyResult(ok=False, reason=reason)
 
             profile = ProfileStore.get_or_create(
                 profiles, uid, nick,
@@ -1503,25 +1575,25 @@ class OwnershipService:
             if profile.coins < self._config.date_coin_cost:
                 return IntimacyResult(
                     ok=False, reason="not_enough_coins",
-                    intimacy=primary.intimacy, coin_balance=profile.coins,
+                    intimacy=target.intimacy, coin_balance=profile.coins, wid=target.wid,
                 )
 
-            if primary.intimacy >= self._config.intimacy_max:
+            if target.intimacy >= self._config.intimacy_max:
                 return IntimacyResult(
                     ok=False, reason="intimacy_maxed",
-                    intimacy=primary.intimacy, coin_balance=profile.coins,
+                    intimacy=target.intimacy, coin_balance=profile.coins, wid=target.wid,
                 )
 
-            old_intimacy = primary.intimacy
+            old_intimacy = target.intimacy
             profile.coins -= self._config.date_coin_cost
-            primary.intimacy = min(
+            target.intimacy = min(
                 self._config.intimacy_max,
-                primary.intimacy + self._config.date_intimacy_gain,
+                target.intimacy + self._config.date_intimacy_gain,
             )
-            primary.intimacy_updated_date = today
+            target.intimacy_updated_date = today
 
             # 检测跨级升级
-            self._check_intimacy_levelup(old_intimacy, primary.intimacy, profile)
+            self._check_intimacy_levelup(old_intimacy, target.intimacy, profile)
 
             # 写行为日志
             activity_logs = activity_store.load_all()
@@ -1537,7 +1609,7 @@ class OwnershipService:
                 self._cooldown.update(gid, uid, CooldownAction.DATE)
 
             return IntimacyResult(
-                ok=True, intimacy=primary.intimacy, coin_balance=profile.coins,
+                ok=True, intimacy=target.intimacy, coin_balance=profile.coins, wid=target.wid,
             )
 
     async def daily_intimacy_increment_for_group(self, gid: str, today: str) -> int:
@@ -1552,6 +1624,13 @@ class OwnershipService:
             updated = 0
             for o in ownerships:
                 if o.intimacy_updated_date == today:
+                    continue
+                if self._config.intimacy_decay > 0 and o.intimacy >= 60:
+                    new_intimacy = max(50, o.intimacy - self._config.intimacy_decay)
+                    if new_intimacy != o.intimacy:
+                        o.intimacy = new_intimacy
+                        updated += 1
+                    o.intimacy_updated_date = today
                     continue
                 if o.intimacy >= self._config.intimacy_max:
                     continue

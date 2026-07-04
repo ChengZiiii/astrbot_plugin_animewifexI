@@ -74,6 +74,8 @@ class UserProfile:
     weekly_box_claimed_week: str = ""     # 已领取周宝箱的周 key（YYYY-WW）
     first_ntr_lost_done: bool = False     # 是否已首次被牛
     newbie_guide_claimed: List[str] = field(default_factory=list)  # 已领取的新手引导任务
+    last_ntr_target_uid: str = ""         # 最近一次成功 NTR 的目标 uid
+    same_target_ntr_streak: int = 0       # 对同一目标连续成功次数
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -116,6 +118,8 @@ class UserProfile:
             "weekly_box_claimed_week": self.weekly_box_claimed_week,
             "first_ntr_lost_done": self.first_ntr_lost_done,
             "newbie_guide_claimed": list(self.newbie_guide_claimed),
+            "last_ntr_target_uid": self.last_ntr_target_uid,
+            "same_target_ntr_streak": self.same_target_ntr_streak,
         }
 
     @classmethod
@@ -183,6 +187,8 @@ class UserProfile:
             weekly_box_claimed_week=str(data.get("weekly_box_claimed_week", "") or ""),
             first_ntr_lost_done=bool(data.get("first_ntr_lost_done", False)),
             newbie_guide_claimed=[str(x) for x in newbie_guide_raw],
+            last_ntr_target_uid=str(data.get("last_ntr_target_uid", "") or ""),
+            same_target_ntr_streak=int(data.get("same_target_ntr_streak", 0) or 0),
         )
 
     @classmethod
