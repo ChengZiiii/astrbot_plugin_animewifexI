@@ -71,6 +71,8 @@ def build_registry() -> CommandRegistry:
 
     # ---------- 分组命令：互动 / 排行 ----------
     registry.register_grouped("帮助", handle_help)
+    registry.register_grouped("列表", handle_view)
+    registry.register_grouped("查", handle_view)
     registry.register_grouped("排行", handle_leaderboard)
     registry.register_grouped("复仇", handle_revenge)
     registry.register_grouped("摸头", handle_pet)

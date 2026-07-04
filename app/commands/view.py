@@ -24,7 +24,7 @@ PAGE_SIZE = 10
 
 
 async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGenerator:
-    """``查老婆 [@用户 | 昵称] [页码]``：查看自己或他人的老婆（分页）"""
+    """查看自己或他人的老婆（分页），兼容 ``查老婆`` / ``老婆 查`` / ``老婆 列表``。"""
     gid = get_group_id(event)
     if not gid:
         return
@@ -159,7 +159,15 @@ def _resolve_target_and_page(
         return at_target, page
 
     # 昵称匹配
-    parts = msg.split(maxsplit=1)
+    normalized = msg
+    for prefix in ("查老婆", "老婆 查", "老婆查", "老婆 列表", "老婆列表"):
+        if normalized.startswith(prefix):
+            normalized = normalized[len(prefix):].strip()
+            break
+
+    parts = ["查老婆"]
+    if normalized:
+        parts.append(normalized)
     if len(parts) > 1:
         rest = parts[1].strip()
         # 去掉末尾页码

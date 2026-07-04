@@ -108,6 +108,7 @@ class TestRegistryParse:
         assert "抽老婆" in all_names
         # 分组（带 "老婆 " 前缀）
         assert "老婆 列表" in all_names
+        assert "老婆 查" in all_names
         assert "老婆 摸头" in all_names
         assert "老婆 对话" in all_names
         assert "老婆 约会" in all_names
@@ -121,9 +122,10 @@ class TestRegistryParse:
         assert "老婆 约会" in help_text
         assert "老婆 打工" in help_text
         assert "老婆 切换" in help_text
-        assert "老婆 重置抽卡" in help_text
         assert "老婆 列表" in help_text
-        assert "当前仍未开放" in help_text
+        assert "老婆 查" in help_text
+        assert "老婆 重置抽卡" in help_text
+        assert "老婆 列表 [页码] / 老婆 查 [@用户] [页码]" in help_text
         assert "老婆 切换 当前仍未开放" not in help_text
 
         assert "求婚" not in help_text
