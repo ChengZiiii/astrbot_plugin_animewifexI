@@ -437,47 +437,53 @@
         "description": "打工系统开关",
         "type": "bool",
         "default": true,
-        "hint": "Phase 4: 是否启用打工系统"
+        "hint": "是否启用打工系统（老婆 打工）"
+    },
+    "work_max_concurrent": {
+        "description": "同时打工上限",
+        "type": "int",
+        "default": 3,
+        "hint": "每个用户同时最多派几个老婆出去打工"
     },
     "work_modes": {
         "description": "打工模式配置",
         "type": "object",
-        "hint": "Phase 4: 各打工模式的参数配置",
+        "hint": "三种打工模式的详细参数。duration=时长(秒)，start_cost=启动费(币)，reward_min/max=结算奖励范围，ntr_multiplier=被牛时收益倍率，pk_penalty=打工中PK战力扣减比例，intimacy_gain=完成后亲密度增量",
         "items": {
             "normal": {
                 "type": "object",
                 "items": {
-                    "duration": {"type": "int", "default": 14400},
-                    "start_cost": {"type": "int", "default": 10},
-                    "reward_min": {"type": "int", "default": 20},
-                    "reward_max": {"type": "int", "default": 40},
-                    "ntr_multiplier": {"type": "float", "default": 1.5},
-                    "pk_penalty": {"type": "float", "default": 0.10},
-                    "intimacy_gain": {"type": "int", "default": 5}
+                    "duration": {"type": "int", "default": 14400, "hint": "时长(秒)：默认14400=4小时"},
+                    "start_cost": {"type": "int", "default": 10, "hint": "启动费(币)"},
+                    "reward_min": {"type": "int", "default": 20, "hint": "结算奖励下限(币)"},
+                    "reward_max": {"type": "int", "default": 40, "hint": "结算奖励上限(币)"},
+                    "ntr_multiplier": {"type": "float", "default": 1.5, "hint": "被牛时收益倍率"},
+                    "pk_penalty": {"type": "float", "default": 0.10, "hint": "打工中PK战力扣减(0.10=扣10%)"},
+                    "intimacy_gain": {"type": "int", "default": 5, "hint": "完成后亲密度+5"}
                 }
             },
             "overtime": {
                 "type": "object",
                 "items": {
-                    "duration": {"type": "int", "default": 7200},
-                    "start_cost": {"type": "int", "default": 20},
-                    "reward_min": {"type": "int", "default": 30},
-                    "reward_max": {"type": "int", "default": 60},
-                    "ntr_multiplier": {"type": "float", "default": 2.0},
-                    "pk_penalty": {"type": "float", "default": 0.20},
-                    "intimacy_gain": {"type": "int", "default": 3}
+                    "duration": {"type": "int", "default": 7200, "hint": "时长(秒)：默认7200=2小时"},
+                    "start_cost": {"type": "int", "default": 20, "hint": "启动费(币)"},
+                    "reward_min": {"type": "int", "default": 30, "hint": "结算奖励下限(币)"},
+                    "reward_max": {"type": "int", "default": 60, "hint": "结算奖励上限(币)"},
+                    "ntr_multiplier": {"type": "float", "default": 2.0, "hint": "被牛时收益倍率"},
+                    "pk_penalty": {"type": "float", "default": 0.20, "hint": "打工中PK战力扣减(0.20=扣20%)"},
+                    "intimacy_gain": {"type": "int", "default": 3, "hint": "完成后亲密度+3"}
                 }
             },
             "expedition": {
                 "type": "object",
                 "items": {
-                    "duration": {"type": "int", "default": 28800},
-                    "start_cost": {"type": "int", "default": 30},
-                    "reward_min": {"type": "int", "default": 50},
-                    "reward_max": {"type": "int", "default": 100},
-                    "ntr_multiplier": {"type": "float", "default": 2.5},
-                    "pk_penalty": {"type": "float", "default": 0.30},
-                    "intimacy_gain": {"type": "int", "default": 10}
+                    "duration": {"type": "int", "default": 28800, "hint": "时长(秒)：默认28800=8小时"},
+                    "start_cost": {"type": "int", "default": 30, "hint": "启动费(币)"},
+                    "reward_min": {"type": "int", "default": 50, "hint": "结算奖励下限(币)"},
+                    "reward_max": {"type": "int", "default": 100, "hint": "结算奖励上限(币)"},
+                    "ntr_multiplier": {"type": "float", "default": 2.5, "hint": "被牛时收益倍率"},
+                    "pk_penalty": {"type": "float", "default": 0.30, "hint": "打工中PK战力扣减(0.30=扣30%)"},
+                    "intimacy_gain": {"type": "int", "default": 10, "hint": "完成后亲密度+10"}
                 }
             }
         }

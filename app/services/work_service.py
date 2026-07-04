@@ -309,10 +309,11 @@ class WorkService:
             if selected_wid and (selected is None or selected.uid != uid):
                 return WorkStartResult(ok=False, reason="wife_not_found")
 
-            # 全用户同一时间只允许一位老婆打工
-            current_working = next((o for o in ownerships if o.uid == uid and o.is_working), None)
-            if current_working is not None:
-                return WorkStartResult(ok=False, reason="already_working", wid=current_working.wid)
+            # 检查同时打工上限
+            working_count = sum(1 for o in ownerships if o.uid == uid and o.is_working)
+            max_concurrent = max(1, self._config.work_max_concurrent)
+            if working_count >= max_concurrent:
+                return WorkStartResult(ok=False, reason="already_working")
 
             # 获取用户档案
             profile = ProfileStore.get_or_create(
@@ -631,7 +632,6 @@ class WorkService:
                         profile_store.save_all(profiles)
                         activity_store.save_all(activity_logs)
                         results.append((o.work_umo, result))
-                        break
             except Exception:
                 logger.error(f"结算群 {gid} 的到期打工失败")
                 continue

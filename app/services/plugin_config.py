@@ -166,6 +166,7 @@ class PluginConfig:
 
     # ---------- Phase 4: 打工系统 ----------
     work_enabled: bool = True
+    work_max_concurrent: int = 3  # 每个用户同时最多几个老婆打工
     work_modes: dict = field(
         default_factory=lambda: {
             "normal": {

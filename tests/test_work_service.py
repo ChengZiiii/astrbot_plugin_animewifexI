@@ -121,8 +121,12 @@ class TestStartWork:
         assert result.reason == "not_enough_coins"
 
     @pytest.mark.asyncio
-    async def test_start_work_already_working(self, work_service, tmp_paths):
-        """已在打工失败"""
+    async def test_start_work_already_working(self, tmp_paths, locks):
+        """达到并发打工上限时失败"""
+        from app.services.work_service import WorkService
+        config = PluginConfig(work_max_concurrent=1)
+        svc = WorkService(tmp_paths, config, locks)
+
         gid, uid, nick = "g1", "u1", "Alice"
         ownership_store = OwnershipStore(tmp_paths, gid)
         ownerships = ownership_store.load_all()
@@ -141,9 +145,44 @@ class TestStartWork:
         profiles[uid] = UserProfile(uid=uid, nick=nick, coins=100)
         profile_store.save_all(profiles)
 
-        result = await work_service.start_work(gid, uid, nick, "normal", "2026-07-04")
+        result = await svc.start_work(gid, uid, nick, "normal", "2026-07-04")
         assert result.ok is False
         assert result.reason == "already_working"
+
+    @pytest.mark.asyncio
+    async def test_start_work_concurrent_under_limit(self, tmp_paths, locks):
+        """未达并发上限时允许多个老婆同时打工"""
+        from app.services.work_service import WorkService
+        config = PluginConfig(work_max_concurrent=3)
+        svc = WorkService(tmp_paths, config, locks)
+
+        gid, uid, nick = "g1", "u1", "Alice"
+        ownership_store = OwnershipStore(tmp_paths, gid)
+        ownerships = ownership_store.load_all()
+        from app.models.ownership import Ownership
+        from app.models.enums import AcquireVia
+        # 第一个老婆已在打工
+        ownerships.append(Ownership(
+            wid="w1", uid=uid, acquired_at=0,
+            acquired_via=AcquireVia.DRAW, is_primary=True,
+            is_working=True, work_mode="normal",
+        ))
+        # 第二个老婆空闲
+        ownerships.append(Ownership(
+            wid="w2", uid=uid, acquired_at=0,
+            acquired_via=AcquireVia.DRAW,
+        ))
+        ownership_store.save_all(ownerships)
+
+        profile_store = ProfileStore(tmp_paths, gid)
+        profiles = profile_store.load_all()
+        from app.models.profile import UserProfile
+        profiles[uid] = UserProfile(uid=uid, nick=nick, coins=100)
+        profile_store.save_all(profiles)
+
+        # 指定第二个老婆打工，应该成功
+        result = await svc.start_work(gid, uid, nick, "normal", "2026-07-04", selected_wid="w2")
+        assert result.ok is True
 
     @pytest.mark.asyncio
     async def test_start_work_disabled(self, tmp_paths, locks):

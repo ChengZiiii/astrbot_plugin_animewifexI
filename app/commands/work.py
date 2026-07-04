@@ -118,8 +118,8 @@ async def handle_work(
         elif result.reason == "wife_not_found":
             yield event.plain_result(f"{nick}，你指定的老婆编号不存在哦~")
         elif result.reason == "already_working":
-            wife_name = _wife_name(ctx, result.wid)
-            yield event.plain_result(f"{nick}，{wife_name} 正在打工中，不能重复开始哦~")
+            max_c = ctx.config.work_max_concurrent
+            yield event.plain_result(f"{nick}，已经有 {max_c} 位老婆在打工中，达到上限了~")
         elif result.reason == "invalid_mode":
             yield event.plain_result(f"打工模式不存在，可用：老婆 打工 [编号] / 老婆 打工 [编号] 加班 / 老婆 打工 [编号] 远征")
         elif result.reason == "not_enough_coins":
