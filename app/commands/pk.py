@@ -61,12 +61,52 @@ async def handle_pk(
         yield event.plain_result(f"{attacker_nick}，{result.msg}")
         return
 
-    # 格式化战报
+    # T43: 格式化详细战报
+    # 获取双方段位
+    from ..storage.stores import ProfileStore
+    profile_store = ProfileStore(ctx.paths, gid)
+    profiles = profile_store.load_all()
+    attacker_profile = profiles.get(result.attacker_uid)
+    defender_profile = profiles.get(result.defender_uid)
+    attacker_score = attacker_profile.pk_score if attacker_profile else 0
+    defender_score = defender_profile.pk_score if defender_profile else 0
+    attacker_rank = PkService.get_pk_rank(attacker_score)
+    defender_rank = PkService.get_pk_rank(defender_score)
+    attacker_rank_emoji = PkService.get_pk_rank_emoji(attacker_score)
+    defender_rank_emoji = PkService.get_pk_rank_emoji(defender_score)
+
+    # 元素克制显示
+    element_info = ""
+    if result.element_advantage > 1.0:
+        element_info = f"（{result.attacker_element}克{result.defender_element}，攻击方有利！）"
+    elif result.element_advantage < 1.0:
+        element_info = f"（{result.defender_element}克{result.attacker_element}，防御方有利！）"
+    else:
+        element_info = f"（{result.attacker_element} vs {result.defender_element}，无克制）"
+
+    # 胜负判定
+    if result.is_tie:
+        result_text = "🤝 平局！"
+        winner_text = f"双方平局，各获得 {result.reward} 币"
+    elif result.winner_uid == result.attacker_uid:
+        result_text = f"🎉 {result.attacker_name} 获胜！"
+        winner_text = f"{result.attacker_name} 获得 {result.reward} 币"
+    else:
+        result_text = f"🎉 {result.defender_name} 获胜！"
+        winner_text = f"{result.defender_name} 获得 {result.reward} 币"
+
     lines = [
         f"【PK 战报】",
         f"⚔️ {result.attacker_name} vs {result.defender_name}",
-        f"战力：{result.attacker_power:.0f} vs {result.defender_power:.0f}",
+        f"🔮 元素：{result.attacker_element} vs {result.defender_element} {element_info}",
+        f"💪 战力：{result.attacker_power:.0f} vs {result.defender_power:.0f}",
         f"",
-        f"🏆 胜者：{result.winner_uid}（+{result.reward} 币）",
+        f"{result_text}",
+        f"🏆 {winner_text}",
+        f"💰 败方获得：{result.loser_reward} 币",
+        f"",
+        f"📊 积分变化：",
+        f"  {result.attacker_name}：+{result.winner_score_gain if result.winner_uid == result.attacker_uid else result.loser_score_gain} 分（{attacker_rank_emoji}{attacker_rank}）",
+        f"  {result.defender_name}：+{result.loser_score_gain if result.winner_uid == result.attacker_uid else result.winner_score_gain} 分（{defender_rank_emoji}{defender_rank}）",
     ]
     yield event.plain_result("\n".join(lines))
