@@ -127,6 +127,74 @@ class LeaderboardService:
 
         return self._build_entries(scores, profiles)
 
+    # T51: 新增排行榜方法
+
+    def rank_pk_score(self, gid: str) -> List[LeaderboardEntry]:
+        """PK 积分榜：按当前赛季 PK 积分排序"""
+        profile_store = ProfileStore(self._paths, gid)
+        profiles = profile_store.load_all()
+
+        scores: Dict[str, int] = {}
+        for uid, profile in profiles.items():
+            if profile.pk_score > 0:
+                scores[uid] = profile.pk_score
+
+        return self._build_entries(scores, profiles)
+
+    def rank_primary_intimacy(self, gid: str) -> List[LeaderboardEntry]:
+        """亲密度榜：按主老婆亲密度排序"""
+        from ..storage.stores import OwnershipStore
+
+        profile_store = ProfileStore(self._paths, gid)
+        profiles = profile_store.load_all()
+
+        ownership_store = OwnershipStore(self._paths, gid)
+        ownerships = ownership_store.load_all()
+
+        scores: Dict[str, int] = {}
+        for uid, profile in profiles.items():
+            primary = ownership_store.get_primary(uid, ownerships)
+            if primary and primary.intimacy > 0:
+                scores[uid] = primary.intimacy
+
+        return self._build_entries(scores, profiles)
+
+    def rank_evil_points(self, gid: str) -> List[LeaderboardEntry]:
+        """恶人值榜：按当前月作恶值排序"""
+        profile_store = ProfileStore(self._paths, gid)
+        profiles = profile_store.load_all()
+
+        scores: Dict[str, int] = {}
+        for uid, profile in profiles.items():
+            if profile.evil_points > 0:
+                scores[uid] = profile.evil_points
+
+        return self._build_entries(scores, profiles)
+
+    def rank_work_week_income(self, gid: str) -> List[LeaderboardEntry]:
+        """打工收入榜（周）：按本周打工收入排序"""
+        profile_store = ProfileStore(self._paths, gid)
+        profiles = profile_store.load_all()
+
+        scores: Dict[str, int] = {}
+        for uid, profile in profiles.items():
+            if profile.work_week_income > 0:
+                scores[uid] = profile.work_week_income
+
+        return self._build_entries(scores, profiles)
+
+    def rank_work_streak(self, gid: str) -> List[LeaderboardEntry]:
+        """打工连续天数榜：按连续打工天数排序"""
+        profile_store = ProfileStore(self._paths, gid)
+        profiles = profile_store.load_all()
+
+        scores: Dict[str, int] = {}
+        for uid, profile in profiles.items():
+            if profile.work_streak > 0:
+                scores[uid] = profile.work_streak
+
+        return self._build_entries(scores, profiles)
+
     def _build_entries(
         self, scores: Dict[str, int], profiles: Dict
     ) -> List[LeaderboardEntry]:

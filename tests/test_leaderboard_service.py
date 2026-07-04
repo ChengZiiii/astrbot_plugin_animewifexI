@@ -154,3 +154,154 @@ class TestLeaderboardResolveAction:
 
     def test_unknown_returns_none(self, leaderboard_service):
         assert leaderboard_service.resolve_action("不存在") is None
+
+
+# T51: 新增排行榜测试
+
+class TestLeaderboardPkScore:
+    """PK 积分榜测试"""
+
+    def test_pk_score_ranking(self, leaderboard_service, tmp_paths):
+        """PK 积分榜排序"""
+        ps = ProfileStore(tmp_paths, "g1")
+        _seed_profile(ps, "u1", "Alice", pk_score=100)
+        _seed_profile(ps, "u2", "Bob", pk_score=200)
+        _seed_profile(ps, "u3", "Charlie", pk_score=50)
+
+        entries = leaderboard_service.rank_pk_score("g1")
+        assert len(entries) == 3
+        assert entries[0].nick == "Bob"
+        assert entries[0].value == 200
+        assert entries[1].nick == "Alice"
+        assert entries[1].value == 100
+        assert entries[2].nick == "Charlie"
+        assert entries[2].value == 50
+
+    def test_pk_score_excludes_zero(self, leaderboard_service, tmp_paths):
+        """积分为 0 的用户不参与排名"""
+        ps = ProfileStore(tmp_paths, "g1")
+        _seed_profile(ps, "u1", "Alice", pk_score=100)
+        _seed_profile(ps, "u2", "Bob", pk_score=0)
+
+        entries = leaderboard_service.rank_pk_score("g1")
+        assert len(entries) == 1
+        assert entries[0].nick == "Alice"
+
+
+class TestLeaderboardPrimaryIntimacy:
+    """亲密度榜测试"""
+
+    def test_primary_intimacy_ranking(self, leaderboard_service, tmp_paths):
+        """亲密度榜排序"""
+        from app.models.ownership import Ownership
+        from app.storage.stores import OwnershipStore
+
+        ps = ProfileStore(tmp_paths, "g1")
+        _seed_profile(ps, "u1", "Alice")
+        _seed_profile(ps, "u2", "Bob")
+
+        # 创建主老婆记录
+        os = OwnershipStore(tmp_paths, "g1")
+        ownerships = os.load_all()
+        ownerships.append(Ownership(uid="u1", wid="w1", is_primary=True, intimacy=50))
+        ownerships.append(Ownership(uid="u2", wid="w2", is_primary=True, intimacy=80))
+        os.save_all(ownerships)
+
+        entries = leaderboard_service.rank_primary_intimacy("g1")
+        assert len(entries) == 2
+        assert entries[0].nick == "Bob"
+        assert entries[0].value == 80
+        assert entries[1].nick == "Alice"
+        assert entries[1].value == 50
+
+    def test_no_primary_excluded(self, leaderboard_service, tmp_paths):
+        """没有主老婆的用户不参与排名"""
+        ps = ProfileStore(tmp_paths, "g1")
+        _seed_profile(ps, "u1", "Alice")
+
+        entries = leaderboard_service.rank_primary_intimacy("g1")
+        assert len(entries) == 0
+
+
+class TestLeaderboardEvilPoints:
+    """恶人值榜测试"""
+
+    def test_evil_points_ranking(self, leaderboard_service, tmp_paths):
+        """恶人值榜排序"""
+        ps = ProfileStore(tmp_paths, "g1")
+        _seed_profile(ps, "u1", "Alice", evil_points=5)
+        _seed_profile(ps, "u2", "Bob", evil_points=10)
+        _seed_profile(ps, "u3", "Charlie", evil_points=3)
+
+        entries = leaderboard_service.rank_evil_points("g1")
+        assert len(entries) == 3
+        assert entries[0].nick == "Bob"
+        assert entries[0].value == 10
+        assert entries[1].nick == "Alice"
+        assert entries[1].value == 5
+        assert entries[2].nick == "Charlie"
+        assert entries[2].value == 3
+
+    def test_evil_points_excludes_zero(self, leaderboard_service, tmp_paths):
+        """作恶值为 0 的用户不参与排名"""
+        ps = ProfileStore(tmp_paths, "g1")
+        _seed_profile(ps, "u1", "Alice", evil_points=5)
+        _seed_profile(ps, "u2", "Bob", evil_points=0)
+
+        entries = leaderboard_service.rank_evil_points("g1")
+        assert len(entries) == 1
+        assert entries[0].nick == "Alice"
+
+
+class TestLeaderboardWorkWeekIncome:
+    """打工收入榜（周）测试"""
+
+    def test_work_week_income_ranking(self, leaderboard_service, tmp_paths):
+        """打工收入榜排序"""
+        ps = ProfileStore(tmp_paths, "g1")
+        _seed_profile(ps, "u1", "Alice", work_week_income=100)
+        _seed_profile(ps, "u2", "Bob", work_week_income=200)
+
+        entries = leaderboard_service.rank_work_week_income("g1")
+        assert len(entries) == 2
+        assert entries[0].nick == "Bob"
+        assert entries[0].value == 200
+        assert entries[1].nick == "Alice"
+        assert entries[1].value == 100
+
+    def test_work_week_income_excludes_zero(self, leaderboard_service, tmp_paths):
+        """收入为 0 的用户不参与排名"""
+        ps = ProfileStore(tmp_paths, "g1")
+        _seed_profile(ps, "u1", "Alice", work_week_income=100)
+        _seed_profile(ps, "u2", "Bob", work_week_income=0)
+
+        entries = leaderboard_service.rank_work_week_income("g1")
+        assert len(entries) == 1
+        assert entries[0].nick == "Alice"
+
+
+class TestLeaderboardWorkStreak:
+    """打工连续天数榜测试"""
+
+    def test_work_streak_ranking(self, leaderboard_service, tmp_paths):
+        """连续打工天数榜排序"""
+        ps = ProfileStore(tmp_paths, "g1")
+        _seed_profile(ps, "u1", "Alice", work_streak=5)
+        _seed_profile(ps, "u2", "Bob", work_streak=10)
+
+        entries = leaderboard_service.rank_work_streak("g1")
+        assert len(entries) == 2
+        assert entries[0].nick == "Bob"
+        assert entries[0].value == 10
+        assert entries[1].nick == "Alice"
+        assert entries[1].value == 5
+
+    def test_work_streak_excludes_zero(self, leaderboard_service, tmp_paths):
+        """连续天数为 0 的用户不参与排名"""
+        ps = ProfileStore(tmp_paths, "g1")
+        _seed_profile(ps, "u1", "Alice", work_streak=5)
+        _seed_profile(ps, "u2", "Bob", work_streak=0)
+
+        entries = leaderboard_service.rank_work_streak("g1")
+        assert len(entries) == 1
+        assert entries[0].nick == "Alice"
