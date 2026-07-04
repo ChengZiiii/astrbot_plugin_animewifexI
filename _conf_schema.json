@@ -188,7 +188,7 @@
         "items": {
             "lock_item": {"type": "int", "default": 50},
             "protection_charm": {"type": "int", "default": 60},
-            "insurance_card": {"type": "int", "default": 80},
+            "insurance_card": {"type": "int", "default": 90},
             "draw_ticket_single": {"type": "int", "default": 30},
             "draw_ticket_ten": {"type": "int", "default": 270}
         }
@@ -298,8 +298,8 @@
     "revenge_token_bonus": {
         "description": "复仇令牌加成",
         "type": "float",
-        "default": 1.0,
-        "hint": "持有复仇令牌时，牛老婆概率额外乘以的倍率（1.0 = +100%翻倍）"
+        "default": 0.5,
+        "hint": "持有复仇令牌时，牛老婆概率额外乘以的倍率（0.5 = +50%）"
     },
     "revenge_success_intimacy_restore": {
         "description": "复仇成功亲密度恢复比例",

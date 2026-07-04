@@ -28,7 +28,7 @@ def config():
         shop_prices={
             "lock_item": 50,
             "protection_charm": 60,
-            "insurance_card": 80,
+            "insurance_card": 90,
         },
     )
 
