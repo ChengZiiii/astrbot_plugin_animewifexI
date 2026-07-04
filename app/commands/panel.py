@@ -93,6 +93,7 @@ async def handle_panel(
     # 基础信息
     lines.append(f"💰 老婆币：{profile.coins}")
     lines.append(f"📅 连续天数：{profile.streak_days}")
+    lines.append("👑 主老婆：列表中带 👑 的那位，可用 `老婆 切换 <编号>` 修改")
 
     # T24: 作恶值展示
     from datetime import datetime

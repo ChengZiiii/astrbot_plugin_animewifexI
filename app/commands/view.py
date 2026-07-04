@@ -70,6 +70,8 @@ async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
 
     # 格式化当前页老婆
     lines = [f"【{owner} 的老婆】共 {total} 位（第 {page}/{total_pages} 页）\n"]
+    if target_uid == sender_uid:
+        lines.append("💡 `👑` = 主老婆，可用 `老婆 切换 <编号>` 切换默认互动/出战对象\n")
     imgs = []
 
     # T24: 作恶值展示
