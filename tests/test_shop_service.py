@@ -30,6 +30,7 @@ def config():
         "lock_item": 50,
             "revive_potion": 80,
             "protection_charm": 60,
+            "insurance_card": 80,
         },
     )
 
@@ -127,6 +128,14 @@ class TestBuy:
         assert ok1 is True
         # 第二个失败（上限 1）
         ok2, msg = shop.buy_sync("g1", "u1", "protection_charm", quantity=1)
+        assert ok2 is False
+        assert "上限" in msg
+
+    def test_buy_insurance_card_limit(self, shop, tmp_paths):
+        _seed_profile(tmp_paths, "g1", "u1", coins=500)
+        ok1, _ = shop.buy_sync("g1", "u1", "insurance_card", quantity=1)
+        assert ok1 is True
+        ok2, msg = shop.buy_sync("g1", "u1", "insurance_card", quantity=1)
         assert ok2 is False
         assert "上限" in msg
 

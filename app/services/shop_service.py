@@ -32,6 +32,7 @@ ITEM_NAMES: Dict[str, str] = {
     "lock_item": "锁定卡",
     "revive_potion": "复活药水",
     "protection_charm": "保护符",
+    "insurance_card": "保险卡",
     "draw_ticket_single": "单抽券",
     "draw_ticket_ten": "十连券",
 }
@@ -42,6 +43,7 @@ ITEM_USE_LIMITS: Dict[str, int] = {
     "lock_item": 0,
     "revive_potion": 0,
     "protection_charm": 1,  # 同时只能持有 1 个
+    "insurance_card": 1,
 }
 
 

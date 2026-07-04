@@ -104,6 +104,7 @@ class PluginConfig:
             "lock_item": 50,
             "revive_potion": 80,
             "protection_charm": 60,
+            "insurance_card": 80,
             "draw_ticket_single": 30,    # 单抽券
             "draw_ticket_ten": 270,      # 十连券（9折）
         }
@@ -265,6 +266,7 @@ class PluginConfig:
                 "lock_item": 50,
                 "revive_potion": 80,
                 "protection_charm": 60,
+                "insurance_card": 80,
                 "draw_ticket_single": 30,
                 "draw_ticket_ten": 270,
             }
