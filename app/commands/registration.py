@@ -1,31 +1,4 @@
-"""命令注册：组装所有命令处理器到 :class:`CommandRegistry`。
-
-Phase 1 注册：
-
-* 12 个旧扁平命令（v2.x 兼容）；
-* ``老婆帮助`` 的两种触发形式（旧版无空格 + 新版带空格）；
-* Phase 2/3 占位子命令（``老婆 列表`` 等）统一返回"未开放"提示。
-
-Phase 2 注册：
-
-* ``老婆 排行 [日|周|总] [牛|被牛|PK|收集]`` — 排行榜
-* ``老婆 复仇 @x`` — 复仇
-* ``老婆 摸头`` — 亲密度互动（摸头）
-* ``老婆 送礼`` — 亲密度互动（送礼）
-
-Phase 3 注册：
-
-* ``老婆 签到`` — 每日签到
-* ``老婆 任务`` — 每日任务
-* ``老婆 商城`` — 商城列表
-* ``老婆 购买 <道具>`` — 购买道具
-* ``老婆 背包`` — 查看背包
-* ``老婆 锁定 <编号>`` — 限期锁定老婆
-* ``老婆 解锁 <编号>`` — 解锁老婆
-* ``老婆 PK @某人`` — 老婆 PK
-* ``老婆 图鉴`` — 查看图鉴
-* ``老婆 面板`` — 查看个人面板
-"""
+"""命令注册：组装当前所有可用命令到 :class:`CommandRegistry`。"""
 
 from __future__ import annotations
 
@@ -75,7 +48,7 @@ __all__ = ["build_registry"]
 
 
 def build_registry() -> CommandRegistry:
-    """构造 Phase 3 完整命令注册表"""
+    """构造当前完整命令注册表。"""
     registry = CommandRegistry()
 
     # ---------- 旧扁平命令 ----------
@@ -95,7 +68,7 @@ def build_registry() -> CommandRegistry:
     registry.register_legacy("切换ntr开关状态", handle_switch_ntr)
     registry.register_legacy("切换NTR开关状态", handle_switch_ntr)
 
-    # ---------- Phase 2 分组命令 ----------
+    # ---------- 分组命令：互动 / 排行 ----------
     registry.register_grouped("帮助", handle_help)
     registry.register_grouped("排行", handle_leaderboard)
     registry.register_grouped("复仇", handle_revenge)
@@ -104,7 +77,7 @@ def build_registry() -> CommandRegistry:
     registry.register_grouped("对话", handle_chat)
     registry.register_grouped("约会", handle_date)
 
-    # ---------- Phase 3 分组命令 ----------
+    # ---------- 分组命令：经济 / 道具 / 抽卡 ----------
     registry.register_grouped("签到", handle_checkin)
     registry.register_grouped("任务", handle_quest)
     registry.register_grouped("商城", handle_shop)
@@ -112,7 +85,7 @@ def build_registry() -> CommandRegistry:
     registry.register_grouped("背包", handle_backpack)
     registry.register_grouped("十连", handle_draw_ten)
 
-    # ---------- Phase 3: 锁定/PK/图鉴/面板 ----------
+    # ---------- 分组命令：锁定 / PK / 图鉴 / 面板 ----------
     registry.register_grouped("锁定", handle_lock)
     registry.register_grouped("解锁", handle_unlock)
     registry.register_grouped("pk", handle_pk)
@@ -120,7 +93,7 @@ def build_registry() -> CommandRegistry:
     registry.register_grouped("图鉴", handle_collection)
     registry.register_grouped("面板", handle_panel)
 
-    # ---------- Phase 4: 打工/对话/约会 ----------
+    # ---------- 分组命令：打工 ----------
     registry.register_grouped("打工", handle_work)
 
     # ---------- 管理员命令 ----------
@@ -130,7 +103,7 @@ def build_registry() -> CommandRegistry:
     registry.register_grouped("测试亲密度", handle_admin_test_intimacy)
     registry.register_grouped("测试币", handle_admin_test_coins)
 
-    # ---------- Phase 2/3 剩余占位子命令 ----------
+    # ---------- 当前仍未开放的占位子命令 ----------
     for sub in NOT_IMPLEMENTED_SUBCOMMANDS:
         registry.register_grouped(sub, make_not_implemented_handler(sub))
 

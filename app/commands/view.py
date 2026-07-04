@@ -183,7 +183,7 @@ def find_wid_by_index(
 ) -> Optional[str]:
     """从消息中解析老婆编号（1-based），返回对应 wid。
 
-    格式：``老婆 求婚 1`` 或 ``老婆 锁 2``
+    格式：``老婆 锁定 1`` 或 ``老婆 解锁 2``
     """
     if not msg:
         return None
