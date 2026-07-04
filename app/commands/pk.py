@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from typing import AsyncGenerator
 
 from astrbot.api.event import AstrMessageEvent
@@ -12,6 +13,22 @@ from .context import CommandContext
 from .view import find_uid_by_owner_nick
 
 __all__ = ["handle_pk"]
+
+_PK_WIN_FLAVOR = [
+    "{winner}把{loser}按在地上摩擦！毫无悬念~",
+    "{winner}一拳把{loser}打飞了！实力碾压~",
+    "{winner}：就这？{loser}：呜呜呜……",
+    "经过激烈对决，{winner}以绝对优势胜出！{loser}表示不服……",
+    "{winner}使出了终极必杀技，{loser}当场去世（不是）",
+    "观众：哇！{winner}太强了！{loser}：我不服，下次再来！",
+]
+
+_PK_DRAW_FLAVOR = [
+    "双方打得难解难分，最后累得躺在地上……",
+    "两个老婆互瞪了三分钟，谁也没动手。平局。",
+    "裁判：我看了回放，真的分不出胜负……",
+    "她们打了一架后发现是失散多年的姐妹，和好了。平局。",
+]
 
 
 async def handle_pk(
@@ -79,13 +96,16 @@ async def handle_pk(
 
     # 胜负判定
     if result.is_tie:
-        result_text = "🤝 平局！"
+        taunt = random.choice(_PK_DRAW_FLAVOR)
+        result_text = f"🤝 平局！\n📢 {taunt}"
         winner_text = f"双方平局，各获得 {result.reward} 币"
     elif result.winner_uid == result.attacker_uid:
-        result_text = f"🎉 {result.attacker_name} 获胜！"
+        taunt = random.choice(_PK_WIN_FLAVOR).format(winner=result.attacker_name, loser=result.defender_name)
+        result_text = f"🎉 {result.attacker_name} 获胜！\n📢 {taunt}"
         winner_text = f"{result.attacker_name} 获得 {result.reward} 币"
     else:
-        result_text = f"🎉 {result.defender_name} 获胜！"
+        taunt = random.choice(_PK_WIN_FLAVOR).format(winner=result.defender_name, loser=result.attacker_name)
+        result_text = f"🎉 {result.defender_name} 获胜！\n📢 {taunt}"
         winner_text = f"{result.defender_name} 获得 {result.reward} 币"
 
     lines = [
