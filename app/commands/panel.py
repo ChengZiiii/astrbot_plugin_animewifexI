@@ -8,6 +8,7 @@ from astrbot.api.event import AstrMessageEvent
 
 from ..api.events import get_group_id, get_sender_nick, get_sender_uid
 from ..models.enums import Rarity, RARITY_ORDER
+from ..services.economy_service import EconomyService
 from ..storage.stores import OwnershipStore, ProfileStore, WivesMasterStore
 from .context import CommandContext
 
@@ -23,6 +24,16 @@ async def handle_collection(
         return
     uid = get_sender_uid(event)
     nick = get_sender_nick(event)
+
+    economy = EconomyService(ctx.paths, ctx.config, ctx.locks)
+    weekly_box = economy.claim_weekly_surprise_box_sync(gid, uid, nick)
+    if weekly_box is not None:
+        box_coins, box_item = weekly_box
+        lines = [f"📦 本周惊喜宝箱已领取：+{box_coins} 币"]
+        if box_item:
+            item_name = {"draw_ticket_single": "单抽券", "draw_ticket_ten": "十连券"}.get(box_item, box_item)
+            lines.append(f"📦 宝箱额外获得：{item_name}")
+        yield event.plain_result("\n".join(lines))
 
     profile_store = ProfileStore(ctx.paths, gid)
     profiles = profile_store.load_all()
@@ -115,6 +126,12 @@ async def handle_panel(
     # 持有老婆
     from ..services.ownership_service import MAX_WIVES_PER_USER
     if my_wives:
+        primary_wife = next((o for o in my_wives if o.is_primary), None)
+        if primary_wife:
+            primary_meta = wives.get(primary_wife.wid)
+            primary_name = primary_meta.chara or primary_meta.img if primary_meta else primary_wife.wid
+            lines.append(f"🎯 当前默认老婆：{primary_name}")
+            lines.append("")
         lines.append(f"【持有老婆】{len(my_wives)}/{MAX_WIVES_PER_USER}")
         for i, o in enumerate(my_wives, 1):
             wife = wives.get(o.wid)

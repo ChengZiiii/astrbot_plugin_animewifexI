@@ -42,4 +42,7 @@ async def handle_switch_primary(
         yield event.plain_result(f"{nick}，这位已经是你的主老婆啦~")
         return
 
-    yield event.plain_result(f"{nick}，已将 {result.wife_name} 设为主老婆~")
+    yield event.plain_result(
+        f"{nick}，已将 {result.wife_name} 设为主老婆~\n"
+        f"以后不写编号时，互动 / PK / 打工 默认都会优先使用她。"
+    )

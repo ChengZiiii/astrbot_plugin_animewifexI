@@ -9,6 +9,7 @@ from astrbot.api.event import AstrMessageEvent
 from ..api.events import get_group_id, get_sender_nick, get_sender_uid
 from ..api.messaging import build_multi_image_chain, build_text_image_chain
 from ..services.ownership_service import DrawResult
+from ..storage.stores import OwnershipStore
 from ..utils.image import build_wife_intro_text
 from .context import CommandContext
 
@@ -76,6 +77,16 @@ async def handle_draw(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
         return
 
     text = _format_draw_result(nick, result)
+    ownership_store = OwnershipStore(ctx.paths, gid)
+    ownerships = ownership_store.load_all()
+    my_wives = ownership_store.list_by_user(uid, ownerships)
+    if len(my_wives) == 2:
+        current_index = next((i for i, o in enumerate(my_wives, 1) if o.wid == result.wid), None)
+        if current_index is not None:
+            text += (
+                f"\n\n💡 你现在已经有多位老婆了！带 `👑` 的是主老婆。"
+                f"如果想把这位设为默认对象，可以发送：老婆 切换 {current_index}"
+            )
     yield event.chain_result(
         build_text_image_chain(
             text,
@@ -118,6 +129,12 @@ async def handle_draw_ten(event: AstrMessageEvent, ctx: CommandContext) -> Async
         if r in rarities:
             summary.append(f"{r}x{rarities[r]}")
     lines.append(f"\n统计：{' '.join(summary)}")
+
+    ownership_store = OwnershipStore(ctx.paths, gid)
+    ownerships = ownership_store.load_all()
+    my_wives = ownership_store.list_by_user(uid, ownerships)
+    if len(my_wives) >= 2:
+        lines.append("\n💡 你已拥有多位老婆；带 `👑` 的是主老婆，可用 `老婆 切换 <编号>` 修改默认对象。")
 
     # 收集所有图片（去重避免重复发送）
     imgs = []
