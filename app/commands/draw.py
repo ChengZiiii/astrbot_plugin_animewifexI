@@ -29,7 +29,10 @@ def _format_draw_result(nick: str, result: DrawResult, index: int = 0) -> str:
         rarity_line += "（保底！）"
     if result.is_duplicate:
         rarity_line += f"（重复，+{result.duplicate_coins}币）"
-    return intro + rarity_line
+    stats = result.wife.base_stats
+    base_power = stats.atk + stats.defense + int(stats.hp * 0.5)
+    stats_line = f"\n⚔️攻击:{stats.atk} 🛡️防御:{stats.defense} ❤️血量:{stats.hp} 💪战力:{base_power}"
+    return intro + rarity_line + stats_line
 
 
 async def handle_draw(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGenerator:

@@ -147,7 +147,10 @@ async def handle_panel(
                         "expedition": " 💼远征中",
                     }.get(o.work_mode, " 💼打工中")
                 primary = " 👑" if o.is_primary else ""
-                lines.append(f"  {i}. {emoji} {name} (❤️{o.intimacy}){lock}{work}{primary}")
+                stats = wife.base_stats
+                base_power = stats.atk + stats.defense + int(stats.hp * 0.5)
+                stats_str = f" ⚔️{stats.atk} 🛡️{stats.defense} ❤️{stats.hp} 💪{base_power}"
+                lines.append(f"  {i}. {emoji} {name} (❤️{o.intimacy}){stats_str}{lock}{work}{primary}")
     else:
         lines.append("【持有老婆】无")
 

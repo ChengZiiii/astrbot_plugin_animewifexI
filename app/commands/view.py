@@ -104,9 +104,12 @@ async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
             work_icon = f" {work_label}"
         primary_icon = " 👑" if o.is_primary else ""
         intimacy_str = OwnershipService.intimacy_level_emoji(o.intimacy)
+        stats = wife.base_stats
+        base_power = stats.atk + stats.defense + int(stats.hp * 0.5)
+        stats_str = f" ⚔️{stats.atk} 🛡️{stats.defense} ❤️{stats.hp} 💪{base_power}"
         lines.append(
             f"{i}. {emoji} {name} (❤️{o.intimacy}{intimacy_str})"
-            f"{lock_icon}{work_icon}{primary_icon}"
+            f"{stats_str}{lock_icon}{work_icon}{primary_icon}"
         )
 
         # 收集当前页图片（去重）
