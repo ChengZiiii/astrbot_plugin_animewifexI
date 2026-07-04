@@ -98,6 +98,8 @@ class CooldownAction:
     CHANGE = "change"
     SWAP = "swap"
     PK = "pk"
+    CHAT = "chat"
+    DATE = "date"
 
 
 # ==================== 结果 dataclass ====================
@@ -133,6 +135,7 @@ class NtrResult:
     remaining_attempts: int = 0           # 今日剩余次数
     reason: str = ""                      # 失败/拒绝原因
     profile: Optional[UserProfile] = None
+    final_probability: float = 0.0        # T20: 最终 NTR 概率
 
 
 @dataclass
@@ -656,18 +659,69 @@ class OwnershipService:
                     profile=attacker_profile,
                 )
 
-            # P2.4: 复仇检查
+            # T20: NTR 概率流水线骨架
+            # 独立计算每个概率因子，然后组合
+
+            # 1. 基础概率
+            prob_base = self._config.ntr_possibility
+
+            # 2. 亲密度护盾（Lv.4+ 降低概率）
+            target_intimacy = target_wife.intimacy if target_wife else 0
+            prob_shield = 1.0
+            if self.has_intimacy_shield(target_intimacy):
+                prob_shield = self._config.intimacy_shield_reduction
+
+            # 3. 魅力加成（暂未实现，占位）
+            prob_charm = 1.0
+
+            # 4. 锁定检查（已前置拒绝，占位）
+            prob_lock = 1.0
+
+            # 5. T23: 复仇加成 + 令牌消耗
             revenge_valid = False
+            prob_revenge = 1.0
+            has_revenge_token = False
             if is_revenge and attacker_profile.last_ntr_by:
                 rev_uid = attacker_profile.last_ntr_by.get("uid", "")
                 rev_ts = float(attacker_profile.last_ntr_by.get("ts", 0))
                 if rev_uid == tid and (now_ts() - rev_ts) < self._config.revenge_window_hours * 3600:
                     revenge_valid = True
+                    prob_revenge = self._config.revenge_success_multiplier
+                    # T23: 有令牌时额外加成
+                    has_revenge_token = attacker_profile.inventory.get("revenge_token", 0) > 0
+                    if has_revenge_token:
+                        prob_revenge *= (1 + self._config.revenge_token_bonus)
 
-            # 概率判定（复仇时应用成功率加成）
-            ntr_prob = self._config.ntr_possibility
-            if revenge_valid:
-                ntr_prob = min(1.0, ntr_prob * self._config.revenge_success_multiplier)
+            # 6. 连续被牛惩罚（占位）
+            prob_streak = 1.0
+
+            # 7. 新手保护
+            prob_newbie = 1.0
+            if self._config.newbie_ntr_protection_days > 0 and target_profile and target_profile.registered_at > 0:
+                days_since_reg = (now_ts() - target_profile.registered_at) / 86400
+                if days_since_reg < self._config.newbie_ntr_protection_days:
+                    prob_newbie = 0.0  # Day1 免疫
+                elif days_since_reg < 7:
+                    prob_newbie = self._config.newbie_ntr_retain_ratio
+
+            # 8. T34: 打工状态（目标在打工中时，NTR 概率提升）
+            prob_work = 1.0
+            is_target_working = False
+            if target_wife and target_wife.is_working:
+                is_target_working = True
+                mode_config = self._config.work_modes.get(target_wife.work_mode, {})
+                prob_work = mode_config.get("ntr_multiplier", 1.5)
+
+            # 9. T22: 保护符（目标背包有 protection_charm 时，概率 ×0.3）
+            prob_protection = 1.0
+            has_protection_charm = False
+            if target_profile and target_profile.inventory.get("protection_charm", 0) > 0:
+                has_protection_charm = True
+                prob_protection = 0.3
+
+            # 组合最终概率
+            ntr_prob = min(1.0, prob_base * prob_shield * prob_charm * prob_lock *
+                          prob_revenge * prob_streak * prob_newbie * prob_work * prob_protection)
 
             roll = roll_seed if roll_seed is not None else _random.random()
             success = roll < ntr_prob
@@ -677,6 +731,17 @@ class OwnershipService:
             wid = target_wid
 
             if not success:
+                # T23: 复仇失败 - 消耗令牌、给安慰币、清空 last_ntr_by
+                if revenge_valid:
+                    if has_revenge_token:
+                        attacker_profile.inventory["revenge_token"] = max(
+                            0, attacker_profile.inventory.get("revenge_token", 0) - 1
+                        )
+                    consolation = self._config.revenge_fail_consolation_coins
+                    if consolation > 0:
+                        attacker_profile.coins += consolation
+                    attacker_profile.last_ntr_by = {}
+
                 profile_store.save_all(profiles)
                 daily_store.save_all(daily_counts)
                 return NtrResult(
@@ -688,12 +753,10 @@ class OwnershipService:
                     reason="roll_failed",
                     remaining_attempts=remaining,
                     profile=attacker_profile,
+                    final_probability=ntr_prob,
                 )
 
-            # 成功：转移所有权（保留 v2.x 替换语义）
-            attacker_old_primary = ownership_store.get_primary(uid, ownerships)
-            if attacker_old_primary is not None:
-                ownership_store.remove_by_wid(ownerships, attacker_old_primary.wid)
+            # T21: 成功 - 转移所有权（攻击者保留旧老婆，只切主老婆）
             ownership_store.transfer(
                 ownerships,
                 wid=wid,
@@ -705,20 +768,85 @@ class OwnershipService:
             if wid not in attacker_profile.collection:
                 attacker_profile.collection.append(wid)
             attacker_profile.total_ntr_success += 1
-            if target_profile is not None:
-                target_profile.total_ntr_lost += 1
-                target_profile.last_ntr_by = {"uid": uid, "ts": now_ts()}
 
-            # P2.3: NTR 成功时被牛方亲密度归零（转移后的 ownership 从 0 开始）
+            # T24: 作恶值 +1（按自然月懒重置）
+            current_month = today[:7]  # YYYY-MM
+            if attacker_profile.evil_points_month != current_month:
+                attacker_profile.evil_points = 0
+                attacker_profile.evil_points_month = current_month
+            attacker_profile.evil_points += 1
+
+            # T21: 被牛方处理 - 保留部分亲密度 + 补偿币
             transferred = ownership_store.find_by_wid(wid, ownerships)
-            if transferred:
-                transferred.intimacy = 0
-                transferred.intimacy_updated_date = ""
-                ownership_store.save_all(ownerships)
+            if transferred and target_profile is not None:
+                target_profile.total_ntr_lost += 1
 
-            # P2.4: 复仇成功后清空 last_ntr_by（防链式复仇）
+                # 计算保留比例（新手保留 75%，普通保留 50%）
+                old_intimacy = transferred.intimacy
+                is_newbie = (
+                    target_profile.registered_at > 0
+                    and self._config.newbie_ntr_protection_days > 0
+                    and (now_ts() - target_profile.registered_at) / 86400 < 7
+                )
+                retain_ratio = 0.75 if is_newbie else 0.50
+                lost_intimacy = int(old_intimacy * (1 - retain_ratio))
+
+                # T22: 扩展 last_ntr_by 保存 lost_intimacy
+                target_profile.last_ntr_by = {
+                    "uid": uid,
+                    "ts": now_ts(),
+                    "wid": wid,
+                    "lost_intimacy": lost_intimacy,
+                }
+
+                # 保留亲密度
+                transferred.intimacy = old_intimacy - lost_intimacy
+                transferred.intimacy_updated_date = ""
+
+                # 补偿币 = lost_intimacy * per_intimacy，封顶 max
+                compensation = min(
+                    lost_intimacy * self._config.ntr_coin_compensation_per_intimacy,
+                    self._config.ntr_coin_compensation_max,
+                )
+                if compensation > 0:
+                    target_profile.coins += compensation
+
+                # T22: 保护符消耗（NTR 结算后消耗 1 个）
+                if has_protection_charm:
+                    target_profile.inventory["protection_charm"] = max(
+                        0, target_profile.inventory.get("protection_charm", 0) - 1
+                    )
+
+                # T22: 首次被牛安抚（revenge_token +1，first_ntr_lost_done = True）
+                if not target_profile.first_ntr_lost_done:
+                    target_profile.first_ntr_lost_done = True
+                    target_profile.inventory["revenge_token"] = (
+                        target_profile.inventory.get("revenge_token", 0) + 1
+                    )
+
+            # T23: 复仇成功后 - 消耗令牌、恢复亲密度、清空 last_ntr_by
             if revenge_valid:
+                # 消耗复仇令牌
+                if has_revenge_token:
+                    attacker_profile.inventory["revenge_token"] = max(
+                        0, attacker_profile.inventory.get("revenge_token", 0) - 1
+                    )
+                # 恢复亲密度（按被牛时损失的比例恢复）
+                if transferred:
+                    restore_amount = int(lost_intimacy * self._config.revenge_success_intimacy_restore)
+                    transferred.intimacy = min(
+                        self._config.intimacy_max,
+                        transferred.intimacy + restore_amount,
+                    )
+                # 清空 last_ntr_by（防链式复仇）
                 attacker_profile.last_ntr_by = {}
+
+            # T34: NTR 成功且目标在打工中时，清空打工状态
+            if is_target_working and transferred:
+                transferred.is_working = False
+                transferred.work_mode = ""
+                transferred.work_started_at = 0
+                transferred.work_ends_at = 0
 
             ActivityStore.log(activity_logs, uid, today, Action.NTR_SUCCESS, 1)
             ActivityStore.log(activity_logs, tid, today, Action.NTR_LOST, 1)
@@ -736,6 +864,7 @@ class OwnershipService:
                 wid=wid,
                 remaining_attempts=remaining,
                 profile=attacker_profile,
+                final_probability=ntr_prob,
             )
 
     # ---------- 换老婆 ----------
@@ -1119,6 +1248,7 @@ class OwnershipService:
         async with self._locks.acquire(gid):
             ownership_store = self._ownership_store(gid)
             profile_store = self._profile_store(gid)
+            activity_store = self._activity_store(gid)
 
             ownerships = ownership_store.load_all()
             profiles = profile_store.load_all()
@@ -1145,12 +1275,23 @@ class OwnershipService:
                     intimacy=primary.intimacy, coin_balance=profile.coins,
                 )
 
+            old_intimacy = primary.intimacy
             profile.coins -= self._config.intimacy_pet_coin_cost
             primary.intimacy = min(
                 self._config.intimacy_max,
                 primary.intimacy + self._config.intimacy_pet_gain,
             )
             primary.intimacy_updated_date = today
+
+            # T12: 检测跨级升级并发放奖励
+            levelup_info = self._check_intimacy_levelup(
+                old_intimacy, primary.intimacy, profile
+            )
+
+            # T12: 写行为日志
+            activity_logs = activity_store.load_all()
+            ActivityStore.log(activity_logs, uid, today, Action.INTIMACY, 1)
+            activity_store.save_all(activity_logs)
 
             ownership_store.save_all(ownerships)
             profile_store.save_all(profiles)
@@ -1169,6 +1310,7 @@ class OwnershipService:
         async with self._locks.acquire(gid):
             ownership_store = self._ownership_store(gid)
             profile_store = self._profile_store(gid)
+            activity_store = self._activity_store(gid)
 
             ownerships = ownership_store.load_all()
             profiles = profile_store.load_all()
@@ -1195,6 +1337,7 @@ class OwnershipService:
                     intimacy=primary.intimacy, coin_balance=profile.coins,
                 )
 
+            old_intimacy = primary.intimacy
             profile.coins -= self._config.intimacy_gift_coin_cost
             primary.intimacy = min(
                 self._config.intimacy_max,
@@ -1202,8 +1345,154 @@ class OwnershipService:
             )
             primary.intimacy_updated_date = today
 
+            # T12: 检测跨级升级并发放奖励
+            levelup_info = self._check_intimacy_levelup(
+                old_intimacy, primary.intimacy, profile
+            )
+
+            # T12: 写行为日志
+            activity_logs = activity_store.load_all()
+            ActivityStore.log(activity_logs, uid, today, Action.INTIMACY, 1)
+            activity_store.save_all(activity_logs)
+
             ownership_store.save_all(ownerships)
             profile_store.save_all(profiles)
+
+            return IntimacyResult(
+                ok=True, intimacy=primary.intimacy, coin_balance=profile.coins,
+            )
+
+    async def chat_wife(
+        self, gid: str, uid: str, nick: str, today: str
+    ) -> IntimacyResult:
+        """对话：2h 冷却，+1 亲密度，+5 币
+
+        要求：有主老婆、冷却已过。
+        """
+        # T13: 冷却检查
+        if self._cooldown and self._config.chat_cooldown > 0:
+            if not self._cooldown.check(
+                gid, uid, CooldownAction.CHAT, self._config.chat_cooldown
+            ):
+                return IntimacyResult(ok=False, reason="cooldown")
+
+        async with self._locks.acquire(gid):
+            ownership_store = self._ownership_store(gid)
+            profile_store = self._profile_store(gid)
+            activity_store = self._activity_store(gid)
+
+            ownerships = ownership_store.load_all()
+            profiles = profile_store.load_all()
+
+            primary = ownership_store.get_primary(uid, ownerships)
+            if primary is None:
+                return IntimacyResult(ok=False, reason="no_wife")
+
+            profile = ProfileStore.get_or_create(
+                profiles, uid, nick,
+                coins=self._config.initial_coins,
+            )
+
+            if primary.intimacy >= self._config.intimacy_max:
+                return IntimacyResult(
+                    ok=False, reason="intimacy_maxed",
+                    intimacy=primary.intimacy, coin_balance=profile.coins,
+                )
+
+            old_intimacy = primary.intimacy
+            primary.intimacy = min(
+                self._config.intimacy_max,
+                primary.intimacy + self._config.chat_intimacy_gain,
+            )
+            primary.intimacy_updated_date = today
+            profile.coins += self._config.chat_coin_reward
+
+            # 检测跨级升级
+            self._check_intimacy_levelup(old_intimacy, primary.intimacy, profile)
+
+            # 写行为日志
+            activity_logs = activity_store.load_all()
+            ActivityStore.log(activity_logs, uid, today, Action.INTIMACY, 1)
+            ActivityStore.log(activity_logs, uid, today, Action.CHAT, 1)
+            activity_store.save_all(activity_logs)
+
+            ownership_store.save_all(ownerships)
+            profile_store.save_all(profiles)
+
+            # 更新冷却
+            if self._cooldown and self._config.chat_cooldown > 0:
+                self._cooldown.update(gid, uid, CooldownAction.CHAT)
+
+            return IntimacyResult(
+                ok=True, intimacy=primary.intimacy, coin_balance=profile.coins,
+            )
+
+    async def date_wife(
+        self, gid: str, uid: str, nick: str, today: str
+    ) -> IntimacyResult:
+        """约会：12h 冷却，花 10 币，+8 亲密度
+
+        要求：有主老婆、冷却已过、余额足够。
+        """
+        # T13: 冷却检查
+        if self._cooldown and self._config.date_cooldown > 0:
+            if not self._cooldown.check(
+                gid, uid, CooldownAction.DATE, self._config.date_cooldown
+            ):
+                return IntimacyResult(ok=False, reason="cooldown")
+
+        async with self._locks.acquire(gid):
+            ownership_store = self._ownership_store(gid)
+            profile_store = self._profile_store(gid)
+            activity_store = self._activity_store(gid)
+
+            ownerships = ownership_store.load_all()
+            profiles = profile_store.load_all()
+
+            primary = ownership_store.get_primary(uid, ownerships)
+            if primary is None:
+                return IntimacyResult(ok=False, reason="no_wife")
+
+            profile = ProfileStore.get_or_create(
+                profiles, uid, nick,
+                coins=self._config.initial_coins,
+            )
+
+            if profile.coins < self._config.date_coin_cost:
+                return IntimacyResult(
+                    ok=False, reason="not_enough_coins",
+                    intimacy=primary.intimacy, coin_balance=profile.coins,
+                )
+
+            if primary.intimacy >= self._config.intimacy_max:
+                return IntimacyResult(
+                    ok=False, reason="intimacy_maxed",
+                    intimacy=primary.intimacy, coin_balance=profile.coins,
+                )
+
+            old_intimacy = primary.intimacy
+            profile.coins -= self._config.date_coin_cost
+            primary.intimacy = min(
+                self._config.intimacy_max,
+                primary.intimacy + self._config.date_intimacy_gain,
+            )
+            primary.intimacy_updated_date = today
+
+            # 检测跨级升级
+            self._check_intimacy_levelup(old_intimacy, primary.intimacy, profile)
+
+            # 写行为日志
+            activity_logs = activity_store.load_all()
+            ActivityStore.log(activity_logs, uid, today, Action.INTIMACY, 1)
+            ActivityStore.log(activity_logs, uid, today, Action.DATE, 1)
+            activity_store.save_all(activity_logs)
+
+            ownership_store.save_all(ownerships)
+            profile_store.save_all(profiles)
+
+            # 更新冷却
+            if self._cooldown and self._config.date_cooldown > 0:
+                self._cooldown.update(gid, uid, CooldownAction.DATE)
 
             return IntimacyResult(
                 ok=True, intimacy=primary.intimacy, coin_balance=profile.coins,
@@ -1237,19 +1526,90 @@ class OwnershipService:
 
     @staticmethod
     def intimacy_level(intimacy: int) -> int:
-        """亲密度 → 等级（1~10），线性分段"""
-        if intimacy <= 0:
-            return 0
-        # 每 10 点一级，上限 10 级
-        return min(10, (intimacy - 1) // 10 + 1)
+        """亲密度 → 等级（1~5），5 档分段（保留旧接口兼容）"""
+        return OwnershipService.get_intimacy_level_no(intimacy)
 
     @staticmethod
     def intimacy_level_emoji(intimacy: int) -> str:
         """亲密度等级 emoji 展示（如 ❤️ Lv.3）"""
-        lv = OwnershipService.intimacy_level(intimacy)
+        lv = OwnershipService.get_intimacy_level_no(intimacy)
         if lv <= 0:
             return ""
         return f"❤️ Lv.{lv}"
+
+    @staticmethod
+    def get_intimacy_level_no(intimacy: int) -> int:
+        """亲密度 → 等级编号（1~5）
+
+        等级规则：
+        - 0-19  → 1
+        - 20-39 → 2
+        - 40-59 → 3
+        - 60-79 → 4
+        - 80-100 → 5
+        """
+        if intimacy < 0:
+            intimacy = 0
+        if intimacy >= 100:
+            return 5
+        return intimacy // 20 + 1
+
+    @staticmethod
+    def get_intimacy_level_name(intimacy: int) -> str:
+        """亲密度 → 等级名称"""
+        lv = OwnershipService.get_intimacy_level_no(intimacy)
+        names = {1: "相识", 2: "熟悉", 3: "亲密", 4: "挚爱", 5: "灵魂伴侣"}
+        return names.get(lv, "相识")
+
+    @staticmethod
+    def get_intimacy_bonus_ratio(intimacy: int) -> float:
+        """亲密度 → 战斗力加成倍率（用于 PK 公式）
+
+        返回 1.0 ~ 1.2 的加成系数
+        """
+        lv = OwnershipService.get_intimacy_level_no(intimacy)
+        # 每级 +5% 加成，最高 +20%
+        return 1.0 + (lv - 1) * 0.05
+
+    @staticmethod
+    def has_intimacy_shield(intimacy: int) -> bool:
+        """亲密度是否有护盾（NTR 概率减免）
+
+        Lv.4 及以上（亲密度 ≥ 60）自动获得护盾
+        """
+        return OwnershipService.get_intimacy_level_no(intimacy) >= 4
+
+    def _check_intimacy_levelup(
+        self,
+        old_intimacy: int,
+        new_intimacy: int,
+        profile: "UserProfile",
+    ) -> Optional[Dict[str, Any]]:
+        """检测亲密度是否跨级，如果是则发放升级奖励
+
+        返回奖励信息 dict 或 None（无升级）
+        """
+        old_level = self.get_intimacy_level_no(old_intimacy)
+        new_level = self.get_intimacy_level_no(new_intimacy)
+        if new_level <= old_level:
+            return None
+
+        # 跨级了，发放奖励（只发本次跨越的最高级）
+        rewards = self._config.intimacy_levelup_rewards.get(str(new_level), {})
+        coins = rewards.get("coins", 0)
+        item = rewards.get("item", "")
+
+        if coins > 0:
+            profile.coins += coins
+        if item:
+            profile.inventory[item] = profile.inventory.get(item, 0) + 1
+
+        return {
+            "old_level": old_level,
+            "new_level": new_level,
+            "coins": coins,
+            "item": item,
+        }
 
     # ---------- 零点清理（由 plugin 定时循环调用） ----------
 

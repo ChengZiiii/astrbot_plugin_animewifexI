@@ -109,6 +109,129 @@ class PluginConfig:
         }
     )
 
+    # ---------- Phase 4: 签到连签 ----------
+    checkin_streak_3day_bonus: int = 30
+    checkin_streak_7day_bonus: int = 100
+    checkin_streak_7day_item: str = "draw_ticket_single"
+
+    # ---------- Phase 4: 对话/约会 ----------
+    chat_cooldown: int = 7200          # 2h = 7200s
+    chat_intimacy_gain: int = 1
+    chat_coin_reward: int = 5
+    date_cooldown: int = 43200         # 12h = 43200s
+    date_intimacy_gain: int = 8
+    date_coin_cost: int = 10
+
+    # ---------- Phase 4: NTR 降级补偿 ----------
+    ntr_intimacy_retain_ratio: float = 0.50
+    ntr_coin_compensation_per_intimacy: int = 2
+    ntr_coin_compensation_max: int = 50
+    ntr_streak_penalty: float = 0.10
+
+    # ---------- Phase 4: 亲密度护盾 ----------
+    intimacy_shield_threshold: int = 60
+    intimacy_shield_reduction: float = 0.30
+
+    # ---------- Phase 4: 新手保护 ----------
+    newbie_ntr_protection_days: int = 1
+    newbie_ntr_retain_ratio: float = 0.75
+
+    # ---------- Phase 4: 复仇令牌 ----------
+    revenge_token_bonus: float = 0.20
+    revenge_success_intimacy_restore: float = 0.75
+    revenge_fail_consolation_coins: int = 5
+
+    # ---------- Phase 4: 作恶值 ----------
+    evil_points_broadcast_threshold: int = 5
+    evil_points_compensation_multiplier: float = 2.0
+
+    # ---------- Phase 4: PK 增强 ----------
+    pk_loser_reward: int = 5
+    pk_loser_reward_close_threshold: float = 0.50
+    pk_tie_reward: int = 8
+    pk_random_variance: float = 0.10
+    pk_score_per_win: int = 5
+    pk_score_per_lose: int = 1
+    pk_pair_cooldown_hours: int = 24
+    pk_score_decay_days: int = 30
+    pk_score_decay_amount: int = 50
+    pk_element_advantage: float = 1.20
+    pk_element_disadvantage: float = 0.80
+
+    # ---------- Phase 4: 重复抽卡补偿 ----------
+    duplicate_coin_compensation: dict = field(
+        default_factory=lambda: {"N": 5, "R": 10, "SR": 20, "SSR": 50}
+    )
+
+    # ---------- Phase 4: 打工系统 ----------
+    work_enabled: bool = True
+    work_modes: dict = field(
+        default_factory=lambda: {
+            "normal": {
+                "duration": 14400,
+                "start_cost": 10,
+                "reward_min": 20,
+                "reward_max": 40,
+                "ntr_multiplier": 1.5,
+                "pk_penalty": 0.10,
+                "intimacy_gain": 5,
+            },
+            "overtime": {
+                "duration": 7200,
+                "start_cost": 20,
+                "reward_min": 30,
+                "reward_max": 60,
+                "ntr_multiplier": 2.0,
+                "pk_penalty": 0.20,
+                "intimacy_gain": 3,
+            },
+            "expedition": {
+                "duration": 28800,
+                "start_cost": 30,
+                "reward_min": 50,
+                "reward_max": 100,
+                "ntr_multiplier": 2.5,
+                "pk_penalty": 0.30,
+                "intimacy_gain": 10,
+            },
+        }
+    )
+    work_streak_bonus: float = 0.05
+
+    # ---------- Phase 4: 亲密度等级奖励 ----------
+    intimacy_levelup_rewards: dict = field(
+        default_factory=lambda: {
+            "2": {"coins": 20},
+            "3": {"coins": 50},
+            "4": {"coins": 100, "item": "draw_ticket_single"},
+            "5": {"coins": 200, "item": "draw_ticket_ten"},
+        }
+    )
+
+    # ---------- Phase 4: 周惊喜宝箱 ----------
+    weekly_surprise_box: dict = field(
+        default_factory=lambda: {
+            "min_checkin_days": 5,
+            "coins": 100,
+            "item": "draw_ticket_single",
+        }
+    )
+
+    # ---------- Phase 4: 新手引导 ----------
+    newbie_guide: dict = field(
+        default_factory=lambda: {
+            "day1_draw_once": {"coins": 50, "item": "draw_ticket_single"},
+            "day2_pet_and_chat": {"coins": 30},
+            "day3_pk_once": {"coins": 50, "item": "protection_charm"},
+        }
+    )
+
+    # ---------- Phase 4 第二波（暂未启用） ----------
+    work_contract_cost: int = 50
+    work_contract_reward_multiplier: float = 1.5
+    work_partner_bonus: float = 0.20
+    work_partner_daily_limit: int = 1
+    intimacy_decay: int = 0
 
     # ---------- 派生 ----------
     @property
@@ -144,6 +267,58 @@ class PluginConfig:
                 "protection_charm": 60,
                 "draw_ticket_single": 30,
                 "draw_ticket_ten": 270,
+            }
+
+        # Phase 4 dict fields
+        duplicate_coin_compensation = dict(d.get("duplicate_coin_compensation") or {})
+        if not duplicate_coin_compensation:
+            duplicate_coin_compensation = {"N": 5, "R": 10, "SR": 20, "SSR": 50}
+
+        work_modes = dict(d.get("work_modes") or {})
+        if not work_modes:
+            work_modes = {
+                "normal": {
+                    "duration": 14400, "start_cost": 10,
+                    "reward_min": 20, "reward_max": 40,
+                    "ntr_multiplier": 1.5, "pk_penalty": 0.10,
+                    "intimacy_gain": 5,
+                },
+                "overtime": {
+                    "duration": 7200, "start_cost": 20,
+                    "reward_min": 30, "reward_max": 60,
+                    "ntr_multiplier": 2.0, "pk_penalty": 0.20,
+                    "intimacy_gain": 3,
+                },
+                "expedition": {
+                    "duration": 28800, "start_cost": 30,
+                    "reward_min": 50, "reward_max": 100,
+                    "ntr_multiplier": 2.5, "pk_penalty": 0.30,
+                    "intimacy_gain": 10,
+                },
+            }
+
+        intimacy_levelup_rewards = dict(d.get("intimacy_levelup_rewards") or {})
+        if not intimacy_levelup_rewards:
+            intimacy_levelup_rewards = {
+                "2": {"coins": 20},
+                "3": {"coins": 50},
+                "4": {"coins": 100, "item": "draw_ticket_single"},
+                "5": {"coins": 200, "item": "draw_ticket_ten"},
+            }
+
+        weekly_surprise_box = dict(d.get("weekly_surprise_box") or {})
+        if not weekly_surprise_box:
+            weekly_surprise_box = {
+                "min_checkin_days": 5, "coins": 100,
+                "item": "draw_ticket_single",
+            }
+
+        newbie_guide = dict(d.get("newbie_guide") or {})
+        if not newbie_guide:
+            newbie_guide = {
+                "day1_draw_once": {"coins": 50, "item": "draw_ticket_single"},
+                "day2_pet_and_chat": {"coins": 30},
+                "day3_pk_once": {"coins": 50, "item": "protection_charm"},
             }
 
         return cls(
@@ -190,6 +365,52 @@ class PluginConfig:
             pk_winner_reward=_as_int(d.get("pk_winner_reward"), 15),
             quest_complete_coins=_as_int(d.get("quest_complete_coins"), 10),
             shop_prices=shop_prices,
+            # Phase 4 fields
+            checkin_streak_3day_bonus=_as_int(d.get("checkin_streak_3day_bonus"), 30),
+            checkin_streak_7day_bonus=_as_int(d.get("checkin_streak_7day_bonus"), 100),
+            checkin_streak_7day_item=str(d.get("checkin_streak_7day_item") or "draw_ticket_single"),
+            chat_cooldown=_as_int(d.get("chat_cooldown"), 7200),
+            chat_intimacy_gain=_as_int(d.get("chat_intimacy_gain"), 1),
+            chat_coin_reward=_as_int(d.get("chat_coin_reward"), 5),
+            date_cooldown=_as_int(d.get("date_cooldown"), 43200),
+            date_intimacy_gain=_as_int(d.get("date_intimacy_gain"), 8),
+            date_coin_cost=_as_int(d.get("date_coin_cost"), 10),
+            ntr_intimacy_retain_ratio=_as_float(d.get("ntr_intimacy_retain_ratio"), 0.50),
+            ntr_coin_compensation_per_intimacy=_as_int(d.get("ntr_coin_compensation_per_intimacy"), 2),
+            ntr_coin_compensation_max=_as_int(d.get("ntr_coin_compensation_max"), 50),
+            ntr_streak_penalty=_as_float(d.get("ntr_streak_penalty"), 0.10),
+            intimacy_shield_threshold=_as_int(d.get("intimacy_shield_threshold"), 60),
+            intimacy_shield_reduction=_as_float(d.get("intimacy_shield_reduction"), 0.30),
+            newbie_ntr_protection_days=_as_int(d.get("newbie_ntr_protection_days"), 1),
+            newbie_ntr_retain_ratio=_as_float(d.get("newbie_ntr_retain_ratio"), 0.75),
+            revenge_token_bonus=_as_float(d.get("revenge_token_bonus"), 0.20),
+            revenge_success_intimacy_restore=_as_float(d.get("revenge_success_intimacy_restore"), 0.75),
+            revenge_fail_consolation_coins=_as_int(d.get("revenge_fail_consolation_coins"), 5),
+            evil_points_broadcast_threshold=_as_int(d.get("evil_points_broadcast_threshold"), 5),
+            evil_points_compensation_multiplier=_as_float(d.get("evil_points_compensation_multiplier"), 2.0),
+            pk_loser_reward=_as_int(d.get("pk_loser_reward"), 5),
+            pk_loser_reward_close_threshold=_as_float(d.get("pk_loser_reward_close_threshold"), 0.50),
+            pk_tie_reward=_as_int(d.get("pk_tie_reward"), 8),
+            pk_random_variance=_as_float(d.get("pk_random_variance"), 0.10),
+            pk_score_per_win=_as_int(d.get("pk_score_per_win"), 5),
+            pk_score_per_lose=_as_int(d.get("pk_score_per_lose"), 1),
+            pk_pair_cooldown_hours=_as_int(d.get("pk_pair_cooldown_hours"), 24),
+            pk_score_decay_days=_as_int(d.get("pk_score_decay_days"), 30),
+            pk_score_decay_amount=_as_int(d.get("pk_score_decay_amount"), 50),
+            pk_element_advantage=_as_float(d.get("pk_element_advantage"), 1.20),
+            pk_element_disadvantage=_as_float(d.get("pk_element_disadvantage"), 0.80),
+            duplicate_coin_compensation=duplicate_coin_compensation,
+            work_enabled=_as_bool(d.get("work_enabled"), True),
+            work_modes=work_modes,
+            work_streak_bonus=_as_float(d.get("work_streak_bonus"), 0.05),
+            intimacy_levelup_rewards=intimacy_levelup_rewards,
+            weekly_surprise_box=weekly_surprise_box,
+            newbie_guide=newbie_guide,
+            work_contract_cost=_as_int(d.get("work_contract_cost"), 50),
+            work_contract_reward_multiplier=_as_float(d.get("work_contract_reward_multiplier"), 1.5),
+            work_partner_bonus=_as_float(d.get("work_partner_bonus"), 0.20),
+            work_partner_daily_limit=_as_int(d.get("work_partner_daily_limit"), 1),
+            intimacy_decay=_as_int(d.get("intimacy_decay"), 0),
         )
 
     @classmethod

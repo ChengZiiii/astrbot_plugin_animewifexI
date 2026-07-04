@@ -27,8 +27,8 @@ logger = logging.getLogger("astrbot_plugin_animewifex.rarity")
 
 __all__ = ["RarityService", "DrawResult"]
 
-# 重复角色补偿金额
-DUPLICATE_COIN_COMPENSATION = 10
+# 重复角色补偿金额安全默认值（当配置缺失时回退）
+_DEFAULT_DUPLICATE_COMPENSATION = {"N": 5, "R": 10, "SR": 20, "SSR": 50}
 
 # 稀有度对应的基础战力范围
 RARITY_STAT_RANGES = {
@@ -163,7 +163,10 @@ class RarityService:
         is_new = wid not in collection
         duplicate_coins = 0
         if not is_new:
-            duplicate_coins = DUPLICATE_COIN_COMPENSATION
+            compensation_map = self._config.duplicate_coin_compensation
+            if not compensation_map:
+                compensation_map = _DEFAULT_DUPLICATE_COMPENSATION
+            duplicate_coins = compensation_map.get(rarity, _DEFAULT_DUPLICATE_COMPENSATION.get(rarity, 10))
             logger.debug("draw: duplicate wid=%s, compensating %d coins", wid, duplicate_coins)
 
         # 5. 更新保底计数器
