@@ -181,6 +181,34 @@ class TestStartWork:
         logs = activity_store.load_all()
         assert logs[uid].days.get(today, {}).get(Action.WORK_START, 0) == 1
 
+    @pytest.mark.asyncio
+    async def test_start_work_can_target_non_primary_wife(self, work_service, tmp_paths):
+        """可指定非主老婆去打工"""
+        gid, uid, nick, today = "g1", "u1", "Alice", "2026-07-04"
+        ownership_store = OwnershipStore(tmp_paths, gid)
+        ownerships = ownership_store.load_all()
+        from app.models.ownership import Ownership
+        from app.models.enums import AcquireVia
+        ownerships.append(Ownership(wid="w_primary", uid=uid, acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True))
+        ownerships.append(Ownership(wid="w_worker", uid=uid, acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=False))
+        ownership_store.save_all(ownerships)
+
+        profile_store = ProfileStore(tmp_paths, gid)
+        profiles = profile_store.load_all()
+        from app.models.profile import UserProfile
+        profiles[uid] = UserProfile(uid=uid, nick=nick, coins=100)
+        profile_store.save_all(profiles)
+
+        result = await work_service.start_work(gid, uid, nick, "normal", today, "w_worker")
+        assert result.ok is True
+        assert result.wid == "w_worker"
+
+        ownerships = ownership_store.load_all()
+        worker = next(o for o in ownerships if o.wid == "w_worker")
+        primary = next(o for o in ownerships if o.wid == "w_primary")
+        assert worker.is_working is True
+        assert primary.is_working is False
+
 
 class TestClearWorkState:
     def test_clear_work_state(self):
@@ -306,6 +334,36 @@ class TestResolveDueWork:
         activity_store = ActivityStore(tmp_paths, gid)
         logs = activity_store.load_all()
         assert logs[uid].days.get(today, {}).get(Action.WORK_COMPLETE, 0) == 1
+
+    @pytest.mark.asyncio
+    async def test_resolve_due_work_for_non_primary_worker(self, work_service, tmp_paths):
+        """非主老婆打工到期也能结算"""
+        gid, uid, nick, today = "g1", "u1", "Alice", "2026-07-04"
+        from app.models.ownership import Ownership
+        from app.models.enums import AcquireVia
+        from app.models.profile import UserProfile
+        from app.utils.time import now_ts
+
+        ownership_store = OwnershipStore(tmp_paths, gid)
+        ownerships = ownership_store.load_all()
+        ts = now_ts()
+        ownerships.append(Ownership(wid="w_primary", uid=uid, acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True))
+        ownerships.append(Ownership(
+            wid="w_worker", uid=uid, acquired_at=0, acquired_via=AcquireVia.DRAW,
+            is_primary=False, is_working=True, work_mode="normal",
+            work_started_at=ts - 15000, work_ends_at=ts - 1,
+        ))
+        ownership_store.save_all(ownerships)
+
+        profile_store = ProfileStore(tmp_paths, gid)
+        profiles = profile_store.load_all()
+        profiles[uid] = UserProfile(uid=uid, nick=nick, coins=50)
+        profile_store.save_all(profiles)
+
+        result = await work_service.resolve_due_work(gid, uid, nick, today)
+        assert result is not None
+        assert result.ok is True
+        assert result.wid == "w_worker"
 
 
 class TestResolveStolenWork:

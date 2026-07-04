@@ -29,6 +29,7 @@ class WorkStartResult:
     start_cost: int = 0
     ends_at: float = 0.0
     coin_balance: int = 0
+    wid: str = ""
 
 
 @dataclass
@@ -41,6 +42,8 @@ class WorkSettleResult:
     streak: int = 0
     reason: str = ""
     coin_balance: int = 0
+    wid: str = ""
+    mode: str = ""
 
 
 class WorkService:
@@ -72,6 +75,7 @@ class WorkService:
         nick: str,
         mode: str,
         today: str,
+        selected_wid: str | None = None,
     ) -> WorkStartResult:
         """启动打工
 
@@ -93,14 +97,19 @@ class WorkService:
             ownerships = ownership_store.load_all()
             profiles = profile_store.load_all()
 
-            # 检查有主老婆
+            # 检查有可用老婆
             primary = ownership_store.get_primary(uid, ownerships)
             if primary is None:
                 return WorkStartResult(ok=False, reason="no_wife")
 
-            # 检查未在打工
-            if primary.is_working:
-                return WorkStartResult(ok=False, reason="already_working")
+            selected = ownership_store.find_by_wid(selected_wid, ownerships) if selected_wid else primary
+            if selected_wid and (selected is None or selected.uid != uid):
+                return WorkStartResult(ok=False, reason="wife_not_found")
+
+            # 全用户同一时间只允许一位老婆打工
+            current_working = next((o for o in ownerships if o.uid == uid and o.is_working), None)
+            if current_working is not None:
+                return WorkStartResult(ok=False, reason="already_working", wid=current_working.wid)
 
             # 获取用户档案
             profile = ProfileStore.get_or_create(
@@ -122,10 +131,10 @@ class WorkService:
             # 设置打工状态
             ts = now_ts()
             duration = mode_config.get("duration", 14400)
-            primary.is_working = True
-            primary.work_mode = mode
-            primary.work_started_at = ts
-            primary.work_ends_at = ts + duration
+            selected.is_working = True
+            selected.work_mode = mode
+            selected.work_started_at = ts
+            selected.work_ends_at = ts + duration
 
             # 写行为日志
             activity_logs = activity_store.load_all()
@@ -139,8 +148,9 @@ class WorkService:
                 ok=True,
                 mode=mode,
                 start_cost=start_cost,
-                ends_at=primary.work_ends_at,
+                ends_at=selected.work_ends_at,
                 coin_balance=profile.coins,
+                wid=selected.wid,
             )
 
     async def resolve_due_work(
@@ -162,17 +172,17 @@ class WorkService:
             ownerships = ownership_store.load_all()
             profiles = profile_store.load_all()
 
-            primary = ownership_store.get_primary(uid, ownerships)
-            if primary is None or not primary.is_working:
+            working = next((o for o in ownerships if o.uid == uid and o.is_working), None)
+            if working is None:
                 return None
 
             # 检查是否到期
             ts = now_ts()
-            if ts < primary.work_ends_at:
+            if ts < working.work_ends_at:
                 return None
 
-            mode_config = self._config.work_modes.get(primary.work_mode, {})
-            duration = mode_config.get("duration", 14400)
+            mode = working.work_mode
+            mode_config = self._config.work_modes.get(mode, {})
 
             # 计算收益（含连续打工加成）
             profile = ProfileStore.get_or_create(
@@ -197,16 +207,16 @@ class WorkService:
 
             # 亲密度增加
             intimacy_gain = mode_config.get("intimacy_gain", 5)
-            primary.intimacy = min(
+            working.intimacy = min(
                 self._config.intimacy_max,
-                primary.intimacy + intimacy_gain,
+                working.intimacy + intimacy_gain,
             )
 
             # 清空打工状态
-            primary.is_working = False
-            primary.work_mode = ""
-            primary.work_started_at = 0
-            primary.work_ends_at = 0
+            working.is_working = False
+            working.work_mode = ""
+            working.work_started_at = 0
+            working.work_ends_at = 0
 
             # 更新档案
             profile.coins += reward
@@ -235,6 +245,8 @@ class WorkService:
                 intimacy_gain=intimacy_gain,
                 streak=profile.work_streak,
                 coin_balance=profile.coins,
+                wid=working.wid,
+                mode=mode,
             )
 
     async def resolve_stolen_work(
@@ -242,6 +254,7 @@ class WorkService:
         gid: str,
         uid: str,
         today: str,
+        selected_wid: str | None = None,
     ) -> Optional[WorkSettleResult]:
         """打工中被牛时的结算
 
@@ -255,17 +268,20 @@ class WorkService:
             ownerships = ownership_store.load_all()
             profiles = profile_store.load_all()
 
-            primary = ownership_store.get_primary(uid, ownerships)
-            if primary is None or not primary.is_working:
+            working = ownership_store.find_by_wid(selected_wid, ownerships) if selected_wid else next(
+                (o for o in ownerships if o.uid == uid and o.is_working),
+                None,
+            )
+            if working is None or working.uid != uid or not working.is_working:
                 return None
 
-            mode_config = self._config.work_modes.get(primary.work_mode, {})
-            duration = mode_config.get("duration", 14400)
+            mode = working.work_mode
+            mode_config = self._config.work_modes.get(mode, {})
 
             # 计算已打工时间的比例收益
             ts = now_ts()
-            elapsed = ts - primary.work_started_at
-            total = primary.work_ends_at - primary.work_started_at
+            elapsed = ts - working.work_started_at
+            total = working.work_ends_at - working.work_started_at
             progress = min(1.0, elapsed / total) if total > 0 else 0
 
             reward_min = mode_config.get("reward_min", 20)
@@ -275,10 +291,10 @@ class WorkService:
             reward = int(base_reward * progress)
 
             # 清空打工状态
-            primary.is_working = False
-            primary.work_mode = ""
-            primary.work_started_at = 0
-            primary.work_ends_at = 0
+            working.is_working = False
+            working.work_mode = ""
+            working.work_started_at = 0
+            working.work_ends_at = 0
 
             # 写行为日志
             activity_logs = activity_store.load_all()
@@ -292,6 +308,8 @@ class WorkService:
                 ok=True,
                 reward=reward,
                 reason="stolen",
+                wid=working.wid,
+                mode=mode,
             )
 
     def clear_work_state(self, ownership) -> None:
