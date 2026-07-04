@@ -13,10 +13,10 @@ from zoneinfo import ZoneInfo
 
 from ..models.enums import Action
 from ..storage.paths import Paths
-from ..storage.stores import ActivityStore, ProfileStore
+from ..storage.stores import ActivityStore, OwnershipStore, ProfileStore, WivesMasterStore
 from .plugin_config import PluginConfig
 
-__all__ = ["LeaderboardService", "LeaderboardEntry"]
+__all__ = ["LeaderboardService", "LeaderboardEntry", "DimensionResult"]
 
 
 @dataclass
@@ -26,9 +26,31 @@ class LeaderboardEntry:
     uid: str
     nick: str
     value: int
+    rank: int = 0
+    total_draws: int = 0
+    streak_days: int = 0
+    collection_count: int = 0
+    titles: List[str] = None  # type: ignore[assignment]
+    active_title: str = ""
+    pk_score: int = 0
+    coins: int = 0
+
+    def __post_init__(self):
+        if self.titles is None:
+            self.titles = []
 
     def __repr__(self) -> str:
         return f"LeaderboardEntry(uid={self.uid!r}, nick={self.nick!r}, value={self.value})"
+
+
+@dataclass
+class DimensionResult:
+    """单个维度排行结果"""
+
+    label: str
+    entries: List[LeaderboardEntry]
+    has_data: bool = True
+    unit: str = ""  # 数值后的单位标签
 
 
 # Action → 可排行的维度
@@ -207,3 +229,64 @@ class LeaderboardService:
 
         entries.sort(key=lambda e: e.value, reverse=True)
         return entries[: self._config.leaderboard_top_n]
+
+    def _enrich_entries(
+        self, entries: List[LeaderboardEntry], profiles: Dict
+    ) -> List[LeaderboardEntry]:
+        """为排行榜条目填充用户档案数据（用于详细展示）"""
+        for i, e in enumerate(entries):
+            e.rank = i + 1
+            profile = profiles.get(e.uid)
+            if profile:
+                e.total_draws = profile.total_draws
+                e.streak_days = profile.streak_days
+                e.collection_count = len(profile.collection) if profile.collection else 0
+                e.titles = list(profile.titles) if profile.titles else []
+                e.active_title = profile.active_title
+                e.pk_score = profile.pk_score
+                e.coins = profile.coins
+        return entries
+
+    def get_all_dimensions(self, gid: str, rank_type: str = "周") -> List[DimensionResult]:
+        """一次性获取所有维度的排行结果（含富信息），用于默认播报。
+
+        rank_type: "日" | "周" | "总"
+        """
+        dimensions = [
+            ("收集数", "collection", "个", None),
+            ("牛老婆", Action.NTR_SUCCESS, "次", None),
+            ("被牛", Action.NTR_LOST, "次", None),
+            ("亲密度", "intimacy", "点", None),
+            ("PK段位", "pk_score", "分", None),
+            ("作恶值", "evil_points", "点", None),
+        ]
+
+        results: List[DimensionResult] = []
+        for label, action, unit, _ in dimensions:
+            if action == "collection":
+                entries = self.rank_collection(gid)
+            elif action == "intimacy":
+                entries = self.rank_primary_intimacy(gid)
+            elif action == "pk_score":
+                entries = self.rank_pk_score(gid)
+            elif action == "evil_points":
+                entries = self.rank_evil_points(gid)
+            elif rank_type == "总":
+                entries = self.rank_alltime(gid, action)
+            else:
+                days = 7 if rank_type == "周" else 1
+                entries = self.rank_daily(gid, action, days)
+
+            if entries:
+                profile_store = ProfileStore(self._paths, gid)
+                profiles = profile_store.load_all()
+                entries = self._enrich_entries(entries, profiles)
+
+            results.append(DimensionResult(
+                label=label,
+                entries=entries,
+                has_data=len(entries) > 0,
+                unit=unit,
+            ))
+
+        return results
