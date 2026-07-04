@@ -17,7 +17,7 @@ from ..api.messaging import build_multi_image_chain
 from ..storage.stores import OwnershipStore, WivesMasterStore
 from .context import CommandContext
 
-__all__ = ["handle_view", "find_uid_by_owner_nick"]
+__all__ = ["handle_view", "find_uid_by_owner_nick", "find_wid_by_index", "find_wid_by_position"]
 
 # 每页显示数量
 PAGE_SIZE = 10
@@ -92,9 +92,20 @@ async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
         emoji = {"SSR": "✨", "SR": "🌟", "R": "⭐", "N": "·"}.get(wife.rarity, "·")
         name = wife.chara or wife.img
         lock_icon = " 🔒" if o.is_locked else ""
+        work_icon = ""
+        if o.is_working:
+            work_label = {
+                "normal": "💼打工中",
+                "overtime": "💼加班中",
+                "expedition": "💼远征中",
+            }.get(o.work_mode, "💼打工中")
+            work_icon = f" {work_label}"
         primary_icon = " 👑" if o.is_primary else ""
         intimacy_str = OwnershipService.intimacy_level_emoji(o.intimacy)
-        lines.append(f"{i}. {emoji} {name} (❤️{o.intimacy}{intimacy_str}){lock_icon}{primary_icon}")
+        lines.append(
+            f"{i}. {emoji} {name} (❤️{o.intimacy}{intimacy_str})"
+            f"{lock_icon}{work_icon}{primary_icon}"
+        )
 
         # 收集当前页图片（去重）
         if wife.img and wife.img not in seen_imgs:
@@ -192,7 +203,14 @@ def find_wid_by_index(
     numbers = re.findall(r"\d+", msg)
     if not numbers:
         return None
-    idx = int(numbers[-1]) - 1  # 转为 0-based
+    return find_wid_by_position(ctx, gid, uid, int(numbers[-1]))
+
+
+def find_wid_by_position(
+    ctx: CommandContext, gid: str, uid: str, index: int
+) -> Optional[str]:
+    """根据 1-based 编号返回指定用户对应老婆 wid。"""
+    idx = index - 1  # 转为 0-based
 
     from ..storage.stores import OwnershipStore
     ownership_store = OwnershipStore(ctx.paths, gid)

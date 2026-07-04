@@ -121,8 +121,15 @@ async def handle_panel(
                 emoji = {"SSR": "✨", "SR": "🌟", "R": "⭐", "N": "·"}.get(wife.rarity, "·")
                 name = wife.chara or wife.img
                 lock = " 🔒" if o.is_locked else ""
+                work = ""
+                if o.is_working:
+                    work = {
+                        "normal": " 💼打工中",
+                        "overtime": " 💼加班中",
+                        "expedition": " 💼远征中",
+                    }.get(o.work_mode, " 💼打工中")
                 primary = " 👑" if o.is_primary else ""
-                lines.append(f"  {i}. {emoji} {name} (❤️{o.intimacy}){lock}{primary}")
+                lines.append(f"  {i}. {emoji} {name} (❤️{o.intimacy}){lock}{work}{primary}")
     else:
         lines.append("【持有老婆】无")
 
