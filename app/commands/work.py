@@ -21,6 +21,29 @@ MODE_ALIASES = {
     "远征": "expedition",
 }
 
+# 打工风味台词（{name} 会被替换为老婆名）
+_WORK_TAUNTS = {
+    "normal": [
+        "{name}一个人出去打工了，好像很忙的样子……有没有人想去「关心」一下？",
+        "{name}正在工厂里埋头苦干，完全没注意到身后的目光……",
+        "{name}出去赚钱了！不过听说最近外面不太平，小心被坏人盯上哦~",
+        "{name}背着小包出门打工了，看起来孤零零的……谁去陪陪她？",
+        "打工中的{name}毫无防备，这可是千载难逢的好机会……",
+    ],
+    "overtime": [
+        "{name}加班到深夜，周围一个人都没有……好危险的感觉！",
+        "{name}说加班能赚更多钱，但深夜独处也太不安全了吧……",
+        "加班中的{name}累得快要睡着了，这时候如果有人靠近……",
+        "{name}选择了加班！虽然赚得多，但被盯上的概率也更大了……",
+    ],
+    "expedition": [
+        "{name}踏上了远征之路！要离开好久……这段时间会发生什么呢？",
+        "{name}远征去了，短期内回不来。她的位置空出来了，有人想趁虚而入吗？",
+        "远征中的{name}身处远方，完全顾不上这边……这可是最容易得手的时候！",
+        "{name}去远征了！收益最高但风险也最大——被牛概率高达2.5倍！",
+    ],
+}
+
 
 async def try_settle_work(
     event: AstrMessageEvent, ctx: CommandContext
@@ -139,10 +162,13 @@ async def handle_work(
     # 打工成功
     mode_name = _mode_name(mode)
     wife_name = _wife_name(ctx, result.wid)
+    import random
+    taunt = random.choice(_WORK_TAUNTS.get(mode, _WORK_TAUNTS["normal"]))
     yield event.plain_result(
         f"🔨 {nick} 派 {wife_name} 开始{mode_name}打工！\n"
         f"消耗 {result.start_cost} 币，余额 {result.coin_balance} 币\n"
-        f"预计完成后结算奖励~"
+        f"预计完成后结算奖励~\n\n"
+        f"📢 {taunt.format(name=wife_name)}"
     )
 
 
