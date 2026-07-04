@@ -1,11 +1,17 @@
 """每日任务服务。
 
-任务模板（ROADMAP.md §5.1）：
+任务模板（T50 重构）：
 
+新手任务（注册前 3 天）：
+* day1_draw_once: 抽老婆 1 次
+* day2_pet_and_chat: 撸老婆 + 对话
+* day3_pk_once: PK 1 次
+
+标准任务（新手期后）：
 * 抽老婆 1 次
-* 参与 PK 1 次
-* 被牛 0 次（即当日未被牛）
-* 牛成功 1 次
+* 亲密互动 2 次
+* PK 1 次
+* 打工 1 次
 
 完成自动发币，写入 ``profile.quest_completed_date`` 防重领。
 """
@@ -13,13 +19,14 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Tuple
 
 from ..models.enums import Action
 from ..models.profile import UserProfile
 from ..storage.locks import GroupLocks
 from ..storage.paths import Paths
 from ..storage.stores import ActivityStore, ProfileStore
+from ..utils.time import now_ts
 from .economy_service import EconomyService
 from .plugin_config import PluginConfig
 
@@ -27,12 +34,26 @@ logger = logging.getLogger("astrbot_plugin_animewifex.quest")
 
 __all__ = ["QuestService"]
 
-# 任务定义：(action_key, 需要的次数, 显示名)
-QUEST_TEMPLATES = [
+# 新手任务模板：(action_key, 需要的次数, 显示名)
+NEWBIE_QUESTS = {
+    1: [  # Day 1
+        (Action.DRAW, 1, "抽老婆 1 次"),
+    ],
+    2: [  # Day 2
+        (Action.INTIMACY, 1, "撸老婆 1 次"),
+        (Action.CHAT, 1, "对话 1 次"),
+    ],
+    3: [  # Day 3
+        (Action.PK_WIN, 1, "PK 1 次"),  # PK_WIN 或 PK_LOST 或 PK_TIE 都算
+    ],
+}
+
+# 标准任务模板：(action_key, 需要的次数, 显示名)
+STANDARD_QUESTS = [
     (Action.DRAW, 1, "抽老婆 1 次"),
-    (Action.PK_WIN, 1, "参与 PK 1 次"),
-    (Action.NTR_LOST, 0, "被牛 0 次"),  # 特殊：0 表示当日不能有此行为
-    (Action.NTR_SUCCESS, 1, "牛成功 1 次"),
+    (Action.INTIMACY, 2, "亲密互动 2 次"),
+    ("pk_any", 1, "PK 1 次"),  # 特殊：PK_WIN + PK_LOST + PK_TIE 求和
+    (Action.WORK_START, 1, "打工 1 次"),
 ]
 
 
@@ -44,6 +65,26 @@ class QuestService:
         self._config = config
         self._locks = locks
         self._economy = EconomyService(paths, config, locks)
+
+    def _get_newbie_day(self, profile: UserProfile) -> int:
+        """获取新手天数（1-3），如果不是新手期返回 0。"""
+        if profile.registered_at <= 0:
+            return 0  # 旧玩家，无注册时间
+        days_since_reg = (now_ts() - profile.registered_at) / 86400
+        if days_since_reg < 1:
+            return 1
+        elif days_since_reg < 2:
+            return 2
+        elif days_since_reg < 3:
+            return 3
+        return 0  # 超过 3 天
+
+    def _get_quests_for_profile(self, profile: UserProfile) -> List[Tuple[str, int, str]]:
+        """根据用户 profile 返回对应的任务列表。"""
+        newbie_day = self._get_newbie_day(profile)
+        if newbie_day > 0 and newbie_day in NEWBIE_QUESTS:
+            return NEWBIE_QUESTS[newbie_day]
+        return STANDARD_QUESTS
 
     async def check_and_complete(
         self, gid: str, uid: str, nick: str = ""
@@ -77,7 +118,10 @@ class QuestService:
         logs = act_store.load_all()
         log = logs.get(uid)
 
-        if not self._all_quests_done(log, today):
+        # 获取当前应该完成的任务
+        quests = self._get_quests_for_profile(profile)
+
+        if not self._all_quests_done(log, today, quests):
             logger.debug("quest: gid=%s uid=%s not all quests done", gid, uid)
             return None
 
@@ -98,19 +142,29 @@ class QuestService:
         profiles = store.load_all()
         profile = profiles.get(uid)
 
-        if profile and profile.quest_completed_date == today:
-            return {q[2]: True for q in QUEST_TEMPLATES}
+        if not profile:
+            # 不存在的用户，返回默认状态
+            return {q[2]: False for q in STANDARD_QUESTS}
+
+        if profile.quest_completed_date == today:
+            quests = self._get_quests_for_profile(profile)
+            return {q[2]: True for q in quests}
 
         act_store = ActivityStore(self._paths, gid)
         logs = act_store.load_all()
         log = logs.get(uid)
 
+        quests = self._get_quests_for_profile(profile)
         status: Dict[str, bool] = {}
-        for action_key, required, label in QUEST_TEMPLATES:
-            if action_key == Action.NTR_LOST:
-                # 被牛 0 次：当日被牛次数 == 0
-                ntr_lost = self._get_action_count(log, today, action_key)
-                status[label] = ntr_lost == 0
+        for action_key, required, label in quests:
+            if action_key == "pk_any":
+                # 特殊：PK_WIN + PK_LOST + PK_TIE 求和
+                pk_count = (
+                    self._get_action_count(log, today, Action.PK_WIN) +
+                    self._get_action_count(log, today, Action.PK_LOST) +
+                    self._get_action_count(log, today, Action.PK_TIE)
+                )
+                status[label] = pk_count >= required
             else:
                 count = self._get_action_count(log, today, action_key)
                 status[label] = count >= required
@@ -125,15 +179,20 @@ class QuestService:
         profile = profiles.get(uid)
         return profile is not None and profile.quest_completed_date == today
 
-    def _all_quests_done(self, log: Optional[object], today: str) -> bool:
+    def _all_quests_done(self, log: Optional[object], today: str, quests: List[Tuple[str, int, str]]) -> bool:
         """检查所有任务是否完成。"""
-        for action_key, required, _ in QUEST_TEMPLATES:
-            count = self._get_action_count(log, today, action_key)
-            if action_key == Action.NTR_LOST:
-                # 被牛 0 次
-                if count != 0:
+        for action_key, required, _ in quests:
+            if action_key == "pk_any":
+                # 特殊：PK_WIN + PK_LOST + PK_TIE 求和
+                pk_count = (
+                    self._get_action_count(log, today, Action.PK_WIN) +
+                    self._get_action_count(log, today, Action.PK_LOST) +
+                    self._get_action_count(log, today, Action.PK_TIE)
+                )
+                if pk_count < required:
                     return False
             else:
+                count = self._get_action_count(log, today, action_key)
                 if count < required:
                     return False
         return True
