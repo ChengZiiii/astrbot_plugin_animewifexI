@@ -131,7 +131,7 @@ class PluginConfig:
     newbie_ntr_retain_ratio: float = 0.75
 
     # ---------- Phase 4: 复仇令牌 ----------
-    revenge_token_bonus: float = 0.20
+    revenge_token_bonus: float = 1.0
     revenge_success_intimacy_restore: float = 0.75
     revenge_fail_consolation_coins: int = 5
 
@@ -372,7 +372,7 @@ class PluginConfig:
             intimacy_shield_reduction=_as_float(d.get("intimacy_shield_reduction"), 0.30),
             newbie_ntr_protection_days=_as_int(d.get("newbie_ntr_protection_days"), 1),
             newbie_ntr_retain_ratio=_as_float(d.get("newbie_ntr_retain_ratio"), 0.75),
-            revenge_token_bonus=_as_float(d.get("revenge_token_bonus"), 0.20),
+            revenge_token_bonus=_as_float(d.get("revenge_token_bonus"), 1.0),
             revenge_success_intimacy_restore=_as_float(d.get("revenge_success_intimacy_restore"), 0.75),
             revenge_fail_consolation_coins=_as_int(d.get("revenge_fail_consolation_coins"), 5),
             evil_points_broadcast_threshold=_as_int(d.get("evil_points_broadcast_threshold"), 5),

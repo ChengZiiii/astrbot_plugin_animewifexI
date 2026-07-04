@@ -298,8 +298,8 @@
     "revenge_token_bonus": {
         "description": "复仇令牌加成",
         "type": "float",
-        "default": 0.20,
-        "hint": "Phase 4: 消耗复仇令牌时额外增加的复仇成功率"
+        "default": 1.0,
+        "hint": "持有复仇令牌时，牛老婆概率额外乘以的倍率（1.0 = +100%翻倍）"
     },
     "revenge_success_intimacy_restore": {
         "description": "复仇成功亲密度恢复比例",
