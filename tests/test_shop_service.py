@@ -27,7 +27,6 @@ def config():
         initial_coins=200,
         shop_prices={
             "lock_item": 50,
-            "revive_potion": 80,
             "protection_charm": 60,
             "insurance_card": 80,
         },

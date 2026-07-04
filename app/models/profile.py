@@ -16,7 +16,6 @@ __all__ = ["UserProfile"]
 def _default_inventory() -> Dict[str, int]:
     return {
         "lock_item": 0,
-        "revive_potion": 0,
         "protection_charm": 0,
         "draw_ticket_single": 0,    # 单抽券
         "draw_ticket_ten": 0,       # 十连券

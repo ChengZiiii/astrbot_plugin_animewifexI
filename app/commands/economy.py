@@ -10,7 +10,7 @@ from astrbot.api.event import AstrMessageEvent
 from ..api.events import get_group_id, get_sender_nick
 from ..services.economy_service import EconomyService
 from ..services.quest_service import QuestService
-from ..services.shop_service import ITEM_NAMES, ShopService
+from ..services.shop_service import ITEM_NAMES, ITEM_DESCRIPTIONS, ShopService
 from ..storage.stores import OwnershipStore, WivesMasterStore
 from .context import CommandContext
 
@@ -183,7 +183,11 @@ async def handle_shop(
 
     lines = [f"【商城】余额：{balance} 币\n"]
     for key, name, price in items:
-        lines.append(f"• {name} — {price} 币  （老婆 购买 {name}）")
+        desc = ITEM_DESCRIPTIONS.get(key, "")
+        if desc:
+            lines.append(f"• {name} — {price} 币  （老婆 购买 {name}）\n  {desc}")
+        else:
+            lines.append(f"• {name} — {price} 币  （老婆 购买 {name}）")
 
     yield event.plain_result("\n".join(lines))
 

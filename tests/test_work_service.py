@@ -658,7 +658,6 @@ class TestResolveStolenWork:
         profiles = profile_store.load_all()
         profiles[uid] = UserProfile(uid=uid, nick="Alice", coins=50, work_contract_reserved="normal", inventory={
             "lock_item": 0,
-            "revive_potion": 0,
             "protection_charm": 0,
             "draw_ticket_single": 0,
             "draw_ticket_ten": 0,

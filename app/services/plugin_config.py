@@ -96,7 +96,6 @@ class PluginConfig:
     shop_prices: dict = field(
         default_factory=lambda: {
             "lock_item": 50,
-            "revive_potion": 80,
             "protection_charm": 60,
             "insurance_card": 80,
             "draw_ticket_single": 30,    # 单抽券
@@ -258,7 +257,6 @@ class PluginConfig:
         if not shop_prices:
             shop_prices = {
                 "lock_item": 50,
-                "revive_potion": 80,
                 "protection_charm": 60,
                 "insurance_card": 80,
                 "draw_ticket_single": 30,

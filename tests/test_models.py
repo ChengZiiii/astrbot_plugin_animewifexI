@@ -115,7 +115,7 @@ class TestUserProfile:
             streak_days=7,
             total_draws=30,
             collection=["w_a", "w_b"],
-            inventory={"lock_item": 2, "revive_potion": 1},
+            inventory={"lock_item": 2, "protection_charm": 1},
             last_ntr_by={"uid": "u2", "ts": 1719900000},
             pity_counter=3,
         )
@@ -135,12 +135,12 @@ class TestUserProfile:
             "inventory": {"lock_item": 2},  # 仅有部分 key
         })
         assert p.inventory["lock_item"] == 2
-        assert p.inventory["revive_potion"] == 0
+        assert p.inventory["protection_charm"] == 0
 
     def test_new_with_defaults(self):
         p = UserProfile.new_with_defaults("u1", nick="x", coins=100)
         assert p.coins == 100
-        assert p.inventory["revive_potion"] == 0
+        assert p.inventory["protection_charm"] == 0
 
     def test_last_ntr_by_empty_when_missing(self):
         p = UserProfile.from_dict({"uid": "u1"})

@@ -187,8 +187,8 @@
         "type": "object",
         "items": {
             "lock_item": {"type": "int", "default": 50},
-            "revive_potion": {"type": "int", "default": 80},
             "protection_charm": {"type": "int", "default": 60},
+            "insurance_card": {"type": "int", "default": 80},
             "draw_ticket_single": {"type": "int", "default": 30},
             "draw_ticket_ten": {"type": "int", "default": 270}
         }

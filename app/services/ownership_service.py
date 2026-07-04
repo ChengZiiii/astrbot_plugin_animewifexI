@@ -1198,6 +1198,11 @@ class OwnershipService:
                 reason = "wife_not_found" if selected_wid else "no_wife"
                 return IntimacyResult(ok=False, reason=reason)
 
+            # 锁定中的老婆不能摸头
+            from .marry_service import MarryService
+            if MarryService.is_locked(target):
+                return IntimacyResult(ok=False, reason="locked", intimacy=target.intimacy, wid=target.wid)
+
             profile = ProfileStore.get_or_create(
                 profiles, uid, nick,
     
@@ -1260,6 +1265,11 @@ class OwnershipService:
             if target is None:
                 reason = "wife_not_found" if selected_wid else "no_wife"
                 return IntimacyResult(ok=False, reason=reason)
+
+            # 锁定中的老婆不能送礼
+            from .marry_service import MarryService
+            if MarryService.is_locked(target):
+                return IntimacyResult(ok=False, reason="locked", intimacy=target.intimacy, wid=target.wid)
 
             profile = ProfileStore.get_or_create(
                 profiles, uid, nick,
@@ -1331,6 +1341,11 @@ class OwnershipService:
                 reason = "wife_not_found" if selected_wid else "no_wife"
                 return IntimacyResult(ok=False, reason=reason)
 
+            # 锁定中的老婆不能对话
+            from .marry_service import MarryService
+            if MarryService.is_locked(target):
+                return IntimacyResult(ok=False, reason="locked", intimacy=target.intimacy, wid=target.wid)
+
             profile = ProfileStore.get_or_create(
                 profiles, uid, nick,
                 coins=self._config.initial_coins,
@@ -1397,6 +1412,11 @@ class OwnershipService:
                 reason = "wife_not_found" if selected_wid else "no_wife"
                 return IntimacyResult(ok=False, reason=reason)
 
+            # 锁定中的老婆不能约会
+            from .marry_service import MarryService
+            if MarryService.is_locked(target):
+                return IntimacyResult(ok=False, reason="locked", intimacy=target.intimacy, wid=target.wid)
+
             profile = ProfileStore.get_or_create(
                 profiles, uid, nick,
                 coins=self._config.initial_coins,
@@ -1445,8 +1465,10 @@ class OwnershipService:
     async def daily_intimacy_increment_for_group(self, gid: str, today: str) -> int:
         """零点循环：所有持有老婆 +intimacy_per_day（幂等，每日只加一次）
 
-        返回更新的 ownership 数量。
+        返回更新的 ownership 数量。锁定中的老婆不增长。
         """
+        from .marry_service import MarryService
+
         async with self._locks.acquire(gid):
             ownership_store = self._ownership_store(gid)
             ownerships = ownership_store.load_all()
@@ -1454,6 +1476,10 @@ class OwnershipService:
             updated = 0
             for o in ownerships:
                 if o.intimacy_updated_date == today:
+                    continue
+                # 锁定中的老婆不增长亲密度
+                if MarryService.is_locked(o):
+                    o.intimacy_updated_date = today
                     continue
                 if self._config.intimacy_decay > 0 and o.intimacy >= 60:
                     new_intimacy = max(50, o.intimacy - self._config.intimacy_decay)

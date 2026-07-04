@@ -41,6 +41,8 @@ async def handle_pet(
             yield event.plain_result(
                 f"{nick}，你和老婆的亲密度已经满啦（{result.intimacy}/{ctx.config.intimacy_max}）~"
             )
+        elif result.reason == "locked":
+            yield event.plain_result(f"{nick}，该老婆处于锁定状态，不能摸头哦~（锁定期间无法提升亲密度）")
         else:
             yield event.plain_result(f"{nick}，摸头失败了~")
         return
@@ -80,6 +82,8 @@ async def handle_gift(
             yield event.plain_result(
                 f"{nick}，你和老婆的亲密度已经满啦（{result.intimacy}/{ctx.config.intimacy_max}）~"
             )
+        elif result.reason == "locked":
+            yield event.plain_result(f"{nick}，该老婆处于锁定状态，不能送礼哦~（锁定期间无法提升亲密度）")
         else:
             yield event.plain_result(f"{nick}，送礼失败了~")
         return
@@ -116,6 +120,8 @@ async def handle_chat(
             yield event.plain_result(
                 f"{nick}，你和老婆的亲密度已经满啦（{result.intimacy}/{ctx.config.intimacy_max}）~"
             )
+        elif result.reason == "locked":
+            yield event.plain_result(f"{nick}，该老婆处于锁定状态，不能对话哦~（锁定期间无法提升亲密度）")
         else:
             yield event.plain_result(f"{nick}，对话失败了~")
         return
@@ -157,6 +163,8 @@ async def handle_date(
             yield event.plain_result(
                 f"{nick}，你和老婆的亲密度已经满啦（{result.intimacy}/{ctx.config.intimacy_max}）~"
             )
+        elif result.reason == "locked":
+            yield event.plain_result(f"{nick}，该老婆处于锁定状态，不能约会哦~（锁定期间无法提升亲密度）")
         else:
             yield event.plain_result(f"{nick}，约会失败了~")
         return

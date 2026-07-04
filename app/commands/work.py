@@ -159,6 +159,8 @@ async def handle_work(
             yield event.plain_result(f"{nick}，你还没有老婆，先去抽一个吧~")
         elif result.reason == "wife_not_found":
             yield event.plain_result(f"{nick}，你指定的老婆编号不存在哦~")
+        elif result.reason == "locked":
+            yield event.plain_result(f"{nick}，该老婆处于锁定状态，不能打工哦~（锁定期间防牛但也无法打工）")
         elif result.reason == "already_working":
             max_c = ctx.config.work_max_concurrent
             yield event.plain_result(f"{nick}，已经有 {max_c} 位老婆在打工中，达到上限了~")

@@ -320,6 +320,11 @@ class WorkService:
             if selected_wid and (selected is None or selected.uid != uid):
                 return WorkStartResult(ok=False, reason="wife_not_found")
 
+            # 锁定中的老婆不能打工
+            from .marry_service import MarryService
+            if selected and MarryService.is_locked(selected):
+                return WorkStartResult(ok=False, reason="locked")
+
             # 检查同时打工上限
             working_count = sum(1 for o in ownerships if o.uid == uid and o.is_working)
             max_concurrent = max(1, self._config.work_max_concurrent)

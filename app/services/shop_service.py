@@ -1,10 +1,10 @@
 """商城服务：道具购买。
 
-道具清单（ROADMAP.md §5.1）：
+道具清单：
 
-* ``lock_item``           - 限期锁定
-* ``revive_potion``       - 被牛后复活
-* ``protection_charm``    - 24h 免疫一次 NTR
+* ``lock_item``           - 锁定老婆 7 天，防牛但不能打工/涨亲密度
+* ``protection_charm``    - 被牛概率 ×0.3（一次性消耗）
+* ``insurance_card``      - 打工被牛时补偿 20 币 + 1 复仇令牌
 * ``draw_ticket_single``  - 单抽券
 * ``draw_ticket_ten``     - 十连券（9折优惠）
 """
@@ -28,17 +28,24 @@ __all__ = ["ShopService"]
 # 道具 key 与中文名映射
 ITEM_NAMES: Dict[str, str] = {
     "lock_item": "锁定卡",
-    "revive_potion": "复活药水",
     "protection_charm": "保护符",
     "insurance_card": "保险卡",
     "draw_ticket_single": "单抽券",
     "draw_ticket_ten": "十连券",
 }
 
+# 道具描述（商城展示用）
+ITEM_DESCRIPTIONS: Dict[str, str] = {
+    "lock_item": "锁定老婆7天，期间无法被牛，但不能打工、不能提升亲密度",
+    "protection_charm": "被牛概率降至30%，触发后消耗1个（上限1个）",
+    "insurance_card": "打工被牛时自动触发：补偿20币+1复仇令牌（上限1个）",
+    "draw_ticket_single": "消耗1张进行1次免费抽卡",
+    "draw_ticket_ten": "消耗1张进行10次抽卡（比单买划算）",
+}
+
 # 使用上限（0 表示无上限）
 ITEM_USE_LIMITS: Dict[str, int] = {
     "lock_item": 0,
-    "revive_potion": 0,
     "protection_charm": 1,  # 同时只能持有 1 个
     "insurance_card": 1,
 }
