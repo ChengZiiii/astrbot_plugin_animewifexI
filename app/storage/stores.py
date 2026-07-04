@@ -348,7 +348,7 @@ class NtrStatusStore:
 class DailyCountStore:
     """群内每日次数计数：dict[uid, dict[action, {date, count}]]
 
-    用于限额校验（NTR 每日 3 次、换老婆每日 3 次等），跨重启持久化，
+    用于限额校验（NTR 每日次数、PK 每日次数等），跨重启持久化，
     每日零点定时清理跨天失效的记录（由 :mod:`app.plugin` 的零点循环调用
     :meth:`prune_for_group`）。
 

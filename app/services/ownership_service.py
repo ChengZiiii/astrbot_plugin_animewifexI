@@ -4,7 +4,7 @@
 
 * 所有公开方法内部走群锁 (:class:`app.storage.locks.GroupLocks`)；
 * 多个 Store 在一次锁内批量 load → 修改 → save，避免半状态；
-* 每日次数计数 (NTR/换/交换) 在锁内 check+increment，避免并发绕过限额；
+* 每日次数计数 (NTR/交换) 在锁内 check+increment，避免并发绕过限额；
 * 抽老婆所需的图片获取委托给 :class:`app.services.wife_service.WifeService`；
 * 方法返回小型 dataclass 结果，便于命令层格式化。
 

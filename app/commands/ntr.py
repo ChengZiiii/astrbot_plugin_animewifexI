@@ -212,7 +212,7 @@ def cancel_related_swap_requests(
 
     .. note::
 
-        严格并发安全：``ownership_service.try_ntr``/``change_primary`` 已在群锁内
+        严格并发安全：``ownership_service.try_ntr`` 已在群锁内
         完成所有权转移，此调用紧随其后但未持群锁。理论上与并发 ``accept_swap``
         存在竞态窗口，但实际场景下用户不会在自己 NTR 成功的同一瞬间接受交换。
         Phase 1 接受此窗口；Phase 3 重构时可将此逻辑下沉到 try_ntr 内部。
