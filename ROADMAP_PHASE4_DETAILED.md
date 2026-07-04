@@ -4,6 +4,8 @@
 >
 > 本文不是从零设计，而是**基于当前 `v3.x` 代码现状做差量开发**。
 >
+> 状态：**已归档**。Phase 4 已完成，本文保留的是开发期拆解记录；当前功能状态请以 `README.md` 与 `CHANGELOG.md` 顶部为准。
+>
 > 原则：小步提交、文件级落点明确、测试先行、避免架构重写。
 >
 > 如果需要按最细颗粒度直接执行，请优先阅读：`PHASE4_EXECUTION_TICKETS.md`
@@ -54,7 +56,7 @@
 
 ### 2.3 和策划案目标的关键差距
 
-1. `app/services/ownership_service.py` 的 `try_ntr()` 仍是 Phase 2/3 逻辑。
+1. `app/services/ownership_service.py` 的 `try_ntr()` 仍是 Phase 4 前的旧逻辑。
 当前问题：
  - 固定基础概率 + 简单复仇倍率
  - 成功后被牛方亲密度直接清零
@@ -362,7 +364,7 @@ $env:PYTHONPATH='.'; python -m pytest
 
 先只加一句：
 
-- `Phase 4 玩法升级开发中，详见 ROADMAP_PHASE4_DETAILED.md`
+- `在 README.md / CHANGELOG.md 顶部加入指向 ROADMAP_PHASE4_DETAILED.md 的入口说明`
 
 目的：后续模型能快速定位本文。
 

@@ -2,6 +2,8 @@
 
 > 本文档是插件从 v2.x（单一所有权模型）重构到 v3.x（多老婆 + 富属性 + 经济系统）的完整执行路线图。
 > 后续 AI 开发者严格按 Phase 顺序执行，每个 Phase 完成后打 tag 并跑完整测试。
+>
+> 状态：**已归档**。v3.x Phase 1-4 当前均已完成，本文主要保留重构决策与历史执行记录。
 
 ---
 
@@ -650,10 +652,10 @@ shop_prices:
 |---|---|---|---|
 | main.py 职责 | 仅插件注册，业务全在 `app/plugin.py` | `WifePlugin` 类 + `@filter` 方法必须在 main.py | AstrBot reload 时 `app.plugin` 已缓存于 `sys.modules` 不重跑，装饰器不重新注册 handler |
 | `app/plugin.py` | WifePlugin 主类 | 改为 `WifePluginCore` 基类（无装饰器，便于单测），main.py 子类化 | 同上 |
-| 命令文件 | draw/view/ntr/swap/shop/pk/marry/leaderboard/collection/profile/quest/admin | 实际拆为 draw/view/ntr/change/swap/admin + grouped_stubs（Phase 2/3 占位） | 换老婆逻辑独立成 change.py；Phase 2/3 子命令统一占位 |
+| 命令文件 | draw/view/ntr/swap/shop/pk/marry/leaderboard/collection/profile/quest/admin | 实际拆为 draw/view/ntr/change/swap/admin + grouped_stubs（分组命令占位） | 换老婆逻辑独立成 change.py；部分分组子命令先以占位形式保留 |
 | Store 数量 | 6 个（WivesMaster/Ownership/Profile/Activity/Swap/NtrStatus） | 7 个，新增 `DailyCountStore` | ActivityStore 是滚动 N 天榜单数据源；每日次数限制（NTR/换/交换/重置）需要独立的今日计数，语义不同 |
 | 配置容器 | 直接读 dict | `services/plugin_config.py` dataclass + `from_dict` + `default_for_test()` | 类型安全 + 测试便利 |
-| 测试文件 | 7 个（按玩法分：ntr/leaderboard/economy/intimacy/pk/storage/registry） | 7 个（按层分：storage/models/utils/ownership_service/migrations/commands_registry/plugin） | Phase 1 只到地基层，玩法测试归 Phase 2/3 |
+| 测试文件 | 7 个（按玩法分：ntr/leaderboard/economy/intimacy/pk/storage/registry） | 7 个（按层分：storage/models/utils/ownership_service/migrations/commands_registry/plugin） | 首轮重构先完成地基层，玩法测试在后续阶段逐步补齐 |
 | `_conf_schema.json` object 配置 | `{"type": "object", "default": {...}}` | `{"type": "object", "items": {子项 schema}}` | AstrBot `_parse_schema` 对 object 类型要求 `items` 嵌套，顶层 `default` 不识别（KeyError: 'items'） |
 
 ### 10.2 QA 阶段发现并修复的 bug
@@ -691,7 +693,7 @@ shop_prices:
    - 显示 "没有发现老婆的踪迹，快去抽一个试试吧~"（自查文案）
    - 修复：`view.py` 区分自查 vs 查他人，他人无老婆时显示 "{nick}今天还没有老婆哦~"
 
-### 10.3 给 Phase 2/3 的教训
+### 10.3 给后续阶段的教训
 
 1. **任何带 `@filter` 装饰的方法必须在 main.py** — 不只是 plugin 入口，所有 hook（`@filter.command` / `@filter.on_llm_request` 等）都一样。其他 service / store / 模块的业务逻辑可以放 app/，但装饰器必须在 main.py 才能正确注册 + reload。
 
