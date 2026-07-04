@@ -163,7 +163,7 @@ class PluginConfig:
     work_modes: dict = field(
         default_factory=lambda: {
             "normal": {
-                "duration": 14400,
+                "duration": 7200,
                 "start_cost": 10,
                 "reward_min": 20,
                 "reward_max": 40,
@@ -172,7 +172,7 @@ class PluginConfig:
                 "intimacy_gain": 5,
             },
             "overtime": {
-                "duration": 7200,
+                "duration": 14400,
                 "start_cost": 20,
                 "reward_min": 30,
                 "reward_max": 60,
@@ -272,13 +272,13 @@ class PluginConfig:
         if not work_modes:
             work_modes = {
                 "normal": {
-                    "duration": 14400, "start_cost": 10,
+                    "duration": 7200, "start_cost": 10,
                     "reward_min": 20, "reward_max": 40,
                     "ntr_multiplier": 1.5, "pk_penalty": 0.10,
                     "intimacy_gain": 5,
                 },
                 "overtime": {
-                    "duration": 7200, "start_cost": 20,
+                    "duration": 14400, "start_cost": 20,
                     "reward_min": 30, "reward_max": 60,
                     "ntr_multiplier": 2.0, "pk_penalty": 0.20,
                     "intimacy_gain": 3,

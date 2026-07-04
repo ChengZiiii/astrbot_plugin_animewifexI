@@ -422,7 +422,7 @@
             "normal": {
                 "type": "object",
                 "items": {
-                    "duration": {"type": "int", "default": 14400, "hint": "时长(秒)：默认14400=4小时"},
+                    "duration": {"type": "int", "default": 7200, "hint": "时长(秒)：默认7200=2小时"},
                     "start_cost": {"type": "int", "default": 10, "hint": "启动费(币)"},
                     "reward_min": {"type": "int", "default": 20, "hint": "结算奖励下限(币)"},
                     "reward_max": {"type": "int", "default": 40, "hint": "结算奖励上限(币)"},
@@ -434,7 +434,7 @@
             "overtime": {
                 "type": "object",
                 "items": {
-                    "duration": {"type": "int", "default": 7200, "hint": "时长(秒)：默认7200=2小时"},
+                    "duration": {"type": "int", "default": 14400, "hint": "时长(秒)：默认14400=4小时"},
                     "start_cost": {"type": "int", "default": 20, "hint": "启动费(币)"},
                     "reward_min": {"type": "int", "default": 30, "hint": "结算奖励下限(币)"},
                     "reward_max": {"type": "int", "default": 60, "hint": "结算奖励上限(币)"},
