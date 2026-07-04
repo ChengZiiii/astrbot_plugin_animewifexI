@@ -63,12 +63,8 @@ class PluginConfig:
     revenge_window_hours: int = 24
     revenge_success_multiplier: float = 2.0
 
-    # ---------- 换/交换/重置 ----------
-    change_max_per_day: int = 3
+    # ---------- 交换 ----------
     swap_max_per_day: int = 2
-    reset_max_uses_per_day: int = 3
-    reset_success_rate: float = 0.30
-    reset_mute_duration: int = 300
 
     # ---------- 亲密度 ----------
     intimacy_per_day: int = 10
@@ -93,14 +89,12 @@ class PluginConfig:
     initial_coins: int = 50
     daily_checkin_coins: int = 20
     daily_free_draws: int = 1           # 每日免费抽卡次数
-    reroll_cost: int = 30
     pk_winner_reward: int = 15
     quest_complete_coins: int = 10
 
     # ---------- 商城价格 ----------
     shop_prices: dict = field(
         default_factory=lambda: {
-            "reroll_ticket": 30,
             "lock_item": 50,
             "revive_potion": 80,
             "protection_charm": 60,
@@ -263,7 +257,6 @@ class PluginConfig:
         shop_prices = dict(d.get("shop_prices") or {})
         if not shop_prices:
             shop_prices = {
-                "reroll_ticket": 30,
                 "lock_item": 50,
                 "revive_potion": 80,
                 "protection_charm": 60,
@@ -345,11 +338,7 @@ class PluginConfig:
             revenge_success_multiplier=_as_float(
                 d.get("revenge_success_multiplier"), 2.0
             ),
-            change_max_per_day=_as_int(d.get("change_max_per_day"), 3),
             swap_max_per_day=_as_int(d.get("swap_max_per_day"), 2),
-            reset_max_uses_per_day=_as_int(d.get("reset_max_uses_per_day"), 3),
-            reset_success_rate=_as_float(d.get("reset_success_rate"), 0.30),
-            reset_mute_duration=_as_int(d.get("reset_mute_duration"), 300),
             intimacy_per_day=_as_int(d.get("intimacy_per_day"), 10),
             intimacy_max=_as_int(d.get("intimacy_max"), 100),
             intimacy_pet_coin_cost=_as_int(d.get("intimacy_pet_coin_cost"), 5),
@@ -364,7 +353,6 @@ class PluginConfig:
             initial_coins=_as_int(d.get("initial_coins"), 50),
             daily_checkin_coins=_as_int(d.get("daily_checkin_coins"), 20),
             daily_free_draws=_as_int(d.get("daily_free_draws"), 1),
-            reroll_cost=_as_int(d.get("reroll_cost"), 30),
             pk_winner_reward=_as_int(d.get("pk_winner_reward"), 15),
             quest_complete_coins=_as_int(d.get("quest_complete_coins"), 10),
             shop_prices=shop_prices,

@@ -3,9 +3,7 @@
 覆盖 v2.x 全部命令对应的服务流程：
 - 抽老婆（首次/重复）
 - 牛老婆（成功/失败/限额/无目标/被禁用）
-- 换老婆（成功/失败/限额/无老婆）
 - 交换老婆（发起/同意/拒绝/更换目标/限额返还）
-- 重置（管理员/概率成功/概率失败禁言）
 - 零点清理（跨天记录删除）
 """
 
@@ -340,29 +338,6 @@ class TestTryNtr:
         assert second.final_probability < first.final_probability
 
 
-# ==================== 换老婆 ====================
-
-
-class TestChangePrimary:
-    @pytest.mark.asyncio
-    async def test_change_replaces_primary(
-        self, ownership_service, mock_wife_service
-    ):
-        mock_wife_service.set_images(["旧!旧.jpg"])
-        r1 = await ownership_service.draw_or_get_primary(
-            "g1", "u1", "张三", "2026-07-03"
-        )
-        old_wid = r1.wid
-
-        mock_wife_service.set_images(["新!新.jpg"])
-        r2 = await ownership_service.change_primary("g1", "u1", "张三", "2026-07-03")
-        assert r2.ok is True
-        assert r2.wid != old_wid
-        assert r2.wid == wid_for_img("新!新.jpg")
-        # 旧老婆所有权已删除
-        assert ownership_service.get_primary_wid("g1", "u1") == r2.wid
-
-
 class TestSwitchPrimary:
     @pytest.mark.asyncio
     async def test_switch_primary_to_owned_wife(self, ownership_service):
@@ -394,51 +369,6 @@ class TestSwitchPrimary:
         result = await ownership_service.switch_primary("g1", "u1", other_wid)
         assert result.ok is False
         assert result.reason == "wife_not_found"
-
-    @pytest.mark.asyncio
-    async def test_change_limit_reached(
-        self, ownership_service, mock_wife_service, config
-    ):
-        mock_wife_service.set_images(["初始!初始.jpg"])
-        await ownership_service.draw_or_get_primary(
-            "g1", "u1", "张三", "2026-07-03"
-        )
-        for i in range(config.change_max_per_day):
-            mock_wife_service.set_images([f"新{i}!新{i}.jpg"])
-            await ownership_service.change_primary("g1", "u1", "张三", "2026-07-03")
-        # 已达上限
-        mock_wife_service.set_images(["超额!超额.jpg"])
-        r = await ownership_service.change_primary("g1", "u1", "张三", "2026-07-03")
-        assert r.ok is False
-        assert r.reason == "limit_reached"
-
-    @pytest.mark.asyncio
-    async def test_change_no_wife(self, ownership_service):
-        r = await ownership_service.change_primary("g1", "u1", "张三", "2026-07-03")
-        assert r.ok is False
-        assert r.reason == "no_wife"
-
-    @pytest.mark.asyncio
-    async def test_change_failed_fetch_keeps_state(
-        self, ownership_service, mock_wife_service
-    ):
-        mock_wife_service.set_images(["旧!旧.jpg"])
-        r1 = await ownership_service.draw_or_get_primary(
-            "g1", "u1", "张三", "2026-07-03"
-        )
-        old_wid = r1.wid
-
-        # 抽取失败
-        mock_wife_service.set_images([])
-        r2 = await ownership_service.change_primary("g1", "u1", "张三", "2026-07-03")
-        assert r2.ok is False
-        assert r2.reason == "fetch_failed"
-        # 老婆和次数都没动
-        assert ownership_service.get_primary_wid("g1", "u1") == old_wid
-        used = ownership_service.get_daily_count(
-            "g1", "u1", DailyAction.CHANGE_ATTEMPT, "2026-07-03"
-        )
-        assert used == 0
 
 
 # ==================== 交换老婆 ====================
@@ -605,93 +535,6 @@ class TestSwap:
         assert r.reason == "expired"
 
 
-# ==================== 重置 ====================
-
-
-class TestReset:
-    @pytest.mark.asyncio
-    async def test_admin_reset_always_succeeds(self, ownership_service, mock_wife_service):
-        mock_wife_service.set_images(["作品!角色.jpg"])
-        await ownership_service.draw_or_get_primary("g1", "u1", "张三", "2026-07-03")
-        # 用掉一些次数
-        await ownership_service.try_ntr(
-            "g1", "u1", "u2", "张三", "2026-07-03", roll_seed=1.0
-        )
-
-        result = await ownership_service.reset_user_action(
-            "g1", "u_admin", operator_is_admin=True,
-            target_uid="u1", action=DailyAction.NTR_ATTEMPT,
-            today="2026-07-03",
-        )
-        assert result["ok"] is True
-        # 次数已清零
-        assert ownership_service.get_daily_count(
-            "g1", "u1", DailyAction.NTR_ATTEMPT, "2026-07-03"
-        ) == 0
-
-    @pytest.mark.asyncio
-    async def test_normal_user_reset_success(self, ownership_service, mock_wife_service):
-        mock_wife_service.set_images(["作品!角色.jpg"])
-        await ownership_service.draw_or_get_primary("g1", "u1", "张三", "2026-07-03")
-        await ownership_service.try_ntr(
-            "g1", "u1", "u2", "张三", "2026-07-03", roll_seed=1.0
-        )
-
-        result = await ownership_service.reset_user_action(
-            "g1", "u_op", operator_is_admin=False,
-            target_uid="u1", action=DailyAction.NTR_ATTEMPT,
-            today="2026-07-03", roll_seed=0.0,  # 必成功
-        )
-        assert result["ok"] is True
-        assert result["consumed_reset"] is True
-        assert result["do_mute"] is False
-        # 次数已清零
-        assert ownership_service.get_daily_count(
-            "g1", "u1", DailyAction.NTR_ATTEMPT, "2026-07-03"
-        ) == 0
-
-    @pytest.mark.asyncio
-    async def test_normal_user_reset_failed_triggers_mute(
-        self, ownership_service, mock_wife_service, config
-    ):
-        mock_wife_service.set_images(["作品!角色.jpg"])
-        await ownership_service.draw_or_get_primary("g1", "u1", "张三", "2026-07-03")
-        await ownership_service.try_ntr(
-            "g1", "u1", "u2", "张三", "2026-07-03", roll_seed=1.0
-        )
-
-        result = await ownership_service.reset_user_action(
-            "g1", "u_op", operator_is_admin=False,
-            target_uid="u1", action=DailyAction.NTR_ATTEMPT,
-            today="2026-07-03", roll_seed=1.0,  # 必失败
-        )
-        assert result["ok"] is False
-        assert result["do_mute"] is True
-        assert result["mute_duration"] == config.reset_mute_duration
-        assert result["consumed_reset"] is True
-        # 次数未清零（重置失败）
-        assert ownership_service.get_daily_count(
-            "g1", "u1", DailyAction.NTR_ATTEMPT, "2026-07-03"
-        ) == 1
-
-    @pytest.mark.asyncio
-    async def test_reset_limit_reached(self, ownership_service, config):
-        # 用完 reset 次数
-        for _ in range(config.reset_max_uses_per_day):
-            await ownership_service.reset_user_action(
-                "g1", "u_op", operator_is_admin=False,
-                target_uid="u1", action=DailyAction.NTR_ATTEMPT,
-                today="2026-07-03", roll_seed=1.0,
-            )
-        result = await ownership_service.reset_user_action(
-            "g1", "u_op", operator_is_admin=False,
-            target_uid="u1", action=DailyAction.NTR_ATTEMPT,
-            today="2026-07-03", roll_seed=0.0,
-        )
-        assert result["ok"] is False
-        assert result["reason"] == "limit_reached"
-
-
 # ==================== 零点清理 ====================
 
 
@@ -722,7 +565,7 @@ class TestPrune:
         # u_yest 的记录已删除（因为他们 2026-07-04 没做动作，记录还是 2026-07-03）
         # u_today 的记录保留（已覆盖为 2026-07-04）
         used_today = ownership_service.get_daily_count(
-            "g1", "u_today", DailyAction.CHANGE_ATTEMPT, "2026-07-04"
+            "g1", "u_today", DailyAction.NTR_ATTEMPT, "2026-07-04"
         )
         # 这里只是 smoke：prune 没有删除今日用户的记录
         # 实际验证：u_yest 的记录在 prune 后应消失

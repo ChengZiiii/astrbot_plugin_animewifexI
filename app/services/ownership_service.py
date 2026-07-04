@@ -46,7 +46,6 @@ __all__ = [
     "OwnershipService",
     "DrawResult",
     "NtrResult",
-    "ChangeResult",
     "SwapResult",
     "SwitchPrimaryResult",
     "IntimacyResult",
@@ -82,9 +81,7 @@ class DailyAction:
     """
 
     NTR_ATTEMPT = "ntr_attempt"        # 牛老婆尝试（成功失败都计，与 v2.x 一致）
-    CHANGE_ATTEMPT = "change_attempt"  # 换老婆（仅成功才计）
     SWAP_ATTEMPT = "swap_attempt"      # 发起交换请求
-    RESET_USE = "reset_use"            # 重置功能使用
     PK_ATTEMPT = "pk_attempt"          # PK（Phase 3）
 
 
@@ -96,7 +93,6 @@ class CooldownAction:
 
     DRAW = "draw"
     NTR = "ntr"
-    CHANGE = "change"
     SWAP = "swap"
     PK = "pk"
     CHAT = "chat"
@@ -143,18 +139,6 @@ class NtrResult:
     insurance_bonus_coins: int = 0
     contract_voided: bool = False
     partner_broken: bool = False
-
-
-@dataclass
-class ChangeResult:
-    """换老婆结果"""
-
-    ok: bool
-    img: str = ""
-    wid: str = ""
-    consumed_attempt: bool = False
-    remaining_changes: int = 0
-    reason: str = ""
 
 
 @dataclass
@@ -977,90 +961,6 @@ class OwnershipService:
                 partner_broken=partner_broken,
             )
 
-    # ---------- 换老婆 ----------
-
-    async def change_primary(
-        self, gid: str, uid: str, nick: str, today: str
-    ) -> ChangeResult:
-        """换老婆：丢弃当前主老婆，抽一张新的
-
-        v2.x 行为：当日已换 ``change_max_per_day`` 次拒绝；无老婆拒绝；
-        抽取失败时老婆与次数都不动（故 count 在抽成功后才 increment）。
-        """
-        async with self._locks.acquire(gid):
-            ownership_store = self._ownership_store(gid)
-            profile_store = self._profile_store(gid)
-            activity_store = self._activity_store(gid)
-            daily_store = self._daily_count_store(gid)
-
-            ownerships = ownership_store.load_all()
-            profiles = profile_store.load_all()
-            daily_counts = daily_store.load_all()
-            profile = ProfileStore.get_or_create(
-                profiles,
-                uid,
-                nick,
-    
-                coins=self._config.initial_coins,
-            )
-
-            used = DailyCountStore.get_count(
-                daily_counts, uid, DailyAction.CHANGE_ATTEMPT, today
-            )
-            if used >= self._config.change_max_per_day:
-                profile_store.save_all(profiles)
-                return ChangeResult(
-                    ok=False, reason="limit_reached", remaining_changes=0
-                )
-
-            primary = ownership_store.get_primary(uid, ownerships)
-            if primary is None:
-                profile_store.save_all(profiles)
-                return ChangeResult(ok=False, reason="no_wife")
-
-            img = await self._wife_service.fetch_image()
-            if not img:
-                profile_store.save_all(profiles)
-                return ChangeResult(ok=False, reason="fetch_failed")
-
-            wid = self._ensure_wife_meta(img)
-
-            ownership_store.remove_by_wid(ownerships, primary.wid)
-            ownership_store.add(
-                ownerships,
-                Ownership(
-                    wid=wid,
-                    uid=uid,
-                    acquired_at=now_ts(),
-                    acquired_via=AcquireVia.DRAW,
-                    is_primary=True,
-                ),
-            )
-            if wid not in profile.collection:
-                profile.collection.append(wid)
-            profile.last_draw_date = today
-            profile.total_draws += 1
-
-            new_count = DailyCountStore.increment(
-                daily_counts, uid, DailyAction.CHANGE_ATTEMPT, today
-            )
-
-            activity_logs = activity_store.load_all()
-            ActivityStore.log(activity_logs, uid, today, Action.DRAW, 1)
-
-            ownership_store.save_all(ownerships)
-            profile_store.save_all(profiles)
-            activity_store.save_all(activity_logs)
-            daily_store.save_all(daily_counts)
-
-            return ChangeResult(
-                ok=True,
-                img=img,
-                wid=wid,
-                consumed_attempt=True,
-                remaining_changes=max(0, self._config.change_max_per_day - new_count),
-            )
-
     # ---------- 交换老婆 ----------
 
     async def create_swap_request(
@@ -1241,7 +1141,7 @@ class OwnershipService:
         本方法会进入群锁保护。
         """
         # 由于是 sync 方法，无法 await 群锁；本方法设计为供已持锁的 sync 上下文调用，
-        # 或在命令层调用 `` OwnershipService.try_ntr`` / ``change_primary`` 后用
+        # 或在命令层调用 ``OwnershipService.try_ntr`` 后用
         # 返回值标记是否有相关请求需要清理。
         #
         # Phase 1 的 v2.x 行为："NTR/换/抽" 成功后命令层不需要主动取消请求，
@@ -1275,76 +1175,6 @@ class OwnershipService:
         return len(to_cancel)
 
     # ---------- 重置（管理员 / 概率型） ----------
-
-    async def reset_user_action(
-        self,
-        gid: str,
-        operator_uid: str,
-        operator_is_admin: bool,
-        target_uid: str,
-        action: str,
-        today: str,
-        roll_seed: "Optional[float]" = None,
-    ) -> Dict[str, Any]:
-        """通用重置逻辑（v2.x ``_do_reset`` 的服务层版本）
-
-        管理员直接成功；普通用户消耗 ``reset_max_uses_per_day`` 一次，
-        按 ``reset_success_rate`` 概率成功，失败时返回 ``do_mute=True`` 让命令层禁言。
-        """
-        if operator_is_admin:
-            async with self._locks.acquire(gid):
-                daily_store = self._daily_count_store(gid)
-                daily_counts = daily_store.load_all()
-                DailyCountStore.reset_user_action(daily_counts, target_uid, action)
-                daily_store.save_all(daily_counts)
-            return {
-                "ok": True,
-                "consumed_reset": False,
-                "do_mute": False,
-                "mute_duration": 0,
-                "reason": "admin",
-            }
-
-        async with self._locks.acquire(gid):
-            daily_store = self._daily_count_store(gid)
-            daily_counts = daily_store.load_all()
-
-            reset_used = DailyCountStore.get_count(
-                daily_counts, operator_uid, DailyAction.RESET_USE, today
-            )
-            if reset_used >= self._config.reset_max_uses_per_day:
-                return {
-                    "ok": False,
-                    "consumed_reset": False,
-                    "do_mute": False,
-                    "mute_duration": 0,
-                    "reason": "limit_reached",
-                }
-
-            DailyCountStore.increment(
-                daily_counts, operator_uid, DailyAction.RESET_USE, today
-            )
-
-            roll = roll_seed if roll_seed is not None else _random.random()
-            if roll < self._config.reset_success_rate:
-                DailyCountStore.reset_user_action(daily_counts, target_uid, action)
-                daily_store.save_all(daily_counts)
-                return {
-                    "ok": True,
-                    "consumed_reset": True,
-                    "do_mute": False,
-                    "mute_duration": 0,
-                    "reason": "success",
-                }
-
-            daily_store.save_all(daily_counts)
-            return {
-                "ok": False,
-                "consumed_reset": True,
-                "do_mute": True,
-                "mute_duration": self._config.reset_mute_duration,
-                "reason": "roll_failed",
-            }
 
     # ---------- 亲密度 ----------
 

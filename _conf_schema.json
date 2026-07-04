@@ -74,35 +74,11 @@
         "default": 2.0,
         "hint": "复仇时 NTR 概率乘以此倍数（Phase 2 接入）"
     },
-    "change_max_per_day": {
-        "description": "每天换老婆最大次数",
-        "type": "int",
-        "default": 3,
-        "hint": "每天最多更换老婆的次数"
-    },
     "swap_max_per_day": {
         "description": "交换老婆功能每天可使用次数",
         "type": "int",
         "default": 2,
         "hint": "每天可以交换老婆的次数"
-    },
-    "reset_max_uses_per_day": {
-        "description": "重置功能每天可使用次数",
-        "type": "int",
-        "default": 3,
-        "hint": "每天可以使用重置功能的次数"
-    },
-    "reset_success_rate": {
-        "description": "重置功能成功率",
-        "type": "float",
-        "default": 0.30,
-        "hint": "重置功能的成功率，取值范围 [0, 1]"
-    },
-    "reset_mute_duration": {
-        "description": "重置失败时禁言时长（秒）",
-        "type": "int",
-        "default": 300,
-        "hint": "重置失败后禁言时长，单位秒"
     },
     "intimacy_per_day": {
         "description": "每日亲密度自然增长",
@@ -192,12 +168,6 @@
         "type": "int",
         "default": 1,
         "hint": "每人每天免费抽卡次数，0 表示无限制（Phase 3 接入）"
-    },
-    "reroll_cost": {
-        "description": "换老婆消耗老婆币",
-        "type": "int",
-        "default": 30,
-        "hint": "「换老婆」消耗的老婆币；持有 reroll_ticket 时抵扣（Phase 3 接入）"
     },
     "pk_winner_reward": {
         "description": "PK 胜方奖励老婆币",
