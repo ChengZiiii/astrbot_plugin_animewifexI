@@ -8,15 +8,16 @@ from astrbot.api.event import AstrMessageEvent
 
 from ..api.events import get_group_id, get_sender_nick, get_sender_uid
 from ..api.messaging import build_multi_image_chain, build_text_image_chain
+from ..models.wife import WifeMeta
 from ..services.ownership_service import DrawResult
-from ..storage.stores import OwnershipStore
+from ..storage.stores import OwnershipStore, WivesMasterStore
 from ..utils.image import build_wife_intro_text
 from .context import CommandContext
 
 __all__ = ["handle_draw", "handle_draw_ten"]
 
 
-def _format_draw_result(nick: str, result: DrawResult, index: int = 0) -> str:
+def _format_draw_result(nick: str, result: DrawResult, index: int = 0, wife_meta: WifeMeta | None = None) -> str:
     """格式化单次抽卡结果"""
     prefix = f"[{index}] " if index > 0 else ""
     intro = build_wife_intro_text(
@@ -29,9 +30,11 @@ def _format_draw_result(nick: str, result: DrawResult, index: int = 0) -> str:
         rarity_line += "（保底！）"
     if result.is_duplicate:
         rarity_line += f"（重复，+{result.duplicate_coins}币）"
-    stats = result.wife.base_stats
-    base_power = stats.atk + stats.defense + int(stats.hp * 0.5)
-    stats_line = f"\n⚔️攻击:{stats.atk} 🛡️防御:{stats.defense} ❤️血量:{stats.hp} 💪战力:{base_power}"
+    stats_line = ""
+    if wife_meta:
+        stats = wife_meta.base_stats
+        base_power = stats.atk + stats.defense + int(stats.hp * 0.5)
+        stats_line = f"\n⚔️攻击:{stats.atk} 🛡️防御:{stats.defense} ❤️血量:{stats.hp} 💪战力:{base_power}"
     return intro + rarity_line + stats_line
 
 
@@ -79,7 +82,9 @@ async def handle_draw(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
         yield event.plain_result("抱歉，老婆获取失败了~")
         return
 
-    text = _format_draw_result(nick, result)
+    wives_meta = WivesMasterStore(ctx.paths).load_all()
+    wife_meta = wives_meta.get(result.wid)
+    text = _format_draw_result(nick, result, wife_meta=wife_meta)
     ownership_store = OwnershipStore(ctx.paths, gid)
     ownerships = ownership_store.load_all()
     my_wives = ownership_store.list_by_user(uid, ownerships)
@@ -119,9 +124,11 @@ async def handle_draw_ten(event: AstrMessageEvent, ctx: CommandContext) -> Async
         return
 
     # 格式化结果（文字部分）
+    wives_meta = WivesMasterStore(ctx.paths).load_all()
     lines = [f"【{nick} 的十连抽卡】\n"]
     for i, r in enumerate(results, 1):
-        lines.append(_format_draw_result(nick, r, i))
+        wife_meta = wives_meta.get(r.wid)
+        lines.append(_format_draw_result(nick, r, i, wife_meta=wife_meta))
 
     # 统计
     rarities = {}
