@@ -82,6 +82,8 @@ class PkService:
         attacker_nick: str,
         defender_nick: str,
         today: str,
+        attacker_wid: str | None = None,
+        defender_wid: str | None = None,
     ) -> PkResult:
         """发起 PK：attacker vs defender"""
         # 检查冷却
@@ -92,8 +94,26 @@ class PkService:
 
         if self._locks:
             async with self._locks.acquire(gid):
-                return self._pk_inner(gid, attacker_uid, defender_uid, attacker_nick, defender_nick, today)
-        return self._pk_inner(gid, attacker_uid, defender_uid, attacker_nick, defender_nick, today)
+                return self._pk_inner(
+                    gid,
+                    attacker_uid,
+                    defender_uid,
+                    attacker_nick,
+                    defender_nick,
+                    today,
+                    attacker_wid,
+                    defender_wid,
+                )
+        return self._pk_inner(
+            gid,
+            attacker_uid,
+            defender_uid,
+            attacker_nick,
+            defender_nick,
+            today,
+            attacker_wid,
+            defender_wid,
+        )
 
     def _pk_inner(
         self,
@@ -103,6 +123,8 @@ class PkService:
         attacker_nick: str,
         defender_nick: str,
         today: str,
+        attacker_wid: str | None = None,
+        defender_wid: str | None = None,
     ) -> PkResult:
         # 检查每日次数
         daily_store = DailyCountStore(self._paths, gid)
@@ -117,29 +139,36 @@ class PkService:
         if not pk_pair_store.can_pk(pk_pairs, attacker_uid, defender_uid, self._config.pk_pair_cooldown_hours):
             return PkResult(ok=False, reason="same_target", msg=f"24小时内不能对同一对手重复 PK 哦~")
 
-        # 获取双方主老婆
+        # 获取双方出战老婆（未指定时默认主老婆）
         ownership_store = OwnershipStore(self._paths, gid)
         ownerships = ownership_store.load_all()
 
         atk_primary = ownership_store.get_primary(attacker_uid, ownerships)
         def_primary = ownership_store.get_primary(defender_uid, ownerships)
+        atk_selected = ownership_store.find_by_wid(attacker_wid, ownerships) if attacker_wid else atk_primary
+        def_selected = ownership_store.find_by_wid(defender_wid, ownerships) if defender_wid else def_primary
 
-        if not atk_primary:
+        if attacker_wid and (atk_selected is None or atk_selected.uid != attacker_uid):
+            return PkResult(ok=False, reason="attacker_wife_not_found", msg="你指定的出战老婆编号不存在哦~")
+        if defender_wid and (def_selected is None or def_selected.uid != defender_uid):
+            return PkResult(ok=False, reason="defender_wife_not_found", msg="对方指定的老婆编号不存在哦~")
+
+        if not atk_selected:
             return PkResult(ok=False, reason="no_wife", msg="你还没有老婆，先去抽一个吧~")
-        if not def_primary:
+        if not def_selected:
             return PkResult(ok=False, reason="target_no_wife", msg="对方还没有老婆~")
 
         # 获取老婆元数据
         wives = WivesMasterStore(self._paths).load_all()
-        atk_wife = wives.get(atk_primary.wid)
-        def_wife = wives.get(def_primary.wid)
+        atk_wife = wives.get(atk_selected.wid)
+        def_wife = wives.get(def_selected.wid)
 
         atk_name = atk_wife.chara or atk_wife.img if atk_wife else "未知"
         def_name = def_wife.chara or def_wife.img if def_wife else "未知"
 
         # 计算战力
-        atk_power = self._calc_power(atk_wife, atk_primary, self._config)
-        def_power = self._calc_power(def_wife, def_primary, self._config)
+        atk_power = self._calc_power(atk_wife, atk_selected, self._config)
+        def_power = self._calc_power(def_wife, def_selected, self._config)
 
         # 随机扰动 ±20%
         atk_final = atk_power * self._rng.uniform(0.8, 1.2)
@@ -226,7 +255,7 @@ class PkService:
         loser_profile.pk_last_active_date = today
 
         # 双方图鉴互通（胜方收集对方 wid）
-        loser_wid = def_primary.wid if winner_uid == attacker_uid else atk_primary.wid
+        loser_wid = def_selected.wid if winner_uid == attacker_uid else atk_selected.wid
         if loser_wid not in winner_profile.collection:
             winner_profile.collection.append(loser_wid)
         profile_store.save_all(profiles)
@@ -387,6 +416,8 @@ class PkService:
         attacker_nick: str,
         defender_nick: str,
         today: str,
+        attacker_wid: str | None = None,
+        defender_wid: str | None = None,
     ) -> PkResult:
         """同步版 pk（不经过锁）。"""
         # 检查冷却
@@ -394,4 +425,13 @@ class PkService:
             if not self._cooldown.check(gid, attacker_uid, "pk", self._config.pk_cooldown):
                 remaining = self._cooldown.remaining(gid, attacker_uid, "pk", self._config.pk_cooldown)
                 return PkResult(ok=False, reason="cooldown", msg=f"PK 冷却中，还需等待 {remaining} 秒~")
-        return self._pk_inner(gid, attacker_uid, defender_uid, attacker_nick, defender_nick, today)
+        return self._pk_inner(
+            gid,
+            attacker_uid,
+            defender_uid,
+            attacker_nick,
+            defender_nick,
+            today,
+            attacker_wid,
+            defender_wid,
+        )
