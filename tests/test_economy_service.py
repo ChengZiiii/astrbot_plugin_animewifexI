@@ -5,7 +5,9 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -182,6 +184,40 @@ class TestDailyCheckin:
         today = economy._today()
         day_data = log.get_day(today)
         assert day_data.get(Action.CHECKIN, 0) >= 1
+
+    def test_claim_weekly_surprise_box(self, economy):
+        from app.models.activity import ActivityLog
+        from app.models.enums import Action
+        from app.storage.stores import ActivityStore
+
+        activity_store = ActivityStore(economy._paths, "g1")
+        logs = activity_store.load_all()
+        log = ActivityLog()
+        for day in ("2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10", "2026-07-11"):
+            log.increment(day, Action.CHECKIN, 1)
+        logs["u1"] = log
+        activity_store.save_all(logs)
+
+        with patch("app.services.economy_service.get_week_key", return_value="2026-W28"):
+            result = economy.claim_weekly_surprise_box_sync("g1", "u1", nick="Alice")
+        assert result == (100, "draw_ticket_single")
+
+    def test_weekly_surprise_box_not_repeated(self, economy):
+        from app.models.activity import ActivityLog
+        from app.models.enums import Action
+        from app.storage.stores import ActivityStore, ProfileStore
+
+        activity_store = ActivityStore(economy._paths, "g1")
+        logs = activity_store.load_all()
+        log = ActivityLog()
+        for day in ("2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10", "2026-07-11"):
+            log.increment(day, Action.CHECKIN, 1)
+        logs["u1"] = log
+        activity_store.save_all(logs)
+
+        with patch("app.services.economy_service.get_week_key", return_value="2026-W28"):
+            assert economy.claim_weekly_surprise_box_sync("g1", "u1", nick="Alice") is not None
+            assert economy.claim_weekly_surprise_box_sync("g1", "u1", nick="Alice") is None
 
 
 class TestProfileManipulation:
