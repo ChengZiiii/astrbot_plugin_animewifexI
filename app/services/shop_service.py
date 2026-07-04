@@ -38,7 +38,7 @@ ITEM_NAMES: Dict[str, str] = {
 ITEM_DESCRIPTIONS: Dict[str, str] = {
     "lock_item": "锁定老婆7天，期间无法被牛，但不能打工、不能提升亲密度",
     "protection_charm": "被牛概率降至30%，触发后消耗1个（上限1个）",
-    "insurance_card": "打工被牛时自动触发：补偿20币+1复仇令牌（令牌使下次牛别人概率+50%）",
+    "insurance_card": "打工被牛时自动触发：补偿20币+1复仇令牌（令牌使下次牛别人概率×1.5）",
     "draw_ticket_single": "消耗1张进行1次免费抽卡",
     "draw_ticket_ten": "消耗1张进行10次抽卡（比单买划算）",
 }
