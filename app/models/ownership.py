@@ -30,6 +30,11 @@ class Ownership:
     is_locked: bool = False
     lock_expires_at: Optional[int] = None  # 求婚锁定为 None（永久），限期锁定为时间戳
     is_primary: bool = False           # 是否为用户主老婆（旧命令的"今日老婆"）
+    # Phase 4: 打工状态
+    is_working: bool = False           # 是否正在打工
+    work_mode: str = ""                # 打工模式（normal/overtime/expedition）
+    work_started_at: int = 0           # 打工开始时间戳
+    work_ends_at: int = 0              # 打工结束时间戳
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -42,6 +47,11 @@ class Ownership:
             "is_locked": self.is_locked,
             "lock_expires_at": self.lock_expires_at,
             "is_primary": self.is_primary,
+            # Phase 4
+            "is_working": self.is_working,
+            "work_mode": self.work_mode,
+            "work_started_at": self.work_started_at,
+            "work_ends_at": self.work_ends_at,
         }
 
     @classmethod
@@ -60,4 +70,9 @@ class Ownership:
                 else None
             ),
             is_primary=bool(data.get("is_primary", False)),
+            # Phase 4
+            is_working=bool(data.get("is_working", False)),
+            work_mode=str(data.get("work_mode", "") or ""),
+            work_started_at=int(data.get("work_started_at", 0) or 0),
+            work_ends_at=int(data.get("work_ends_at", 0) or 0),
         )

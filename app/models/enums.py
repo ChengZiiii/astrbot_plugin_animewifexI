@@ -50,6 +50,17 @@ class Action:
     PK_LOST = "pk_lost"
     COINS_EARNED = "coins_earned"
     COINS_SPENT = "coins_spent"
+    # Phase 4 新增
+    CHECKIN = "checkin"
+    INTIMACY = "intimacy"
+    CHAT = "chat"
+    DATE = "date"
+    PK_TIE = "pk_tie"
+    WORK_START = "work_start"
+    WORK_COMPLETE = "work_complete"
+    WORK_STOLEN = "work_stolen"
+    # Phase 4 第二波预留
+    SUPPORT = "support"
 
     ALL = (
         NTR_SUCCESS,
@@ -60,4 +71,13 @@ class Action:
         PK_LOST,
         COINS_EARNED,
         COINS_SPENT,
+        CHECKIN,
+        INTIMACY,
+        CHAT,
+        DATE,
+        PK_TIE,
+        WORK_START,
+        WORK_COMPLETE,
+        WORK_STOLEN,
+        SUPPORT,
     )
