@@ -35,6 +35,7 @@ class Ownership:
     work_mode: str = ""                # 打工模式（normal/overtime/expedition）
     work_started_at: int = 0           # 打工开始时间戳
     work_ends_at: int = 0              # 打工结束时间戳
+    work_umo: str = ""                 # 打工启动时的 UMO（用于到期推送）
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -52,6 +53,7 @@ class Ownership:
             "work_mode": self.work_mode,
             "work_started_at": self.work_started_at,
             "work_ends_at": self.work_ends_at,
+            "work_umo": self.work_umo,
         }
 
     @classmethod
@@ -75,4 +77,5 @@ class Ownership:
             work_mode=str(data.get("work_mode", "") or ""),
             work_started_at=int(data.get("work_started_at", 0) or 0),
             work_ends_at=int(data.get("work_ends_at", 0) or 0),
+            work_umo=str(data.get("work_umo", "") or ""),
         )

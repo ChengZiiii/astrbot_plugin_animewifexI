@@ -20,6 +20,8 @@ from .services.cooldown_service import CooldownService
 from .services.ownership_service import OwnershipService
 from .services.plugin_config import PluginConfig
 from .services.wife_service import WifeService
+from .services.work_service import WorkService
+from .storage.stores import WivesMasterStore
 from .storage.locks import GroupLocks
 from .storage.migrations import archive_legacy_data
 from .storage.paths import Paths
@@ -86,6 +88,14 @@ class WifePluginCore(Star):
             coro.close()
             self._daily_cleanup_task = None
 
+        # 启动打工自动结算定时器
+        work_coro = self._work_settlement_loop()
+        try:
+            self._work_settlement_task = asyncio.create_task(work_coro)
+        except RuntimeError:
+            work_coro.close()
+            self._work_settlement_task = None
+
     # ---------- 时区 ----------
 
     @staticmethod
@@ -142,17 +152,59 @@ class WifePluginCore(Star):
             except Exception:
                 logger.exception(f"群 {gid} 亲密度每日递增失败")
 
+    # ---------- 打工自动结算 ----------
+
+    async def _work_settlement_loop(self):
+        """每 60 秒检查并结算到期的打工，推送消息到原群"""
+        await asyncio.sleep(30)  # 启动缓冲
+        while True:
+            try:
+                work_service = WorkService(self.paths, self.plugin_config, self.locks)
+                settled = await work_service.settle_all_due()
+                for umo, result in settled:
+                    if not umo:
+                        continue
+                    wife_name = self._get_wife_name(result.wid)
+                    mode_name = {
+                        "normal": "普通", "overtime": "加班", "expedition": "远征",
+                    }.get(result.mode, result.mode)
+                    msg = (
+                        f"🎉 老婆打工归来！\n"
+                        f"{wife_name} 完成了{mode_name}打工~\n"
+                        f"获得 💰{result.reward} 币！"
+                    )
+                    try:
+                        from astrbot.api.event import MessageChain
+                        chain = MessageChain().message(msg)
+                        await self.context.send_message(umo, chain)
+                    except Exception:
+                        logger.warning(f"发送打工结算通知失败: umo={umo}")
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("打工自动结算出错")
+            await asyncio.sleep(60)
+
+    def _get_wife_name(self, wid: str) -> str:
+        """获取老婆名称（用于推送消息）"""
+        wives = WivesMasterStore(self.paths).load_all()
+        wife = wives.get(wid)
+        if wife is None:
+            return "老婆"
+        return wife.chara or wife.img or "老婆"
+
     # ---------- 生命周期 ----------
 
     async def terminate(self):
         """插件卸载时停止后台任务"""
-        task = getattr(self, "_daily_cleanup_task", None)
-        if task and not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        for attr in ("_daily_cleanup_task", "_work_settlement_task"):
+            task = getattr(self, attr, None)
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
 
 def _safe_zoneinfo(name: str) -> ZoneInfo:

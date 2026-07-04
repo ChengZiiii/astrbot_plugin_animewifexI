@@ -638,3 +638,53 @@ class TestResolveStolenWork:
         assert profiles[uid].work_contract_reserved == ""
         assert profiles[uid].inventory["insurance_card"] == 0
         assert profiles[uid].inventory["revenge_token"] == 1
+
+
+class TestWorkUmo:
+    def test_ownership_work_umo_roundtrip(self):
+        """work_umo 在序列化/反序列化后保持一致"""
+        from app.models.ownership import Ownership
+
+        o = Ownership(
+            wid="w1", uid="u1", acquired_via="draw",
+            is_working=True, work_mode="normal",
+            work_started_at=1000, work_ends_at=5000,
+            work_umo="aiocqhttp:group:123456",
+        )
+        d = o.to_dict()
+        assert d["work_umo"] == "aiocqhttp:group:123456"
+
+        o2 = Ownership.from_dict(d)
+        assert o2.work_umo == "aiocqhttp:group:123456"
+
+    def test_ownership_work_umo_default_empty(self):
+        """旧数据没有 work_umo 字段时默认为空字符串"""
+        from app.models.ownership import Ownership
+
+        o = Ownership.from_dict({"wid": "w1", "uid": "u1"})
+        assert o.work_umo == ""
+
+    @pytest.mark.asyncio
+    async def test_start_work_stores_umo(self, work_service, tmp_paths):
+        """start_work 正确存储 work_umo"""
+        gid, uid, nick, today = "g1", "u1", "Alice", "2026-07-04"
+        store = OwnershipStore(tmp_paths, gid)
+        ownerships = store.load_all()
+        from app.models.ownership import Ownership
+        ownerships.append(Ownership(wid="w1", uid=uid, is_primary=True))
+        store.save_all(ownerships)
+
+        profile_store = ProfileStore(tmp_paths, gid)
+        profiles = profile_store.load_all()
+        from app.models.profile import UserProfile
+        profiles[uid] = UserProfile(uid=uid, nick=nick, coins=100)
+        profile_store.save_all(profiles)
+
+        result = await work_service.start_work(
+            gid, uid, nick, "normal", today, umo="aiocqhttp:group:999"
+        )
+        assert result.ok is True
+
+        ownerships = store.load_all()
+        o = next(o for o in ownerships if o.uid == uid)
+        assert o.work_umo == "aiocqhttp:group:999"

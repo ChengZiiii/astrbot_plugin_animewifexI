@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Optional
+from zoneinfo import ZoneInfo
+
+try:
+    from astrbot.api import logger
+except Exception:
+    import logging
+    logger = logging.getLogger("astrbot_plugin_animewifex")
 
 from ..models.enums import Action
 from ..storage.locks import GroupLocks
@@ -13,7 +21,7 @@ from ..storage.stores import (
     OwnershipStore,
     ProfileStore,
 )
-from ..utils.time import now_ts
+from ..utils.time import get_today, now_ts
 from .plugin_config import PluginConfig
 
 __all__ = [
@@ -270,6 +278,7 @@ class WorkService:
         mode: str,
         today: str,
         selected_wid: str | None = None,
+        umo: str = "",
     ) -> WorkStartResult:
         """启动打工
 
@@ -329,6 +338,7 @@ class WorkService:
             selected.work_mode = mode
             selected.work_started_at = ts
             selected.work_ends_at = ts + duration
+            selected.work_umo = umo
 
             # 写行为日志
             activity_logs = activity_store.load_all()
@@ -576,3 +586,54 @@ class WorkService:
         ownership.work_mode = ""
         ownership.work_started_at = 0
         ownership.work_ends_at = 0
+        ownership.work_umo = ""
+
+    async def settle_all_due(self) -> list[tuple[str, "WorkSettleResult"]]:
+        """扫描所有群，结算到期的打工。返回 [(umo, result), ...]"""
+        results: list[tuple[str, WorkSettleResult]] = []
+        groups_dir = self._paths.groups_dir
+        if not os.path.isdir(groups_dir):
+            return results
+
+        today = get_today(ZoneInfo("Asia/Shanghai"))
+
+        for gid in os.listdir(groups_dir):
+            gid_path = os.path.join(groups_dir, gid)
+            if not os.path.isdir(gid_path):
+                continue
+            ownership_file = os.path.join(gid_path, "ownership.json")
+            if not os.path.isfile(ownership_file):
+                continue
+
+            try:
+                ownership_store = OwnershipStore(self._paths, gid)
+                ownerships = ownership_store.load_all()
+                profile_store = self._profile_store(gid)
+                profiles = profile_store.load_all()
+                activity_store = self._activity_store(gid)
+                activity_logs = activity_store.load_all()
+
+                for o in ownerships:
+                    if not o.is_working:
+                        continue
+                    ts = now_ts()
+                    if ts < o.work_ends_at:
+                        continue
+
+                    profile = profiles.get(o.uid)
+                    nick = profile.nick if profile else ""
+
+                    result = self._resolve_due_work_inner(
+                        gid, o.uid, nick, today, ownerships, profiles, activity_logs
+                    )
+                    if result and result.ok:
+                        ownership_store.save_all(ownerships)
+                        profile_store.save_all(profiles)
+                        activity_store.save_all(activity_logs)
+                        results.append((o.work_umo, result))
+                        break
+            except Exception:
+                logger.error(f"结算群 {gid} 的到期打工失败")
+                continue
+
+        return results

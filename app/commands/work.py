@@ -108,7 +108,7 @@ async def handle_work(
         )
 
     # 启动新的打工
-    result = await work_service.start_work(gid, uid, nick, mode, ctx.today(), selected_wid)
+    result = await work_service.start_work(gid, uid, nick, mode, ctx.today(), selected_wid, umo=event.unified_msg_origin)
 
     if not result.ok:
         if result.reason == "disabled":
