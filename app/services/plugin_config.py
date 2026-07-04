@@ -227,7 +227,7 @@ class PluginConfig:
         }
     )
 
-    # ---------- Phase 4 第二波（暂未启用） ----------
+    # ---------- Phase 4 第二波（打工合约 / 搭档 / 亲密度衰减） ----------
     work_contract_cost: int = 50
     work_contract_reward_multiplier: float = 1.5
     work_partner_bonus: float = 0.20

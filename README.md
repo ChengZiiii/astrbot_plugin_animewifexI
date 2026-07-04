@@ -20,7 +20,7 @@
 - 排行榜：日榜/周榜/总榜/收集榜
 - 亲密度：摸头/送礼/每日递增/等级展示
 - 复仇机制：被牛后 24 小时内复仇，成功率翻倍
-- 完整单元测试覆盖（338 用例，脱离 AstrBot 框架本地可跑）
+- 完整单元测试覆盖（362 用例，脱离 AstrBot 框架本地可跑）
 - 命令级 QA 脚本已补齐全量与深度验证（`data_qa/`）
 - 路线图驱动开发：Phase 1 ✅ / Phase 2 ✅ / Phase 3 ✅ / Phase 4 ✅（详见 [ROADMAP.md](ROADMAP.md)）
 
@@ -65,7 +65,7 @@ https://cdn.jsdmirror.com/gh/monbed/wife@main/
 # 安装测试依赖
 pip install pytest pytest-asyncio tzdata
 
-# 跑全部测试（338 用例）
+# 跑全部测试（362 用例）
 PYTHONPATH=. python -m pytest
 ```
 

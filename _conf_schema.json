@@ -520,33 +520,33 @@
         }
     },
     "work_contract_cost": {
-        "description": "打工合约费用（暂未启用）",
+        "description": "打工合约费用",
         "type": "int",
         "default": 50,
-        "hint": "Phase 4 第二波: 预订打工合约消耗的老婆币"
+        "hint": "「老婆 打工 合约」预约消耗的老婆币；下次同模式打工完成时收益按倍率提升"
     },
     "work_contract_reward_multiplier": {
-        "description": "打工合约收益倍率（暂未启用）",
+        "description": "打工合约收益倍率",
         "type": "float",
         "default": 1.5,
-        "hint": "Phase 4 第二波: 有合约时打工收益的倍率"
+        "hint": "持有打工合约时，对应模式打工结算收益的倍率（1.5 = +50%）"
     },
     "work_partner_bonus": {
-        "description": "打工搭档加成（暂未启用）",
+        "description": "打工搭档收益加成",
         "type": "float",
         "default": 0.20,
-        "hint": "Phase 4 第二波: 有搭档时打工收益额外增加的比例"
+        "hint": "「老婆 打工 搭档 @用户」绑定后，双方都成功打工时结算收益额外增加的比例（0.20 = +20%）"
     },
     "work_partner_daily_limit": {
-        "description": "打工搭档每日次数（暂未启用）",
+        "description": "打工搭档每日绑定次数",
         "type": "int",
         "default": 1,
-        "hint": "Phase 4 第二波: 每日可与搭档一起打工的次数"
+        "hint": "每日可绑定打工搭档的次数；超出后当日再次绑定会被拒绝"
     },
     "intimacy_decay": {
-        "description": "亲密度自然衰减（暂未启用）",
+        "description": "亲密度自然衰减",
         "type": "int",
         "default": 0,
-        "hint": "Phase 4 第二波: 每日亲密度自然衰减值，0 表示不衰减"
+        "hint": "每日亲密度自然衰减值，0 表示不衰减；仅对亲密度 ≥ 60 的老婆生效，衰减下限为 50"
     }
 }

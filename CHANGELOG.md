@@ -1,5 +1,19 @@
 # 更新日志
 
+## v3.0.0-phase4.1
+
+**Phase 4 第二波功能对齐与配置补全**
+
+- 修复：`_conf_schema.json` 中 `work_contract_cost` / `work_contract_reward_multiplier` / `work_partner_bonus` / `work_partner_daily_limit` / `intimacy_decay` 5 项配置不再标记 "（暂未启用）"，hint 改为说明对应命令与默认行为
+- 修复：`work_partner_daily_limit` 之前只是声明却不驱动逻辑；现在真正控制每日打工搭档绑定次数（默认 1，跨天自动重置计数）
+- 新增：`UserProfile.work_partner_count` / `work_partner_count_date` 字段，配合搭档每日次数限制
+- 命令：`老婆 打工 搭档` 失败原因细化（`daily_limit` / `target_has_partner`）
+- 文档：`老婆 帮助` / README / CHANGELOG / 配置 hint 全部对齐当前实现
+- 验证：打工合约 / 打工搭档 / 保险卡 / 亲密度衰减命令路径 QA 15/15 通过
+- 单元测试：362 passed（原 359 + 3 新增 partner_daily_limit 回归）
+
+---
+
 ## v3.0.0-phase4
 
 **Phase 4 玩法升级已完成**
