@@ -133,6 +133,45 @@ class TestGiftWife:
         assert result.reason == "not_enough_coins"
 
 
+class TestSelectedWifeIntimacy:
+    @pytest.mark.asyncio
+    async def test_pet_can_target_non_primary_wife(self, intimacy_service, tmp_paths):
+        gid, today = "g1", "2026-07-04"
+        store = OwnershipStore(tmp_paths, gid)
+        ownerships = [
+            Ownership(wid="w_primary", uid="u1", acquired_at=0, acquired_via="draw", is_primary=True),
+            Ownership(wid="w_secondary", uid="u1", acquired_at=0, acquired_via="draw", is_primary=False),
+        ]
+        store.save_all(ownerships)
+        primary = ownerships[0]
+        secondary = ownerships[1]
+
+        result = await intimacy_service.pet_wife(gid, "u1", "Alice", today, secondary.wid)
+        assert result.ok is True
+        assert result.wid == secondary.wid
+
+        ownerships = store.load_all()
+        updated_primary = next(o for o in ownerships if o.wid == primary.wid)
+        updated_secondary = next(o for o in ownerships if o.wid == secondary.wid)
+        assert updated_primary.intimacy == 0
+        assert updated_secondary.intimacy == 3
+
+    @pytest.mark.asyncio
+    async def test_date_rejects_unowned_wife(self, intimacy_service, tmp_paths):
+        gid, today = "g1", "2026-07-04"
+        store = OwnershipStore(tmp_paths, gid)
+        ownerships = [
+            Ownership(wid="w_self", uid="u1", acquired_at=0, acquired_via="draw", is_primary=True),
+            Ownership(wid="w_other", uid="u2", acquired_at=0, acquired_via="draw", is_primary=True),
+        ]
+        store.save_all(ownerships)
+        other = ownerships[1]
+
+        result = await intimacy_service.date_wife(gid, "u1", "Alice", today, other.wid)
+        assert result.ok is False
+        assert result.reason == "wife_not_found"
+
+
 class TestDailyIntimacyIncrement:
     @pytest.mark.asyncio
     async def test_daily_increment(self, intimacy_service, tmp_paths):
@@ -190,6 +229,41 @@ class TestDailyIntimacyIncrement:
         for o in ownerships:
             if o.uid == "u1" and o.is_primary:
                 assert o.intimacy == 100  # Capped at max
+                break
+
+    @pytest.mark.asyncio
+    async def test_daily_increment_applies_decay_for_high_intimacy(self, tmp_paths, locks, mock_wife_service):
+        service = OwnershipService(
+            paths=tmp_paths,
+            config=PluginConfig(
+                intimacy_per_day=10,
+                intimacy_max=100,
+                intimacy_decay=2,
+                initial_coins=100,
+            ),
+            locks=locks,
+            wife_service=mock_wife_service,
+        )
+        gid = "g1"
+        today = "2026-07-04"
+        await service.draw_or_get_primary(gid, "u1", "Alice", today)
+
+        store = OwnershipStore(tmp_paths, gid)
+        ownerships = store.load_all()
+        for o in ownerships:
+            if o.uid == "u1" and o.is_primary:
+                o.intimacy = 70
+                o.intimacy_updated_date = ""
+        store.save_all(ownerships)
+
+        updated = await service.daily_intimacy_increment_for_group(gid, today)
+        assert updated == 1
+
+        ownerships = store.load_all()
+        for o in ownerships:
+            if o.uid == "u1" and o.is_primary:
+                assert o.intimacy == 68
+                assert o.intimacy_updated_date == today
                 break
 
 
