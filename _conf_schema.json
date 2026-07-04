@@ -186,7 +186,6 @@
         "hint": "各道具的老婆币价格（Phase 3 接入）",
         "type": "object",
         "items": {
-            "reroll_ticket": {"type": "int", "default": 30},
             "lock_item": {"type": "int", "default": 50},
             "revive_potion": {"type": "int", "default": 80},
             "protection_charm": {"type": "int", "default": 60},

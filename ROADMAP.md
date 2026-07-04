@@ -164,7 +164,7 @@ astrbot_plugin_animewifexI/
     "total_pk_win": 3,
     "total_pk_lost": 1,
     "collection": ["w_a1b2c3", "w_x9y8z7"],
-    "inventory": {"lock_item": 2, "reroll_ticket": 1, "revive_potion": 0, "protection_charm": 0},
+    "inventory": {"lock_item": 2, "revive_potion": 0, "protection_charm": 0},
     "last_ntr_by": {"uid": "67890", "ts": 1719900000},
     "pity_counter": 0
   }
@@ -199,8 +199,7 @@ astrbot_plugin_animewifexI/
 **旧扁平命令**（语义保留，底层重写）：
 
 ```
-抽老婆 / 查老婆 [@x] / 牛老婆 [@x] / 换老婆
-重置牛 [@x] / 重置换 [@x]
+抽老婆 / 查老婆 [@x] / 牛老婆 [@x]
 交换老婆 [@x] / 同意交换 [@x] / 拒绝交换 [@x] / 查看交换请求
 切换ntr开关状态 / 老婆帮助
 ```
@@ -248,12 +247,8 @@ ntr_possibility: float = 0.20  # NTR 成功概率（已有）
 revenge_window_hours: int = 24
 revenge_success_multiplier: float = 2.0
 
-# ========== 换/交换/重置 ==========
-change_max_per_day: int = 3    # 已有
+# ========== 交换 ==========
 swap_max_per_day: int = 2      # 已有
-reset_max_uses_per_day: int = 3
-reset_success_rate: float = 0.30
-reset_mute_duration: int = 300
 
 # ========== 亲密度 ==========
 intimacy_per_day: int = 10
@@ -279,14 +274,12 @@ pity_min_rarity: str = "SR"
 # ========== 经济 ==========
 initial_coins: int = 50
 daily_checkin_coins: int = 20
-reroll_cost: int = 30          # 换老婆消耗（可被 reroll_ticket 抵扣）
 pk_winner_reward: int = 15
 quest_complete_coins: int = 10
 daily_free_draws: int = 1      # 每日免费抽卡次数（0=无限制）
 
 # ========== 商城价格 ==========
 shop_prices:
-  reroll_ticket: 30
   lock_item: 50
   revive_potion: 80
   protection_charm: 60
@@ -397,7 +390,6 @@ shop_prices:
 - [x] 接入：NTR（try_ntr 锁前 check + 锁内 update）/ 抽老婆（draw_or_get_primary）/ 交换（create_swap_request）
 - [x] 配置驱动：ntr_cooldown=60s, draw_cooldown=0s, swap_cooldown=30s, pk_cooldown=120s
 - [x] 命令层处理 cooldown reason，显示剩余冷却秒数
-- [x] 换老婆不加冷却（已有 change_max_per_day 限制）
 - [x] 测试：test_cooldown_service.py 15 用例全绿
 
 #### P2.2 活动日志 + 排行榜
@@ -451,7 +443,7 @@ shop_prices:
 
 | 项 | 原计划 | 实际 | 原因 |
 |---|---|---|---|
-| 冷却接入动作 | NTR/抽/换/交换/PK 5 个 | NTR/抽/交换 3 个 | 换老婆已有 `change_max_per_day` 限制，加冷却不合理；PK 留 Phase 3 |
+| 冷却接入动作 | NTR/抽/交换/PK 4 个 | NTR/抽/交换 3 个 | PK 留 Phase 3 |
 | 排行榜默认 | 未明确 | 默认周榜 + 全维度播报 | 用户反馈：无参数时应展示所有维度，默认周榜更实用 |
 | 复仇清空 last_ntr_by | 用 None | 用空 dict `{}` | UserProfile 序列化会把 None 转为 {}，None 无法持久化 |
 
@@ -485,7 +477,7 @@ shop_prices:
   - ✅ 每日任务模板：抽老婆 1 次 / 参与 PK 1 次 / 被牛 0 次 / 牛成功 1 次
   - ✅ 完成自动发币，写入 `quest_completed_date`
 - ✅ 商城 `services/shop_service.py`：
-  - ✅ 道具清单：`reroll_ticket` / `lock_item` / `revive_potion` / `protection_charm` / `draw_ticket_single` / `draw_ticket_ten`
+  - ✅ 道具清单：`lock_item` / `revive_potion` / `protection_charm` / `draw_ticket_single` / `draw_ticket_ten`
   - ✅ `老婆 商城` 列表，`老婆 购买 <道具>` 交易
 - ✅ 背包：`profile.inventory` dict
 - ✅ 抽卡券系统：
@@ -493,7 +485,6 @@ shop_prices:
   - ✅ 单抽券：30 币/张
   - ✅ 十连券：270 币/张（9折优惠）
   - ✅ `老婆 十连` 命令：消耗十连券抽 10 次
-- ⬜ 换老婆消耗 `reroll_cost` 币（有 `reroll_ticket` 时抵扣）— 待接入
 - ✅ 测试：余额一致性、并发扣款、越权防护、持有上限
 
 ### 5.2 老婆稀有度 + 抽卡系统 ✅
@@ -652,8 +643,8 @@ shop_prices:
 |---|---|---|---|
 | main.py 职责 | 仅插件注册，业务全在 `app/plugin.py` | `WifePlugin` 类 + `@filter` 方法必须在 main.py | AstrBot reload 时 `app.plugin` 已缓存于 `sys.modules` 不重跑，装饰器不重新注册 handler |
 | `app/plugin.py` | WifePlugin 主类 | 改为 `WifePluginCore` 基类（无装饰器，便于单测），main.py 子类化 | 同上 |
-| 命令文件 | draw/view/ntr/swap/shop/pk/marry/leaderboard/collection/profile/quest/admin | 实际拆为 draw/view/ntr/change/swap/admin + grouped_stubs（分组命令占位） | 换老婆逻辑独立成 change.py；部分分组子命令先以占位形式保留 |
-| Store 数量 | 6 个（WivesMaster/Ownership/Profile/Activity/Swap/NtrStatus） | 7 个，新增 `DailyCountStore` | ActivityStore 是滚动 N 天榜单数据源；每日次数限制（NTR/换/交换/重置）需要独立的今日计数，语义不同 |
+| 命令文件 | draw/view/ntr/swap/shop/pk/marry/leaderboard/collection/profile/quest/admin | 实际拆为 draw/view/ntr/swap/admin + grouped_stubs（分组命令占位） | 部分分组子命令先以占位形式保留 |
+| Store 数量 | 6 个（WivesMaster/Ownership/Profile/Activity/Swap/NtrStatus） | 7 个，新增 `DailyCountStore` | ActivityStore 是滚动 N 天榜单数据源；每日次数限制（NTR/交换）需要独立的今日计数，语义不同 |
 | 配置容器 | 直接读 dict | `services/plugin_config.py` dataclass + `from_dict` + `default_for_test()` | 类型安全 + 测试便利 |
 | 测试文件 | 7 个（按玩法分：ntr/leaderboard/economy/intimacy/pk/storage/registry） | 7 个（按层分：storage/models/utils/ownership_service/migrations/commands_registry/plugin） | 首轮重构先完成地基层，玩法测试在后续阶段逐步补齐 |
 | `_conf_schema.json` object 配置 | `{"type": "object", "default": {...}}` | `{"type": "object", "items": {子项 schema}}` | AstrBot `_parse_schema` 对 object 类型要求 `items` 嵌套，顶层 `default` 不识别（KeyError: 'items'） |

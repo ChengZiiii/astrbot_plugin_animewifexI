@@ -115,7 +115,7 @@ class TestUserProfile:
             streak_days=7,
             total_draws=30,
             collection=["w_a", "w_b"],
-            inventory={"reroll_ticket": 2, "lock_item": 1},
+            inventory={"lock_item": 2, "revive_potion": 1},
             last_ntr_by={"uid": "u2", "ts": 1719900000},
             pity_counter=3,
         )
@@ -124,7 +124,7 @@ class TestUserProfile:
         assert loaded.uid == "u1"
         assert loaded.coins == 100
         assert loaded.collection == ["w_a", "w_b"]
-        assert loaded.inventory["reroll_ticket"] == 2
+        assert loaded.inventory["lock_item"] == 2
         assert loaded.last_ntr_by == {"uid": "u2", "ts": 1719900000}
         assert loaded.pity_counter == 3
 
@@ -132,10 +132,10 @@ class TestUserProfile:
         """从旧档案加载时，新增的道具 key 自动补默认值 0"""
         p = UserProfile.from_dict({
             "uid": "u1",
-            "inventory": {"reroll_ticket": 2},  # 仅有部分 key
+            "inventory": {"lock_item": 2},  # 仅有部分 key
         })
-        assert p.inventory["reroll_ticket"] == 2
-        assert p.inventory["lock_item"] == 0
+        assert p.inventory["lock_item"] == 2
+        assert p.inventory["revive_potion"] == 0
 
     def test_new_with_defaults(self):
         p = UserProfile.new_with_defaults("u1", nick="x", coins=100)
