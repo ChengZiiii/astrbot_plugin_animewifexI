@@ -33,17 +33,25 @@ async def handle_checkin(
     nick = get_sender_nick(event)
 
     economy = EconomyService(ctx.paths, ctx.config, ctx.locks)
-    reward = await economy.daily_checkin(gid, uid, nick)
+    result = await economy.daily_checkin(gid, uid, nick)
 
-    if reward is None:
+    if result is None:
         yield event.plain_result("今天已经签到过了，明天再来吧~")
         return
 
+    reward, bonus_coins, bonus_item = result
     balance = economy.balance(gid, uid)
-    yield event.plain_result(
-        f"签到成功！获得 {reward} 老婆币\n"
-        f"当前余额：{balance} 币"
-    )
+
+    lines = [f"签到成功！获得 {reward} 老婆币"]
+    if bonus_coins > 0:
+        lines[0] += f"（含额外奖励 {bonus_coins} 币）"
+    if bonus_item:
+        from ..services.shop_service import ITEM_NAMES
+        item_name = ITEM_NAMES.get(bonus_item, bonus_item)
+        lines.append(f"🎁 额外获得：{item_name}")
+    lines.append(f"当前余额：{balance} 币")
+
+    yield event.plain_result("\n".join(lines))
 
 
 async def handle_quest(

@@ -64,6 +64,13 @@ async def handle_panel(
     gid = get_group_id(event)
     if not gid:
         return
+
+    # T33: 打工懒结算
+    from .work import try_settle_work
+    settle_msg = await try_settle_work(event, ctx)
+    if settle_msg:
+        yield event.plain_result(settle_msg)
+
     uid = get_sender_uid(event)
     nick = get_sender_nick(event)
 
@@ -86,6 +93,14 @@ async def handle_panel(
     # 基础信息
     lines.append(f"💰 老婆币：{profile.coins}")
     lines.append(f"📅 连续天数：{profile.streak_days}")
+
+    # T24: 作恶值展示
+    from datetime import datetime
+    current_month = datetime.now().strftime("%Y-%m")
+    if profile.evil_points_month != current_month:
+        profile.evil_points = 0
+    if profile.evil_points > 0:
+        lines.append(f"😈 作恶值：{profile.evil_points}")
     lines.append("")
 
     # 统计

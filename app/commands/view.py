@@ -29,6 +29,12 @@ async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
     if not gid:
         return
 
+    # T33: 打工懒结算
+    from .work import try_settle_work
+    settle_msg = await try_settle_work(event, ctx)
+    if settle_msg:
+        yield event.plain_result(settle_msg)
+
     sender_uid = get_sender_uid(event)
     at_target = parse_at_target(event)
     target_uid, page = _resolve_target_and_page(event, ctx)
@@ -65,6 +71,17 @@ async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
     # 格式化当前页老婆
     lines = [f"【{owner} 的老婆】共 {total} 位（第 {page}/{total_pages} 页）\n"]
     imgs = []
+
+    # T24: 作恶值展示
+    from ..utils.time import now_ts
+    from datetime import datetime
+    current_month = datetime.now().strftime("%Y-%m")
+    if target_profile.evil_points_month != current_month:
+        target_profile.evil_points = 0
+    if target_profile.evil_points >= 5:
+        lines.append("⚠️ 极度危险用户！被牛时补偿翻倍！\n")
+    elif target_profile.evil_points >= 3:
+        lines.append("⚠️ 危险用户！请注意防范！\n")
     seen_imgs = set()
 
     from ..services.ownership_service import OwnershipService
