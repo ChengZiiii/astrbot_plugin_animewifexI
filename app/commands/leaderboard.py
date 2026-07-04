@@ -156,8 +156,6 @@ async def handle_leaderboard(
     lines = [f"🏆 {rank_label}速览"]
 
     for dim in all_dims:
-        if not dim.has_data:
-            continue
         lines.append(_format_compact_dim(dim, uid))
 
     lines.append("")
@@ -300,6 +298,9 @@ def _build_extra_line(entry: LeaderboardEntry, dim_label: str) -> str:
 
 def _format_compact_dim(dim: DimensionResult, uid: Optional[str]) -> str:
     """紧凑模式：一行展示 Top 3"""
+    if not dim.has_data or not dim.entries:
+        return f"{dim.label}  暂无数据"
+
     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
     top3 = dim.entries[:3]
     items = "  ".join(
@@ -311,7 +312,7 @@ def _format_compact_dim(dim: DimensionResult, uid: Optional[str]) -> str:
     if uid and any(e.uid == uid for e in top3):
         my_marker = " 👈"
 
-    return f"{dim.label} {items}{my_marker}"
+    return f"{dim.label}  {items}{my_marker}"
 
 
 def _get_compact_comment(dim_label: str, top: LeaderboardEntry) -> str:
