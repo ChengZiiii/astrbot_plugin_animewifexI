@@ -28,7 +28,7 @@ class Ownership:
     intimacy: int = 0
     intimacy_updated_date: str = ""    # YYYY-MM-DD，零点 +亲密度时用于幂等
     is_locked: bool = False
-    lock_expires_at: Optional[int] = None  # 求婚锁定为 None（永久），限期锁定为时间戳
+    lock_expires_at: Optional[int] = None  # None 预留给永久锁定；限期锁定使用时间戳
     is_primary: bool = False           # 是否为用户主老婆（旧命令的"今日老婆"）
     # Phase 4: 打工状态
     is_working: bool = False           # 是否正在打工

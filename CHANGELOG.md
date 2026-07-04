@@ -90,8 +90,8 @@
     `NtrStatus` / `DailyCount`）、`migrations` 旧数据归档
   - `services/`：`PluginConfig` 配置容器、`WifeService` 图片获取、
     `OwnershipService` 业务编排（抽/牛/换/交换/重置完整流程）、
-    `CooldownService` 内存冷却表 + Phase 2/3 占位（`IntimacyService` 等）
-  - `commands/`：`CommandRegistry` 双轨注册表 + 12 个旧命令处理器 + Phase 2/3 占位
+    `CooldownService` 内存冷却表 + 后续玩法扩展位（`IntimacyService` 等）
+  - `commands/`：`CommandRegistry` 双轨注册表 + 12 个旧命令处理器 + 分组命令扩展位
   - `api/`：`events` AstrMessageEvent 解析 + `messaging` 消息链构建
   - `utils/`：`time` / `image` / `random_utils` / `format` 纯函数
 - **配置 schema 扩展**至 40+ 项（`_conf_schema.json`），全部带默认值与 Phase 归属 hint：
@@ -103,7 +103,7 @@
   - 稀有度（权重 / 保底）
   - 经济（初始币 / 签到 / 换老婆消耗 / PK 奖励 / 任务奖励）
   - 商城（5 种道具价格）
-  - 求婚（消耗币）
+  - 锁定/婚配相关扩展位（后续演进为锁定卡等配置）
 - **本地测试工具集**：139 个 pytest 用例（不依赖 AstrBot 框架），覆盖
   storage / models / utils / ownership_service / migrations / registry / plugin 装配。
   命令 `PYTHONPATH=. python -m pytest` 可在源码目录直接跑通。
