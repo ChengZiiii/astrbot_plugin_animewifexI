@@ -83,6 +83,10 @@ async def handle_ntr(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGener
         yield event.plain_result("对方今天还没有老婆可牛哦~")
         return
 
+    if result.reason == "target_locked":
+        yield event.plain_result("对方的老婆正在锁定中，这次牛不走哦~")
+        return
+
     # 概率失败
     if not result.success:
         yield event.plain_result(
