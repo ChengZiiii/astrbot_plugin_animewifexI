@@ -297,7 +297,7 @@ def _build_extra_line(entry: LeaderboardEntry, dim_label: str) -> str:
 
 
 def _format_compact_dim(dim: DimensionResult, uid: Optional[str]) -> str:
-    """紧凑模式：一行展示 Top 3"""
+    """紧凑模式：一行展示 Top 3 + 点评"""
     if not dim.has_data or not dim.entries:
         return f"{dim.label}  暂无数据"
 
@@ -312,7 +312,9 @@ def _format_compact_dim(dim: DimensionResult, uid: Optional[str]) -> str:
     if uid and any(e.uid == uid for e in top3):
         my_marker = " 👈"
 
-    return f"{dim.label}  {items}{my_marker}"
+    comment = _get_compact_comment(dim.label, dim.entries[0])
+
+    return f"{dim.label}  {items}{my_marker}\n    {comment}" if comment else f"{dim.label}  {items}{my_marker}"
 
 
 def _get_compact_comment(dim_label: str, top: LeaderboardEntry) -> str:
