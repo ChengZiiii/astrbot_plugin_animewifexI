@@ -241,6 +241,10 @@ async def handle_admin_reset_group(
         shutil.rmtree(group_dir)
         os.makedirs(group_dir, exist_ok=True)
 
+    # Also clear in-memory and global per-group state that lives outside group_dir.
+    ctx.cooldown_service._table.pop(gid, None)
+    ctx.ownership_service.set_ntr_enabled(gid, True)
+
     yield event.plain_result(f"{nick}，本群老婆数据已全部重置！所有人的老婆、币、背包、亲密度均已清空。")
 
 
@@ -280,6 +284,8 @@ async def handle_admin_reset_draw(
     ownerships = ownership_store.load_all()
     OwnershipStore.clear_primary_for_user(ownerships, tid)
     ownership_store.save_all(ownerships)
+
+    ctx.cooldown_service.reset(gid, tid, "draw")
 
     target_nick = target.nick or tid
     yield event.plain_result(f"已重置 {target_nick} 的今日抽卡状态，可以重新抽老婆了~")
