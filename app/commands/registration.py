@@ -54,7 +54,7 @@ from .grouped_stubs import (
     NOT_IMPLEMENTED_SUBCOMMANDS,
     make_not_implemented_handler,
 )
-from .intimacy import handle_gift, handle_pet
+from .intimacy import handle_chat, handle_date, handle_gift, handle_pet
 from .leaderboard import handle_leaderboard
 from .marry import handle_lock, handle_unlock
 from .ntr import handle_ntr
@@ -69,6 +69,7 @@ from .swap import (
     handle_swap_view,
 )
 from .view import handle_view
+from .work import handle_work
 
 __all__ = ["build_registry"]
 
@@ -100,6 +101,8 @@ def build_registry() -> CommandRegistry:
     registry.register_grouped("复仇", handle_revenge)
     registry.register_grouped("摸头", handle_pet)
     registry.register_grouped("送礼", handle_gift)
+    registry.register_grouped("对话", handle_chat)
+    registry.register_grouped("约会", handle_date)
 
     # ---------- Phase 3 分组命令 ----------
     registry.register_grouped("签到", handle_checkin)
@@ -116,6 +119,9 @@ def build_registry() -> CommandRegistry:
     registry.register_grouped("PK", handle_pk)
     registry.register_grouped("图鉴", handle_collection)
     registry.register_grouped("面板", handle_panel)
+
+    # ---------- Phase 4: 打工/对话/约会 ----------
+    registry.register_grouped("打工", handle_work)
 
     # ---------- 管理员命令 ----------
     registry.register_grouped("重置本群", handle_admin_reset_group)
