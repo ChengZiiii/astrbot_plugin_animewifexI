@@ -54,9 +54,37 @@ async def handle_switch_ntr(
 # ==================== 帮助 ====================
 
 
-def build_help_text() -> str:
+def build_help_text(config=None) -> str:
     """生成当前实现功能对应的帮助文本。"""
-    return """
+    # 从配置读取打工时长（秒 → 小时）
+    work_modes = {}
+    if config and hasattr(config, 'work_modes'):
+        work_modes = config.work_modes or {}
+    default_modes = {
+        "normal": {"duration": 7200, "ntr_multiplier": 1.5, "pk_penalty": 0.10},
+        "overtime": {"duration": 14400, "ntr_multiplier": 2.0, "pk_penalty": 0.20},
+        "expedition": {"duration": 28800, "ntr_multiplier": 2.5, "pk_penalty": 0.30},
+    }
+    for key, default in default_modes.items():
+        if key not in work_modes:
+            work_modes[key] = default
+
+    def _fmt_hours(seconds):
+        h = seconds // 3600
+        m = (seconds % 3600) // 60
+        return f"{h}h" if m == 0 else f"{h}h{m}m"
+
+    normal_h = _fmt_hours(work_modes["normal"]["duration"])
+    overtime_h = _fmt_hours(work_modes["overtime"]["duration"])
+    expedition_h = _fmt_hours(work_modes["expedition"]["duration"])
+    normal_ntr = work_modes["normal"]["ntr_multiplier"]
+    overtime_ntr = work_modes["overtime"]["ntr_multiplier"]
+    expedition_ntr = work_modes["expedition"]["ntr_multiplier"]
+    normal_pk = int(work_modes["normal"]["pk_penalty"] * 100)
+    overtime_pk = int(work_modes["overtime"]["pk_penalty"] * 100)
+    expedition_pk = int(work_modes["expedition"]["pk_penalty"] * 100)
+
+    return f"""
 【基础命令】
 • 老婆帮助 / 老婆 帮助 - 查看完整帮助
 • 抽老婆 - 抽取新老婆（每日1次免费，之后消耗单抽券）
@@ -110,16 +138,16 @@ def build_help_text() -> str:
 • 老婆 测试亲密度 @某人 <数值> - 设置目标亲密度
 • 老婆 测试币 @某人 <数值> - 设置目标老婆币余额
 
-━━━ 游戏规则 ━━━
+━━━━ 游戏规则 ━━━━
 
 【老婆属性】每个老婆抽到时会随机生成 ⚔️攻击 🛡️防御 ❤️血量 三项属性，决定 PK 战力。
   战力 = 攻击 + 防御 + 血量×0.5，再受亲密度/元素/打工状态加成。属性可在「查老婆」和「面板」中查看。
 
 【打工风险】老婆出去打工时，被牛（NTR）的概率大幅提升！
-  • 普通打工（2h）：被牛概率 ×1.5
-  • 加班打工（4h）：被牛概率 ×2.0
-  • 远征打工（8h）：被牛概率 ×2.5
-  打工中的老婆 PK 战力也会扣减（普通-10%，加班-20%，远征-30%）。
+  • 普通打工（{normal_h}）：被牛概率 ×{normal_ntr}
+  • 加班打工（{overtime_h}）：被牛概率 ×{overtime_ntr}
+  • 远征打工（{expedition_h}）：被牛概率 ×{expedition_ntr}
+  打工中的老婆 PK 战力也会扣减（普通-{normal_pk}%，加班-{overtime_pk}%，远征-{expedition_pk}%）。
   可以同时派多位老婆打工（默认上限3位），也可以用「老婆 打工 中断」召回（但奖励没收）。
 
 【保护机制】
@@ -144,7 +172,7 @@ def build_help_text() -> str:
 
 async def handle_help(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGenerator:
     """``老婆帮助``"""
-    yield event.plain_result(build_help_text())
+    yield event.plain_result(build_help_text(ctx.config))
 
 
 # ==================== 管理员重置 ====================
