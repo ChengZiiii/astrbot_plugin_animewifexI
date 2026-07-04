@@ -182,6 +182,44 @@ class TestStartWork:
         assert logs[uid].days.get(today, {}).get(Action.WORK_START, 0) == 1
 
     @pytest.mark.asyncio
+    async def test_reserve_work_contract_success(self, work_service, tmp_paths):
+        gid, uid, nick = "g1", "u1", "Alice"
+        profile_store = ProfileStore(tmp_paths, gid)
+        profiles = profile_store.load_all()
+        from app.models.profile import UserProfile
+
+        profiles[uid] = UserProfile(uid=uid, nick=nick, coins=100)
+        profile_store.save_all(profiles)
+
+        result = await work_service.reserve_work_contract(gid, uid, nick, "normal")
+        assert result.ok is True
+        assert result.mode == "normal"
+
+        profiles = profile_store.load_all()
+        assert profiles[uid].work_contract_reserved == "normal"
+        assert profiles[uid].coins == 50
+
+    @pytest.mark.asyncio
+    async def test_set_work_partner_success(self, work_service, tmp_paths):
+        gid, today = "g1", "2026-07-04"
+        ownership_store = OwnershipStore(tmp_paths, gid)
+        ownerships = ownership_store.load_all()
+        from app.models.ownership import Ownership
+        from app.models.enums import AcquireVia
+
+        ownerships.append(Ownership(wid="w1", uid="u1", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True))
+        ownerships.append(Ownership(wid="w2", uid="u2", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True))
+        ownership_store.save_all(ownerships)
+
+        result = await work_service.set_work_partner(gid, "u1", "u2", "Alice", "Bob", today)
+        assert result.ok is True
+
+        profile_store = ProfileStore(tmp_paths, gid)
+        profiles = profile_store.load_all()
+        assert profiles["u1"].work_partner_uid == "u2"
+        assert profiles["u2"].work_partner_uid == "u1"
+
+    @pytest.mark.asyncio
     async def test_start_work_can_target_non_primary_wife(self, work_service, tmp_paths):
         """可指定非主老婆去打工"""
         gid, uid, nick, today = "g1", "u1", "Alice", "2026-07-04"
@@ -336,6 +374,47 @@ class TestResolveDueWork:
         assert logs[uid].days.get(today, {}).get(Action.WORK_COMPLETE, 0) == 1
 
     @pytest.mark.asyncio
+    async def test_resolve_due_work_applies_contract_and_partner_bonus(self, work_service, tmp_paths):
+        gid, today = "g1", "2026-07-04"
+        from app.models.ownership import Ownership
+        from app.models.enums import AcquireVia
+        from app.models.profile import UserProfile
+        from app.utils.time import now_ts
+        from app.models.activity import ActivityLog
+
+        ownership_store = OwnershipStore(tmp_paths, gid)
+        ownerships = ownership_store.load_all()
+        ts = now_ts()
+        ownerships.append(Ownership(wid="w1", uid="u1", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True, is_working=True, work_mode="normal", work_started_at=ts - 15000, work_ends_at=ts - 1))
+        ownerships.append(Ownership(wid="w2", uid="u2", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True))
+        ownership_store.save_all(ownerships)
+
+        profile_store = ProfileStore(tmp_paths, gid)
+        profiles = profile_store.load_all()
+        profiles["u1"] = UserProfile(uid="u1", nick="Alice", coins=50, work_contract_reserved="normal", work_partner_uid="u2", work_partner_date=today)
+        profiles["u2"] = UserProfile(uid="u2", nick="Bob", coins=50, work_partner_uid="u1", work_partner_date=today)
+        profile_store.save_all(profiles)
+
+        activity_store = ActivityStore(tmp_paths, gid)
+        logs = activity_store.load_all()
+        log1 = logs.get("u1") or ActivityLog()
+        log2 = logs.get("u2") or ActivityLog()
+        log1.increment(today, Action.WORK_START, 1)
+        log2.increment(today, Action.WORK_START, 1)
+        logs["u1"] = log1
+        logs["u2"] = log2
+        activity_store.save_all(logs)
+
+        result = await work_service.resolve_due_work(gid, "u1", "Alice", today)
+        assert result is not None
+        assert result.ok is True
+        assert result.contract_used is True
+        assert result.partner_bonus_used is True
+
+        profiles = profile_store.load_all()
+        assert profiles["u1"].work_contract_reserved == ""
+
+    @pytest.mark.asyncio
     async def test_resolve_due_work_for_non_primary_worker(self, work_service, tmp_paths):
         """非主老婆打工到期也能结算"""
         gid, uid, nick, today = "g1", "u1", "Alice", "2026-07-04"
@@ -386,11 +465,16 @@ class TestResolveStolenWork:
         ))
         ownership_store.save_all(ownerships)
 
-        result = await work_service.resolve_stolen_work(gid, uid, today)
+        result = await work_service.resolve_stolen_work(gid, uid, today, attacker_uid="u2", attacker_nick="Bob")
         assert result is not None
         assert result.ok
         assert result.reward >= 0
         assert result.reason == "stolen"
+
+        profile_store = ProfileStore(tmp_paths, gid)
+        profiles = profile_store.load_all()
+        assert profiles["u2"].coins == result.coin_balance
+        assert profiles["u2"].coins == 50 + result.reward
 
         # 验证打工状态已清空
         ownerships = ownership_store.load_all()
@@ -403,3 +487,41 @@ class TestResolveStolenWork:
         """未打工不结算"""
         result = await work_service.resolve_stolen_work("g1", "u1", "2026-07-04")
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_resolve_stolen_work_voids_contract_and_uses_insurance(self, work_service, tmp_paths):
+        gid, uid, today = "g1", "u1", "2026-07-04"
+        from app.models.ownership import Ownership
+        from app.models.enums import AcquireVia
+        from app.models.profile import UserProfile
+        from app.utils.time import now_ts
+
+        ownership_store = OwnershipStore(tmp_paths, gid)
+        ownerships = ownership_store.load_all()
+        ts = now_ts()
+        ownerships.append(Ownership(wid="w_test", uid=uid, acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True, is_working=True, work_mode="normal", work_started_at=ts - 7200, work_ends_at=ts + 7200))
+        ownership_store.save_all(ownerships)
+
+        profile_store = ProfileStore(tmp_paths, gid)
+        profiles = profile_store.load_all()
+        profiles[uid] = UserProfile(uid=uid, nick="Alice", coins=50, work_contract_reserved="normal", inventory={
+            "reroll_ticket": 0,
+            "lock_item": 0,
+            "revive_potion": 0,
+            "protection_charm": 0,
+            "draw_ticket_single": 0,
+            "draw_ticket_ten": 0,
+            "revenge_token": 0,
+            "insurance_card": 1,
+        })
+        profile_store.save_all(profiles)
+
+        result = await work_service.resolve_stolen_work(gid, uid, today, attacker_uid="u2", attacker_nick="Bob")
+        assert result is not None
+        assert result.contract_voided is True
+        assert result.insurance_used is True
+
+        profiles = profile_store.load_all()
+        assert profiles[uid].work_contract_reserved == ""
+        assert profiles[uid].inventory["insurance_card"] == 0
+        assert profiles[uid].inventory["revenge_token"] == 1

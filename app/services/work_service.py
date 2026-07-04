@@ -1,4 +1,4 @@
-"""打工服务：启动、结算、截胡。"""
+"""打工服务：启动、结算、截胡与第二波扩展。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,13 @@ from ..storage.stores import (
 from ..utils.time import now_ts
 from .plugin_config import PluginConfig
 
-__all__ = ["WorkService", "WorkStartResult", "WorkSettleResult"]
+__all__ = [
+    "WorkService",
+    "WorkStartResult",
+    "WorkSettleResult",
+    "WorkContractResult",
+    "WorkPartnerResult",
+]
 
 
 @dataclass
@@ -44,6 +50,31 @@ class WorkSettleResult:
     coin_balance: int = 0
     wid: str = ""
     mode: str = ""
+    contract_used: bool = False
+    contract_voided: bool = False
+    partner_bonus_used: bool = False
+    partner_broken: bool = False
+    insurance_used: bool = False
+    insurance_bonus_coins: int = 0
+
+
+@dataclass
+class WorkContractResult:
+    """打工合约预约结果。"""
+
+    ok: bool
+    reason: str = ""
+    mode: str = ""
+    coin_balance: int = 0
+
+
+@dataclass
+class WorkPartnerResult:
+    """打工搭档绑定结果。"""
+
+    ok: bool
+    reason: str = ""
+    partner_uid: str = ""
 
 
 class WorkService:
@@ -67,6 +98,142 @@ class WorkService:
 
     def _activity_store(self, gid: str) -> ActivityStore:
         return ActivityStore(self._paths, gid)
+
+    @staticmethod
+    def _clear_partner_link(profiles: dict[str, object], uid: str) -> bool:
+        """清空用户及其互绑对象的搭档关系。"""
+        profile = profiles.get(uid)
+        if profile is None or not getattr(profile, "work_partner_uid", ""):
+            return False
+
+        partner_uid = str(getattr(profile, "work_partner_uid", "") or "")
+        partner_profile = profiles.get(partner_uid)
+        profile.work_partner_uid = ""
+        profile.work_partner_date = ""
+
+        if partner_profile is not None and getattr(partner_profile, "work_partner_uid", "") == uid:
+            partner_profile.work_partner_uid = ""
+            partner_profile.work_partner_date = ""
+        return True
+
+    @staticmethod
+    def _has_partner_bonus(
+        profiles: dict[str, object],
+        activity_logs: dict[str, object],
+        uid: str,
+        today: str,
+    ) -> bool:
+        """判断用户今日是否满足打工搭档收益加成。"""
+        profile = profiles.get(uid)
+        if profile is None:
+            return False
+
+        partner_uid = str(getattr(profile, "work_partner_uid", "") or "")
+        partner_date = str(getattr(profile, "work_partner_date", "") or "")
+        if not partner_uid or partner_date != today:
+            return False
+
+        partner_profile = profiles.get(partner_uid)
+        if partner_profile is None:
+            return False
+        if getattr(partner_profile, "work_partner_uid", "") != uid:
+            return False
+        if getattr(partner_profile, "work_partner_date", "") != today:
+            return False
+
+        log = activity_logs.get(uid)
+        partner_log = activity_logs.get(partner_uid)
+        if not hasattr(log, "days") or not hasattr(partner_log, "days"):
+            return False
+
+        my_starts = int(log.days.get(today, {}).get(Action.WORK_START, 0) or 0)
+        partner_starts = int(partner_log.days.get(today, {}).get(Action.WORK_START, 0) or 0)
+        return my_starts > 0 and partner_starts > 0
+
+    async def reserve_work_contract(
+        self,
+        gid: str,
+        uid: str,
+        nick: str,
+        mode: str,
+    ) -> WorkContractResult:
+        """预约下一次指定模式的打工合约。"""
+        mode_config = self._config.work_modes.get(mode)
+        if not mode_config:
+            return WorkContractResult(ok=False, reason="invalid_mode")
+
+        async with self._locks.acquire(gid):
+            profile_store = self._profile_store(gid)
+            profiles = profile_store.load_all()
+            profile = ProfileStore.get_or_create(profiles, uid, nick, self._config.initial_coins)
+
+            if profile.work_contract_reserved:
+                return WorkContractResult(
+                    ok=False,
+                    reason="already_reserved",
+                    mode=profile.work_contract_reserved,
+                    coin_balance=profile.coins,
+                )
+
+            if profile.coins < self._config.work_contract_cost:
+                return WorkContractResult(
+                    ok=False,
+                    reason="not_enough_coins",
+                    coin_balance=profile.coins,
+                )
+
+            profile.coins -= self._config.work_contract_cost
+            profile.work_contract_reserved = mode
+            profile_store.save_all(profiles)
+            return WorkContractResult(
+                ok=True,
+                mode=mode,
+                coin_balance=profile.coins,
+            )
+
+    async def set_work_partner(
+        self,
+        gid: str,
+        uid: str,
+        partner_uid: str,
+        nick: str,
+        partner_nick: str,
+        today: str,
+    ) -> WorkPartnerResult:
+        """绑定今日打工搭档。"""
+        if not partner_uid or partner_uid == uid:
+            return WorkPartnerResult(ok=False, reason="invalid_target")
+
+        async with self._locks.acquire(gid):
+            ownership_store = self._ownership_store(gid)
+            ownerships = ownership_store.load_all()
+            if not any(o.uid == uid for o in ownerships):
+                return WorkPartnerResult(ok=False, reason="no_wife")
+            if not any(o.uid == partner_uid for o in ownerships):
+                return WorkPartnerResult(ok=False, reason="target_no_wife")
+
+            profile_store = self._profile_store(gid)
+            profiles = profile_store.load_all()
+            profile = ProfileStore.get_or_create(profiles, uid, nick, self._config.initial_coins)
+            partner_profile = ProfileStore.get_or_create(
+                profiles, partner_uid, partner_nick, self._config.initial_coins
+            )
+
+            if profile.work_partner_uid == partner_uid and profile.work_partner_date == today:
+                return WorkPartnerResult(ok=False, reason="already_partner", partner_uid=partner_uid)
+
+            if (
+                profile.work_partner_date == today
+                or partner_profile.work_partner_date == today
+            ):
+                return WorkPartnerResult(ok=False, reason="daily_limit")
+
+            profile.work_partner_uid = partner_uid
+            profile.work_partner_date = today
+            partner_profile.work_partner_uid = uid
+            partner_profile.work_partner_date = today
+            profile_store.save_all(profiles)
+            return WorkPartnerResult(ok=True, partner_uid=partner_uid)
 
     async def start_work(
         self,
@@ -171,83 +338,92 @@ class WorkService:
 
             ownerships = ownership_store.load_all()
             profiles = profile_store.load_all()
-
-            working = next((o for o in ownerships if o.uid == uid and o.is_working), None)
-            if working is None:
-                return None
-
-            # 检查是否到期
-            ts = now_ts()
-            if ts < working.work_ends_at:
-                return None
-
-            mode = working.work_mode
-            mode_config = self._config.work_modes.get(mode, {})
-
-            # 计算收益（含连续打工加成）
-            profile = ProfileStore.get_or_create(
-                profiles, uid, nick,
-                coins=self._config.initial_coins,
-            )
-
-            # 检查是否跨天（连续打工判断）
-            from ..utils.time import is_next_day
-            if profile.work_last_settle_date and is_next_day(profile.work_last_settle_date, today):
-                profile.work_streak += 1
-            elif profile.work_last_settle_date != today:
-                profile.work_streak = 1
-
-            # 收益计算
-            import random
-            reward_min = mode_config.get("reward_min", 20)
-            reward_max = mode_config.get("reward_max", 40)
-            base_reward = random.randint(reward_min, reward_max)
-            streak_bonus = 1.0 + (profile.work_streak - 1) * self._config.work_streak_bonus
-            reward = int(base_reward * streak_bonus)
-
-            # 亲密度增加
-            intimacy_gain = mode_config.get("intimacy_gain", 5)
-            working.intimacy = min(
-                self._config.intimacy_max,
-                working.intimacy + intimacy_gain,
-            )
-
-            # 清空打工状态
-            working.is_working = False
-            working.work_mode = ""
-            working.work_started_at = 0
-            working.work_ends_at = 0
-
-            # 更新档案
-            profile.coins += reward
-            profile.work_last_settle_date = today
-
-            # 周收入统计（按周 key 重置）
-            from ..utils.time import get_week_key
-            from datetime import timezone
-            current_week = get_week_key(timezone.utc)
-            if profile.work_week_key != current_week:
-                profile.work_week_key = current_week
-                profile.work_week_income = 0
-            profile.work_week_income += reward
-
-            # 写行为日志
             activity_logs = activity_store.load_all()
-            ActivityStore.log(activity_logs, uid, today, Action.WORK_COMPLETE, 1)
-            activity_store.save_all(activity_logs)
+
+            result = self._resolve_due_work_inner(
+                gid, uid, nick, today, ownerships, profiles, activity_logs
+            )
+            if result is None:
+                return None
 
             ownership_store.save_all(ownerships)
             profile_store.save_all(profiles)
+            activity_store.save_all(activity_logs)
+            return result
 
-            return WorkSettleResult(
-                ok=True,
-                reward=reward,
-                intimacy_gain=intimacy_gain,
-                streak=profile.work_streak,
-                coin_balance=profile.coins,
-                wid=working.wid,
-                mode=mode,
-            )
+    def _resolve_due_work_inner(
+        self,
+        gid: str,
+        uid: str,
+        nick: str,
+        today: str,
+        ownerships: list[object],
+        profiles: dict[str, object],
+        activity_logs: dict[str, object],
+    ) -> Optional[WorkSettleResult]:
+        working = next((o for o in ownerships if o.uid == uid and o.is_working), None)
+        if working is None:
+            return None
+
+        ts = now_ts()
+        if ts < working.work_ends_at:
+            return None
+
+        mode = working.work_mode
+        mode_config = self._config.work_modes.get(mode, {})
+        profile = ProfileStore.get_or_create(profiles, uid, nick, coins=self._config.initial_coins)
+
+        from ..utils.time import get_week_key, is_next_day
+        from datetime import timezone
+
+        if profile.work_last_settle_date and is_next_day(profile.work_last_settle_date, today):
+            profile.work_streak += 1
+        elif profile.work_last_settle_date != today:
+            profile.work_streak = 1
+
+        import random
+
+        reward_min = mode_config.get("reward_min", 20)
+        reward_max = mode_config.get("reward_max", 40)
+        base_reward = random.randint(reward_min, reward_max)
+        streak_bonus = 1.0 + (profile.work_streak - 1) * self._config.work_streak_bonus
+        reward = int(base_reward * streak_bonus)
+
+        contract_used = profile.work_contract_reserved == mode
+        if contract_used:
+            reward = int(reward * self._config.work_contract_reward_multiplier)
+            profile.work_contract_reserved = ""
+
+        partner_bonus_used = self._has_partner_bonus(profiles, activity_logs, uid, today)
+        if partner_bonus_used:
+            reward = int(reward * (1 + self._config.work_partner_bonus))
+
+        intimacy_gain = mode_config.get("intimacy_gain", 5)
+        working.intimacy = min(self._config.intimacy_max, working.intimacy + intimacy_gain)
+        self.clear_work_state(working)
+
+        profile.coins += reward
+        profile.work_last_settle_date = today
+
+        current_week = get_week_key(timezone.utc)
+        if profile.work_week_key != current_week:
+            profile.work_week_key = current_week
+            profile.work_week_income = 0
+        profile.work_week_income += reward
+
+        ActivityStore.log(activity_logs, uid, today, Action.WORK_COMPLETE, 1)
+
+        return WorkSettleResult(
+            ok=True,
+            reward=reward,
+            intimacy_gain=intimacy_gain,
+            streak=profile.work_streak,
+            coin_balance=profile.coins,
+            wid=working.wid,
+            mode=mode,
+            contract_used=contract_used,
+            partner_bonus_used=partner_bonus_used,
+        )
 
     async def resolve_stolen_work(
         self,
@@ -255,6 +431,8 @@ class WorkService:
         uid: str,
         today: str,
         selected_wid: str | None = None,
+        attacker_uid: str | None = None,
+        attacker_nick: str = "",
     ) -> Optional[WorkSettleResult]:
         """打工中被牛时的结算
 
@@ -267,50 +445,103 @@ class WorkService:
 
             ownerships = ownership_store.load_all()
             profiles = profile_store.load_all()
-
-            working = ownership_store.find_by_wid(selected_wid, ownerships) if selected_wid else next(
-                (o for o in ownerships if o.uid == uid and o.is_working),
-                None,
-            )
-            if working is None or working.uid != uid or not working.is_working:
-                return None
-
-            mode = working.work_mode
-            mode_config = self._config.work_modes.get(mode, {})
-
-            # 计算已打工时间的比例收益
-            ts = now_ts()
-            elapsed = ts - working.work_started_at
-            total = working.work_ends_at - working.work_started_at
-            progress = min(1.0, elapsed / total) if total > 0 else 0
-
-            reward_min = mode_config.get("reward_min", 20)
-            reward_max = mode_config.get("reward_max", 40)
-            import random
-            base_reward = random.randint(reward_min, reward_max)
-            reward = int(base_reward * progress)
-
-            # 清空打工状态
-            working.is_working = False
-            working.work_mode = ""
-            working.work_started_at = 0
-            working.work_ends_at = 0
-
-            # 写行为日志
             activity_logs = activity_store.load_all()
-            ActivityStore.log(activity_logs, uid, today, Action.WORK_STOLEN, 1)
-            activity_store.save_all(activity_logs)
+
+            result = self._resolve_stolen_work_inner(
+                gid,
+                uid,
+                today,
+                ownerships,
+                profiles,
+                activity_logs,
+                selected_wid=selected_wid,
+                attacker_uid=attacker_uid,
+                attacker_nick=attacker_nick,
+            )
+            if result is None:
+                return None
 
             ownership_store.save_all(ownerships)
             profile_store.save_all(profiles)
+            activity_store.save_all(activity_logs)
+            return result
 
-            return WorkSettleResult(
-                ok=True,
-                reward=reward,
-                reason="stolen",
-                wid=working.wid,
-                mode=mode,
+    def _resolve_stolen_work_inner(
+        self,
+        gid: str,
+        uid: str,
+        today: str,
+        ownerships: list[object],
+        profiles: dict[str, object],
+        activity_logs: dict[str, object],
+        selected_wid: str | None = None,
+        attacker_uid: str | None = None,
+        attacker_nick: str = "",
+    ) -> Optional[WorkSettleResult]:
+        ownership_store = self._ownership_store(gid)
+        working = ownership_store.find_by_wid(selected_wid, ownerships) if selected_wid else next(
+            (o for o in ownerships if o.uid == uid and o.is_working),
+            None,
+        )
+        if working is None or working.uid != uid or not working.is_working:
+            return None
+
+        mode = working.work_mode
+        mode_config = self._config.work_modes.get(mode, {})
+        victim_profile = ProfileStore.get_or_create(profiles, uid, "", self._config.initial_coins)
+
+        ts = now_ts()
+        elapsed = ts - working.work_started_at
+        total = working.work_ends_at - working.work_started_at
+        progress = min(1.0, elapsed / total) if total > 0 else 0
+
+        import random
+
+        reward_min = mode_config.get("reward_min", 20)
+        reward_max = mode_config.get("reward_max", 40)
+        base_reward = random.randint(reward_min, reward_max)
+        reward = int(base_reward * progress)
+
+        contract_voided = victim_profile.work_contract_reserved == mode
+        if contract_voided:
+            victim_profile.work_contract_reserved = ""
+
+        partner_broken = self._clear_partner_link(profiles, uid)
+
+        recipient_balance = 0
+        if attacker_uid:
+            attacker_profile = ProfileStore.get_or_create(
+                profiles, attacker_uid, attacker_nick, self._config.initial_coins
             )
+            attacker_profile.coins += reward
+            recipient_balance = attacker_profile.coins
+
+        insurance_used = False
+        insurance_bonus_coins = 0
+        if victim_profile.inventory.get("insurance_card", 0) > 0:
+            victim_profile.inventory["insurance_card"] = max(
+                0, victim_profile.inventory.get("insurance_card", 0) - 1
+            )
+            insurance_bonus_coins = 20
+            victim_profile.coins += insurance_bonus_coins
+            victim_profile.inventory["revenge_token"] = victim_profile.inventory.get("revenge_token", 0) + 1
+            insurance_used = True
+
+        self.clear_work_state(working)
+        ActivityStore.log(activity_logs, uid, today, Action.WORK_STOLEN, 1)
+
+        return WorkSettleResult(
+            ok=True,
+            reward=reward,
+            reason="stolen",
+            wid=working.wid,
+            mode=mode,
+            coin_balance=recipient_balance,
+            contract_voided=contract_voided,
+            partner_broken=partner_broken,
+            insurance_used=insurance_used,
+            insurance_bonus_coins=insurance_bonus_coins,
+        )
 
     def clear_work_state(self, ownership) -> None:
         """清空打工状态（独立封装）"""
