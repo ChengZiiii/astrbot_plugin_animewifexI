@@ -71,6 +71,8 @@ class UserProfile:
     work_contract_reserved: str = ""      # 打工合约预留模式
     work_partner_uid: str = ""            # 打工搭档 uid
     work_partner_date: str = ""           # 打工搭档日期（YYYY-MM-DD）
+    work_partner_count: int = 0           # 当日已绑定打工搭档次数
+    work_partner_count_date: str = ""     # 打工搭档计数日期（YYYY-MM-DD）
     weekly_box_claimed_week: str = ""     # 已领取周宝箱的周 key（YYYY-WW）
     first_ntr_lost_done: bool = False     # 是否已首次被牛
     newbie_guide_claimed: List[str] = field(default_factory=list)  # 已领取的新手引导任务
@@ -115,6 +117,8 @@ class UserProfile:
             "work_contract_reserved": self.work_contract_reserved,
             "work_partner_uid": self.work_partner_uid,
             "work_partner_date": self.work_partner_date,
+            "work_partner_count": self.work_partner_count,
+            "work_partner_count_date": self.work_partner_count_date,
             "weekly_box_claimed_week": self.weekly_box_claimed_week,
             "first_ntr_lost_done": self.first_ntr_lost_done,
             "newbie_guide_claimed": list(self.newbie_guide_claimed),
@@ -184,6 +188,8 @@ class UserProfile:
             work_contract_reserved=str(data.get("work_contract_reserved", "") or ""),
             work_partner_uid=str(data.get("work_partner_uid", "") or ""),
             work_partner_date=str(data.get("work_partner_date", "") or ""),
+            work_partner_count=int(data.get("work_partner_count", 0) or 0),
+            work_partner_count_date=str(data.get("work_partner_count_date", "") or ""),
             weekly_box_claimed_week=str(data.get("weekly_box_claimed_week", "") or ""),
             first_ntr_lost_done=bool(data.get("first_ntr_lost_done", False)),
             newbie_guide_claimed=[str(x) for x in newbie_guide_raw],

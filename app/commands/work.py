@@ -226,7 +226,11 @@ async def _handle_work_partner(
         elif result.reason == "already_partner":
             yield event.plain_result(f"{nick}，你们今天已经是打工搭档啦~")
         elif result.reason == "daily_limit":
-            yield event.plain_result(f"{nick}，你或对方今天已经绑定过打工搭档了~")
+            yield event.plain_result(
+                f"{nick}，今天绑定打工搭档的次数（{ctx.config.work_partner_daily_limit} 次/天）已经用完啦~"
+            )
+        elif result.reason == "target_has_partner":
+            yield event.plain_result(f"{nick}，对方今天已经和别人绑定打工搭档了~")
         else:
             yield event.plain_result(f"{nick}，绑定打工搭档失败了~")
         return

@@ -218,6 +218,119 @@ class TestStartWork:
         profiles = profile_store.load_all()
         assert profiles["u1"].work_partner_uid == "u2"
         assert profiles["u2"].work_partner_uid == "u1"
+        assert profiles["u1"].work_partner_count == 1
+
+    @pytest.mark.asyncio
+    async def test_set_work_partner_daily_limit_default_one(self, work_service, tmp_paths):
+        """默认 work_partner_daily_limit=1：当天再次绑定不同搭档会被拒。"""
+        gid, today = "g1", "2026-07-04"
+        ownership_store = OwnershipStore(tmp_paths, gid)
+        ownerships = ownership_store.load_all()
+        from app.models.ownership import Ownership
+        from app.models.enums import AcquireVia
+
+        ownerships.append(Ownership(wid="w1", uid="u1", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True))
+        ownerships.append(Ownership(wid="w2", uid="u2", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True))
+        ownerships.append(Ownership(wid="w3", uid="u3", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True))
+        ownership_store.save_all(ownerships)
+
+        first = await work_service.set_work_partner(gid, "u1", "u2", "Alice", "Bob", today)
+        assert first.ok is True
+
+        second = await work_service.set_work_partner(gid, "u1", "u3", "Alice", "Carol", today)
+        assert second.ok is False
+        assert second.reason == "daily_limit"
+
+    @pytest.mark.asyncio
+    async def test_set_work_partner_daily_limit_allows_multiple(self, tmp_paths, locks):
+        """work_partner_daily_limit=2：允许当天绑定 2 次不同搭档。"""
+        from app.services.plugin_config import PluginConfig
+        config = PluginConfig(
+            daily_free_draws=0,
+            newbie_ntr_protection_days=0,
+            work_enabled=True,
+            work_partner_daily_limit=2,
+        )
+        service = WorkService(paths=tmp_paths, config=config, locks=locks)
+
+        gid, today = "g1", "2026-07-04"
+        ownership_store = OwnershipStore(tmp_paths, gid)
+        ownerships = ownership_store.load_all()
+        from app.models.ownership import Ownership
+        from app.models.enums import AcquireVia
+
+        ownerships.append(Ownership(wid="w1", uid="u1", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True))
+        ownerships.append(Ownership(wid="w2", uid="u2", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True))
+        ownerships.append(Ownership(wid="w3", uid="u3", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True))
+        ownership_store.save_all(ownerships)
+
+        first = await service.set_work_partner(gid, "u1", "u2", "Alice", "Bob", today)
+        assert first.ok is True
+
+        second = await service.set_work_partner(gid, "u1", "u3", "Alice", "Carol", today)
+        assert second.ok is True
+
+        profile_store = ProfileStore(tmp_paths, gid)
+        profiles = profile_store.load_all()
+        assert profiles["u1"].work_partner_count == 2
+        assert profiles["u1"].work_partner_uid == "u3"
+        # u2 的旧链接应被清空
+        assert profiles["u2"].work_partner_uid == ""
+        assert profiles["u3"].work_partner_uid == "u1"
+
+        # 第 3 次应该被拒
+        from app.models.ownership import Ownership as _O
+        from app.models.enums import AcquireVia as _A
+        ownerships = ownership_store.load_all()
+        ownerships.append(_O(wid="w4", uid="u4", acquired_at=0, acquired_via=_A.DRAW, is_primary=True))
+        ownership_store.save_all(ownerships)
+        third = await service.set_work_partner(gid, "u1", "u4", "Alice", "Dave", today)
+        assert third.ok is False
+        assert third.reason == "daily_limit"
+
+    @pytest.mark.asyncio
+    async def test_set_work_partner_resets_count_on_new_day(self, tmp_paths, locks):
+        """跨天后 work_partner_count 自动重置。"""
+        from app.services.plugin_config import PluginConfig
+        config = PluginConfig(
+            daily_free_draws=0,
+            newbie_ntr_protection_days=0,
+            work_enabled=True,
+            work_partner_daily_limit=1,
+        )
+        service = WorkService(paths=tmp_paths, config=config, locks=locks)
+
+        gid, today, tomorrow = "g1", "2026-07-04", "2026-07-05"
+        ownership_store = OwnershipStore(tmp_paths, gid)
+        ownerships = ownership_store.load_all()
+        from app.models.ownership import Ownership
+        from app.models.enums import AcquireVia
+
+        ownerships.append(Ownership(wid="w1", uid="u1", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True))
+        ownerships.append(Ownership(wid="w2", uid="u2", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True))
+        ownership_store.save_all(ownerships)
+
+        first = await service.set_work_partner(gid, "u1", "u2", "Alice", "Bob", today)
+        assert first.ok is True
+
+        # 同一天再绑别人应失败
+        from app.models.ownership import Ownership as _O
+        from app.models.enums import AcquireVia as _A
+        ownerships = ownership_store.load_all()
+        ownerships.append(_O(wid="w3", uid="u3", acquired_at=0, acquired_via=_A.DRAW, is_primary=True))
+        ownership_store.save_all(ownerships)
+        same_day = await service.set_work_partner(gid, "u1", "u3", "Alice", "Carol", today)
+        assert same_day.ok is False
+        assert same_day.reason == "daily_limit"
+
+        # 跨天后可重新绑定
+        next_day = await service.set_work_partner(gid, "u1", "u3", "Alice", "Carol", tomorrow)
+        assert next_day.ok is True
+
+        profile_store = ProfileStore(tmp_paths, gid)
+        profiles = profile_store.load_all()
+        assert profiles["u1"].work_partner_count == 1
+        assert profiles["u1"].work_partner_count_date == tomorrow
 
     @pytest.mark.asyncio
     async def test_start_work_can_target_non_primary_wife(self, work_service, tmp_paths):

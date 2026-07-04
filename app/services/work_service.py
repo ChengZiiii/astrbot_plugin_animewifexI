@@ -200,7 +200,11 @@ class WorkService:
         partner_nick: str,
         today: str,
     ) -> WorkPartnerResult:
-        """绑定今日打工搭档。"""
+        """绑定今日打工搭档。
+
+        每日可绑定次数受 ``work_partner_daily_limit`` 控制；每次新绑定会先解除
+        发起人当天原有的搭档关系（互绑对象也会被清空），再建立新互绑。
+        """
         if not partner_uid or partner_uid == uid:
             return WorkPartnerResult(ok=False, reason="invalid_target")
 
@@ -222,14 +226,37 @@ class WorkService:
             if profile.work_partner_uid == partner_uid and profile.work_partner_date == today:
                 return WorkPartnerResult(ok=False, reason="already_partner", partner_uid=partner_uid)
 
-            if (
-                profile.work_partner_date == today
-                or partner_profile.work_partner_date == today
-            ):
+            # 跨天重置发起人计数
+            if profile.work_partner_count_date != today:
+                profile.work_partner_count_date = today
+                profile.work_partner_count = 0
+
+            limit = max(1, self._config.work_partner_daily_limit)
+            if profile.work_partner_count >= limit:
                 return WorkPartnerResult(ok=False, reason="daily_limit")
+
+            # 解除发起人当天原有搭档关系（双向清理）
+            if profile.work_partner_date == today and profile.work_partner_uid:
+                old_partner_uid = str(profile.work_partner_uid)
+                old_partner_profile = profiles.get(old_partner_uid)
+                if (
+                    old_partner_profile is not None
+                    and getattr(old_partner_profile, "work_partner_uid", "") == uid
+                ):
+                    old_partner_profile.work_partner_uid = ""
+                    old_partner_profile.work_partner_date = ""
+
+            # 对方若已与别人互绑则拒绝
+            if (
+                partner_profile.work_partner_date == today
+                and partner_profile.work_partner_uid
+                and partner_profile.work_partner_uid != uid
+            ):
+                return WorkPartnerResult(ok=False, reason="target_has_partner")
 
             profile.work_partner_uid = partner_uid
             profile.work_partner_date = today
+            profile.work_partner_count += 1
             partner_profile.work_partner_uid = uid
             partner_profile.work_partner_date = today
             profile_store.save_all(profiles)
