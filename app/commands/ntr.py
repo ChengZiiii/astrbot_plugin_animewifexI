@@ -99,6 +99,15 @@ async def handle_ntr(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGener
     yield event.plain_result(
         f"{nick}，牛老婆成功！老婆已归你所有，恭喜恭喜~"
     )
+    if result.stolen_work_reward > 0:
+        extra_lines = [f"💼 顺手截胡了对方打工收益：+{result.stolen_work_reward} 币"]
+        if result.contract_voided:
+            extra_lines.append("📜 对方的打工合约已作废")
+        if result.partner_broken:
+            extra_lines.append("🤝 对方的打工搭档关系已解除")
+        if result.insurance_used:
+            extra_lines.append(f"🛡️ 对方触发保险卡，额外获得 {result.insurance_bonus_coins} 币与 1 个复仇令牌")
+        yield event.plain_result("\n".join(extra_lines))
     if cancel_msg:
         yield event.plain_result(cancel_msg)
     yield event.chain_result(
