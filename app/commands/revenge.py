@@ -28,6 +28,13 @@ async def handle_revenge(
     gid = get_group_id(event)
     if not gid:
         return
+
+    # T33: 打工懒结算
+    from .work import try_settle_work
+    settle_msg = await try_settle_work(event, ctx)
+    if settle_msg:
+        yield event.plain_result(settle_msg)
+
     uid = get_sender_uid(event)
     nick = get_sender_nick(event)
 
