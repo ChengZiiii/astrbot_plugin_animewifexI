@@ -33,6 +33,15 @@ _NTR_SUCCESS_FLAVOR = [
     "前任：我老婆呢？！你：什么老婆？没见过。",
 ]
 
+_NTR_FAIL_FLAVOR = [
+    "你偷偷摸摸地靠近，但被发现了！{name}：你想干嘛？！",
+    "你刚伸出手，就被{name}的主人抓了个正着……",
+    "{name}瞪了你一眼：你谁啊？不认识，走开。",
+    "你的牛老婆行动失败了，还被嘲讽了一番……",
+    "差一点就成功了！{name}的守护者突然出现！",
+    "你：嗨~ {name}：滚。好吧，失败了。",
+]
+
 
 async def handle_ntr(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGenerator:
     """``牛老婆 [@用户 | 昵称] [编号]``：尝试抢夺他人的老婆
@@ -101,8 +110,12 @@ async def handle_ntr(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGener
 
     # 概率失败
     if not result.success:
+        wives_meta = WivesMasterStore(ctx.paths).load_all()
+        w = wives_meta.get(result.wid)
+        target_name = (w.chara or w.img or "该老婆") if w else "该老婆"
+        taunt = random.choice(_NTR_FAIL_FLAVOR).format(name=target_name)
         yield event.plain_result(
-            f"{nick}，很遗憾，牛失败了！你今天还可以再试{result.remaining_attempts}次~"
+            f"{nick}，很遗憾，牛失败了！你今天还可以再试{result.remaining_attempts}次~\n\n📢 {taunt}"
         )
         return
 
