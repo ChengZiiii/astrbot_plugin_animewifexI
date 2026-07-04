@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from typing import AsyncGenerator
 
 from astrbot.api.event import AstrMessageEvent
@@ -13,12 +14,22 @@ from ..api.events import (
     parse_at_target,
 )
 from ..api.messaging import build_text_image_chain
+from ..storage.stores import WivesMasterStore
 from ..utils.image import build_wife_intro_text
 from .context import CommandContext
 from .ntr import cancel_related_swap_requests
 from .view import find_uid_by_owner_nick
 
 __all__ = ["handle_revenge"]
+
+_REVENGE_SUCCESS_FLAVOR = [
+    "你以为跑得掉吗？！{name}回来了！",
+    "{name}：我回来了！还是你最好~",
+    "正义虽迟但到！{name}被抢回来了！",
+    "{name}：终于回来了……那个人好可怕……",
+    "你冲过去一把把{name}拽了回来！前任目瞪口呆……",
+    "{name}：呜呜呜你终于来救我了！",
+]
 
 
 async def handle_revenge(
@@ -111,8 +122,12 @@ async def handle_revenge(
 
     # 复仇成功
     cancel_msg = cancel_related_swap_requests(ctx, gid, [uid, tid], ctx.today())
+    wives_meta = WivesMasterStore(ctx.paths).load_all()
+    w = wives_meta.get(result.wid)
+    wife_name = (w.chara or w.img or "该老婆") if w else "该老婆"
+    taunt = random.choice(_REVENGE_SUCCESS_FLAVOR).format(name=wife_name)
     yield event.plain_result(
-        f"{nick}，复仇成功！你的老婆回来了，正义虽迟但到~"
+        f"{nick}，复仇成功！你的老婆回来了，正义虽迟但到~\n\n📢 {taunt}"
     )
     if cancel_msg:
         yield event.plain_result(cancel_msg)
