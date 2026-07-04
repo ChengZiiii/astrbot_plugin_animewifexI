@@ -125,9 +125,13 @@ class TestDailyCheckin:
     """每日签到测试。"""
 
     def test_checkin_first_time(self, economy):
-        """首次签到成功，返回奖励金额。"""
-        reward = economy.daily_checkin_sync("g1", "u1", nick="Alice")
+        """首次签到成功，返回 (reward, bonus, item)。"""
+        result = economy.daily_checkin_sync("g1", "u1", nick="Alice")
+        assert result is not None
+        reward, bonus_coins, bonus_item = result
         assert reward == 20  # daily_checkin_coins 默认值
+        assert bonus_coins == 0  # 首日无额外奖励
+        assert bonus_item is None
 
     def test_checkin_twice_same_day(self, economy):
         """同一天签到两次，第二次返回 None。"""
@@ -144,6 +148,15 @@ class TestDailyCheckin:
         economy.daily_checkin_sync("g1", "u1", nick="Alice")
         assert economy.balance("g1", "u1") == 20
 
+    def test_checkin_streak_days(self, economy):
+        """签到后 streak_days 正确更新。"""
+        from app.storage.stores import ProfileStore
+        economy.daily_checkin_sync("g1", "u1", nick="Alice")
+        store = ProfileStore(economy._paths, "g1")
+        profiles = store.load_all()
+        profile = profiles["u1"]
+        assert profile.streak_days == 1
+
     def test_has_checked_in_false_initially(self, economy):
         """未签到时返回 False。"""
         assert economy.has_checked_in("g1", "u1") is False
@@ -156,6 +169,19 @@ class TestDailyCheckin:
     def test_has_checked_in_nonexistent_user(self, economy):
         """不存在的用户返回 False。"""
         assert economy.has_checked_in("g1", "u1") is False
+
+    def test_checkin_writes_activity_log(self, economy):
+        """签到写入活动日志 Action.CHECKIN。"""
+        from app.models.enums import Action
+        from app.storage.stores import ActivityStore
+        economy.daily_checkin_sync("g1", "u1", nick="Alice")
+        activity_store = ActivityStore(economy._paths, "g1")
+        logs = activity_store.load_all()
+        log = logs.get("u1")
+        assert log is not None
+        today = economy._today()
+        day_data = log.get_day(today)
+        assert day_data.get(Action.CHECKIN, 0) >= 1
 
 
 class TestProfileManipulation:

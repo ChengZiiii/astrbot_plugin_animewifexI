@@ -14,7 +14,7 @@ from app.models.enums import Rarity, RARITY_ORDER
 from app.models.profile import UserProfile
 from app.models.wife import WifeMeta
 from app.services.plugin_config import PluginConfig
-from app.services.rarity_service import DUPLICATE_COIN_COMPENSATION, DrawResult, RarityService
+from app.services.rarity_service import DrawResult, RarityService
 from app.storage.paths import Paths
 from app.storage.stores import WivesMasterStore
 from app.utils.image import wife_wid_for_img
@@ -127,14 +127,15 @@ class TestDraw:
         assert result.rarity in RARITY_ORDER
 
     def test_draw_duplicate_wife(self, rarity_service, tmp_paths):
-        """抽到重复角色，获得补偿。"""
+        """抽到重复角色，按配置获得补偿。"""
         wid = wife_wid_for_img("test.jpg")
         _seed_wife(tmp_paths, wid, "test.jpg", "N")
         profile = UserProfile(uid="u1", pity_counter=0)
         result = rarity_service.draw("test.jpg", profile, [wid])
 
         assert result.is_new is False
-        assert result.duplicate_coins == DUPLICATE_COIN_COMPENSATION
+        expected_coins = rarity_service._config.duplicate_coin_compensation.get(result.rarity, 10)
+        assert result.duplicate_coins == expected_coins
 
     def test_draw_resets_pity_on_sr(self, rarity_service, tmp_paths):
         """抽到 SR+ 时保底计数器归零。"""

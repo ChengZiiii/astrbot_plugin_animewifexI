@@ -65,6 +65,51 @@ class TestTime:
         assert isinstance(ts, int)
         assert ts > 1700000000  # 2023+
 
+    def test_get_week_key_format(self):
+        tz = ZoneInfo("Asia/Shanghai")
+        key = time_utils.get_week_key(tz)
+        # 格式 YYYY-Wxx
+        parts = key.split("-W")
+        assert len(parts) == 2
+        assert parts[0].isdigit()
+        assert parts[1].isdigit()
+        assert 1 <= int(parts[1]) <= 53
+
+    def test_get_month_key_format(self):
+        tz = ZoneInfo("Asia/Shanghai")
+        key = time_utils.get_month_key(tz)
+        # 格式 YYYY-MM
+        parts = key.split("-")
+        assert len(parts) == 2
+        assert parts[0].isdigit()
+        assert parts[1].isdigit()
+        assert 1 <= int(parts[1]) <= 12
+
+    def test_is_next_day_true(self):
+        assert time_utils.is_next_day("2026-01-01", "2026-01-02") is True
+
+    def test_is_next_day_false_same_day(self):
+        assert time_utils.is_next_day("2026-01-01", "2026-01-01") is False
+
+    def test_is_next_day_false_gap(self):
+        assert time_utils.is_next_day("2026-01-01", "2026-01-03") is False
+
+    def test_is_next_day_false_empty(self):
+        assert time_utils.is_next_day("", "2026-01-01") is False
+
+    def test_is_next_day_false_invalid(self):
+        assert time_utils.is_next_day("invalid", "2026-01-01") is False
+
+    def test_hours_between_basic(self):
+        ts1 = 1000000
+        ts2 = 1003600  # +1h
+        assert time_utils.hours_between(ts1, ts2) == pytest.approx(1.0)
+
+    def test_hours_between_reversed(self):
+        ts1 = 1003600
+        ts2 = 1000000
+        assert time_utils.hours_between(ts1, ts2) == pytest.approx(1.0)
+
 
 # ==================== utils/image ====================
 

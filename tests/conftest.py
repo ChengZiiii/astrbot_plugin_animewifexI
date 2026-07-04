@@ -161,7 +161,7 @@ def config():
     """默认 PluginConfig（全默认值，daily_free_draws=0 表示无限制）"""
     from app.services.plugin_config import PluginConfig
 
-    return PluginConfig(daily_free_draws=0)
+    return PluginConfig(daily_free_draws=0, newbie_ntr_protection_days=0)
 
 
 @pytest.fixture

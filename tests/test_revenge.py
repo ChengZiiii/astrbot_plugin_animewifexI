@@ -22,6 +22,7 @@ def config_with_revenge():
         revenge_window_hours=24,
         revenge_success_multiplier=2.0,
         daily_free_draws=0,  # unlimited for testing
+        newbie_ntr_protection_days=0,  # T20: disable newbie protection for testing
     )
 
 
