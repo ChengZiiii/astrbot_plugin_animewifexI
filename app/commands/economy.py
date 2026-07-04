@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from typing import AsyncGenerator
 
 from astrbot.api.event import AstrMessageEvent
@@ -10,7 +11,35 @@ from ..api.events import get_group_id, get_sender_nick
 from ..services.economy_service import EconomyService
 from ..services.quest_service import QuestService
 from ..services.shop_service import ITEM_NAMES, ShopService
+from ..storage.stores import OwnershipStore, WivesMasterStore
 from .context import CommandContext
+
+_SIGN_IN_FLAVOR = {
+    "low": [      # 亲密度 0-49
+        "{name}：哦，你来了。（冷漠脸）",
+        "{name}：签到？嗯。（头也不抬）",
+        "{name}：……你好。（小声）",
+        "{name}收下了你的签到币，但没有说话。",
+    ],
+    "mid": [      # 亲密度 50-149
+        "{name}：你来啦~今天也要加油哦！",
+        "{name}：签到成功！给你的奖励~",
+        "{name}：嘿嘿，你每天都来呢。",
+        "{name}：今天天气不错，适合签到~",
+    ],
+    "high": [     # 亲密度 150-299
+        "{name}：你终于来了！我等你好久了~❤️",
+        "{name}飞扑过来：你今天也来看我了吗！",
+        "{name}：每次看到你来我就开心~",
+        "{name}：签到成功！顺便……想你了。",
+    ],
+    "max": [      # 亲密度 300+
+        "{name}：你是我的全世界~签到什么的不重要，你在就好❤️",
+        "{name}紧紧抱住你：不要离开我好不好……",
+        "{name}：签到？不如我们去约会吧~❤️",
+        "{name}：今天也是爱你的一天！签到币什么的都给你~",
+    ],
+}
 
 __all__ = [
     "handle_checkin",
@@ -57,6 +86,26 @@ async def handle_checkin(
             item_name = ITEM_NAMES.get(box_item, box_item)
             lines.append(f"📦 宝箱额外获得：{item_name}")
     lines.append(f"当前余额：{balance} 币")
+
+    # 按亲密度等级添加签到台词
+    ownership_store = OwnershipStore(ctx.paths, gid)
+    ownerships = ownership_store.load_all()
+    primary = ownership_store.get_primary(uid, ownerships)
+    if primary:
+        wives_meta = WivesMasterStore(ctx.paths).load_all()
+        w = wives_meta.get(primary.wid)
+        wife_name = (w.chara or w.img or "该老婆") if w else "该老婆"
+        intimacy = primary.intimacy
+        if intimacy < 50:
+            tier = "low"
+        elif intimacy < 150:
+            tier = "mid"
+        elif intimacy < 300:
+            tier = "high"
+        else:
+            tier = "max"
+        taunt = random.choice(_SIGN_IN_FLAVOR[tier]).format(name=wife_name)
+        lines.append(f"\n💬 {taunt}")
 
     yield event.plain_result("\n".join(lines))
 
