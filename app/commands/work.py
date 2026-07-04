@@ -7,9 +7,9 @@ from typing import AsyncGenerator, Optional
 
 from astrbot.api.event import AstrMessageEvent
 
-from ..api.events import get_group_id, get_sender_nick, get_sender_uid
-from ..storage.stores import WivesMasterStore
-from ..services.work_service import WorkService, WorkSettleResult
+from ..api.events import get_group_id, get_sender_nick, get_sender_uid, parse_at_target
+from ..storage.stores import ProfileStore, WivesMasterStore
+from ..services.work_service import WorkContractResult, WorkPartnerResult, WorkService, WorkSettleResult
 from .context import CommandContext
 from .view import find_wid_by_position
 
@@ -48,12 +48,13 @@ async def try_settle_work(
 async def handle_work(
     event: AstrMessageEvent, ctx: CommandContext
 ) -> AsyncGenerator:
-    """``老婆 打工 [编号] [加班|远征]``"""
+    """``老婆 打工 [编号] [加班|远征]`` / ``老婆 打工 合约`` / ``老婆 打工 搭档``"""
     gid = get_group_id(event)
     if not gid:
         return
     uid = get_sender_uid(event)
     nick = get_sender_nick(event)
+    work_service = WorkService(ctx.paths, ctx.config, ctx.locks)
 
     # 解析参数
     msg = (event.message_str or "").strip()
@@ -63,6 +64,16 @@ async def handle_work(
             rest = rest[len(prefix):]
             break
     rest = rest.strip()
+
+    if rest.startswith("合约"):
+        async for item in _handle_work_contract(event, ctx, work_service, gid, uid, nick, rest):
+            yield item
+        return
+
+    if rest.startswith("搭档"):
+        async for item in _handle_work_partner(event, ctx, work_service, gid, uid, nick):
+            yield item
+        return
 
     mode = "normal"
     for alias, mode_key in MODE_ALIASES.items():
@@ -79,17 +90,21 @@ async def handle_work(
             yield event.plain_result(f"{nick}，你指定的老婆编号不存在哦~")
             return
 
-    work_service = WorkService(ctx.paths, ctx.config, ctx.locks)
-
     # 先尝试结算到期的打工
     settle_result = await work_service.resolve_due_work(gid, uid, nick, ctx.today())
     if settle_result and settle_result.ok:
         wife_name = _wife_name(ctx, settle_result.wid)
         mode_name = _mode_name(settle_result.mode)
+        bonus_lines = []
+        if settle_result.contract_used:
+            bonus_lines.append("📜 打工合约生效，本次收益提升！")
+        if settle_result.partner_bonus_used:
+            bonus_lines.append("🤝 打工搭档加成生效，本次收益提升！")
         yield event.plain_result(
             f"🎉 {wife_name} 的{mode_name}打工结算完成！获得 {settle_result.reward} 币\n"
             f"亲密度 +{settle_result.intimacy_gain}，连续打工 {settle_result.streak} 天\n"
             f"余额：{settle_result.coin_balance} 币"
+            + ("\n" + "\n".join(bonus_lines) if bonus_lines else "")
         )
 
     # 启动新的打工
@@ -140,3 +155,83 @@ def _mode_name(mode: str) -> str:
         "overtime": "加班",
         "expedition": "远征",
     }.get(mode, mode)
+
+
+async def _handle_work_contract(
+    event: AstrMessageEvent,
+    ctx: CommandContext,
+    work_service: WorkService,
+    gid: str,
+    uid: str,
+    nick: str,
+    rest: str,
+) -> AsyncGenerator:
+    """预约下一次指定模式的打工合约。"""
+    mode = "normal"
+    for alias, mode_key in MODE_ALIASES.items():
+        if alias in rest:
+            mode = mode_key
+            break
+
+    result = await work_service.reserve_work_contract(gid, uid, nick, mode)
+    if not result.ok:
+        if result.reason == "invalid_mode":
+            yield event.plain_result("可预约的合约模式：老婆 打工 合约 / 老婆 打工 合约 加班 / 老婆 打工 合约 远征")
+        elif result.reason == "already_reserved":
+            yield event.plain_result(f"{nick}，你已经预约过一次{_mode_name(result.mode)}打工合约了，先完成再说吧~")
+        elif result.reason == "not_enough_coins":
+            yield event.plain_result(
+                f"{nick}，预约打工合约需要 {ctx.config.work_contract_cost} 币，当前只有 {result.coin_balance} 币~"
+            )
+        else:
+            yield event.plain_result(f"{nick}，预约打工合约失败了~")
+        return
+
+    yield event.plain_result(
+        f"📜 {nick} 已预约下一次{_mode_name(result.mode)}打工合约！\n"
+        f"下次同模式打工完成时收益 x{ctx.config.work_contract_reward_multiplier:.1f}\n"
+        f"余额：{result.coin_balance} 币"
+    )
+
+
+async def _handle_work_partner(
+    event: AstrMessageEvent,
+    ctx: CommandContext,
+    work_service: WorkService,
+    gid: str,
+    uid: str,
+    nick: str,
+) -> AsyncGenerator:
+    """绑定今日打工搭档。"""
+    partner_uid = parse_at_target(event)
+    if not partner_uid:
+        yield event.plain_result(f"{nick}，请 @ 你想绑定的打工搭档哦~")
+        return
+
+    profile_store = ProfileStore(ctx.paths, gid)
+    profiles = profile_store.load_all()
+    partner_profile = profiles.get(partner_uid)
+    partner_nick = partner_profile.nick if partner_profile else partner_uid
+
+    result = await work_service.set_work_partner(
+        gid, uid, partner_uid, nick, partner_nick, ctx.today()
+    )
+    if not result.ok:
+        if result.reason == "invalid_target":
+            yield event.plain_result(f"{nick}，不能把自己设成打工搭档哦~")
+        elif result.reason == "no_wife":
+            yield event.plain_result(f"{nick}，你还没有老婆，先去抽一个吧~")
+        elif result.reason == "target_no_wife":
+            yield event.plain_result(f"{nick}，对方还没有老婆，没法一起打工哦~")
+        elif result.reason == "already_partner":
+            yield event.plain_result(f"{nick}，你们今天已经是打工搭档啦~")
+        elif result.reason == "daily_limit":
+            yield event.plain_result(f"{nick}，你或对方今天已经绑定过打工搭档了~")
+        else:
+            yield event.plain_result(f"{nick}，绑定打工搭档失败了~")
+        return
+
+    yield event.plain_result(
+        f"🤝 {nick} 与 {partner_nick} 已绑定今日打工搭档！\n"
+        f"双方今天都成功打工时，结算收益额外 +{int(ctx.config.work_partner_bonus * 100)}%"
+    )
