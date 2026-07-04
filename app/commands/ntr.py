@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 import re
 from typing import AsyncGenerator, List, Optional
 
@@ -14,12 +15,23 @@ from ..api.events import (
     parse_at_target,
 )
 from ..api.messaging import build_text_image_chain
-from ..storage.stores import OwnershipStore
+from ..storage.stores import OwnershipStore, WivesMasterStore
 from ..utils.image import build_wife_intro_text
 from .context import CommandContext
 from .view import find_uid_by_owner_nick
 
 __all__ = ["handle_ntr", "cancel_related_swap_requests"]
+
+_NTR_SUCCESS_FLAVOR = [
+    "趁{name}不注意，你悄悄把她带走了……",
+    "{name}还没反应过来，就已经换了主人~",
+    "你对{name}使出了「拐跑大法」，大成功！",
+    "{name}：等等……我怎么在这里？！你：别问，跟我走就对了。",
+    "趁着月黑风高，你把{name}偷走了……",
+    "{name}迷迷糊糊地跟你走了，前任完全没发现……",
+    "你用美食诱惑了{name}，她心甘情愿地跟你走了~",
+    "前任：我老婆呢？！你：什么老婆？没见过。",
+]
 
 
 async def handle_ntr(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGenerator:
@@ -96,8 +108,12 @@ async def handle_ntr(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGener
 
     # 成功
     cancel_msg = cancel_related_swap_requests(ctx, gid, [uid, tid], ctx.today())
+    wives_meta = WivesMasterStore(ctx.paths).load_all()
+    w = wives_meta.get(result.wid)
+    wife_name = (w.chara or w.img or "该老婆") if w else "该老婆"
+    taunt = random.choice(_NTR_SUCCESS_FLAVOR).format(name=wife_name)
     yield event.plain_result(
-        f"{nick}，牛老婆成功！老婆已归你所有，恭喜恭喜~"
+        f"{nick}，牛老婆成功！老婆已归你所有，恭喜恭喜~\n\n📢 {taunt}"
     )
     if result.stolen_work_reward > 0:
         extra_lines = [f"💼 顺手截胡了对方打工收益：+{result.stolen_work_reward} 币"]
