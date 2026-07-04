@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 import re
 from typing import AsyncGenerator, Optional
 
@@ -21,6 +22,15 @@ __all__ = ["handle_view", "find_uid_by_owner_nick", "find_wid_by_index", "find_w
 
 # 每页显示数量
 PAGE_SIZE = 10
+
+_INTIMACY_FLAVOR = {
+    0: ["{name}：你是谁？不认识。", "{name}瞥了你一眼，没有说话。"],
+    1: ["{name}：哦，你好。", "{name}点了点头。"],
+    2: ["{name}：你来啦~", "{name}对你笑了笑。"],
+    3: ["{name}：今天也想和你在一起~", "{name}靠在你肩上。"],
+    4: ["{name}：我最喜欢你了！❤️", "{name}紧紧握住你的手。"],
+    5: ["{name}：我们永远在一起好不好？❤️", "{name}：你是我的一切~"],
+}
 
 
 async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGenerator:
@@ -86,6 +96,9 @@ async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
         lines.append("⚠️ 危险用户！请注意防范！\n")
     seen_imgs = set()
 
+    primary_name = None
+    primary_intimacy = 0
+
     from ..services.ownership_service import OwnershipService
     for i, o in enumerate(page_wives, start + 1):
         wife = wives_meta.get(o.wid)
@@ -103,6 +116,9 @@ async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
             }.get(o.work_mode, "💼打工中")
             work_icon = f" {work_label}"
         primary_icon = " 👑" if o.is_primary else ""
+        if o.is_primary:
+            primary_name = name
+            primary_intimacy = o.intimacy
         intimacy_str = OwnershipService.intimacy_level_emoji(o.intimacy)
         stats = wife.base_stats
         base_power = stats.atk + stats.defense + int(stats.hp * 0.5)
@@ -125,6 +141,22 @@ async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
         if page < total_pages:
             hints.append(f"下一页：查老婆 {page + 1}")
         lines.append(f"\n💡 {' | '.join(hints)}")
+
+    if primary_name is not None:
+        if primary_intimacy >= 300:
+            level = 5
+        elif primary_intimacy >= 150:
+            level = 4
+        elif primary_intimacy >= 50:
+            level = 3
+        elif primary_intimacy >= 20:
+            level = 2
+        elif primary_intimacy >= 5:
+            level = 1
+        else:
+            level = 0
+        flavor = random.choice(_INTIMACY_FLAVOR.get(level, _INTIMACY_FLAVOR[0]))
+        lines.append(f"\n💬 {flavor.format(name=primary_name)}")
 
     text = "\n".join(lines)
 
