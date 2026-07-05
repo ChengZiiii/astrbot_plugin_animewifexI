@@ -270,7 +270,8 @@ async def _handle_work_contract(
     if num_match:
         amount = int(num_match.group(1))
 
-    if amount <= 0:
+    # No amount provided → show help
+    if amount <= 0 and not num_match:
         bonus_pct = int(ctx.config.work_contract_bonus_per_coin * 100)
         yield event.plain_result(
             f"📜 合约用法：老婆 打工 合约 [模式] [金额]\n"
