@@ -221,9 +221,10 @@ class PluginConfig:
         }
     )
 
-    # ---------- Phase 4 第二波（打工合约 / 搭档 / 亲密度衰减） ----------
-    work_contract_cost: int = 50
-    work_contract_reward_multiplier: float = 1.5
+    # ---------- Phase 4 第二波（打工合约 v2 / 搭档 / 亲密度衰减） ----------
+    work_contract_bonus_per_coin: float = 0.02   # 每币加成比例（0.02 = 2%）
+    work_contract_min_amount: int = 1             # 最低投入
+    work_contract_max_amount: int = 1000          # 最高投入
     work_partner_bonus: float = 0.20
     work_partner_daily_limit: int = 1
     intimacy_decay: int = 0
@@ -395,8 +396,9 @@ class PluginConfig:
             intimacy_levelup_rewards=intimacy_levelup_rewards,
             weekly_surprise_box=weekly_surprise_box,
             newbie_guide=newbie_guide,
-            work_contract_cost=_as_int(d.get("work_contract_cost"), 50),
-            work_contract_reward_multiplier=_as_float(d.get("work_contract_reward_multiplier"), 1.5),
+            work_contract_bonus_per_coin=_as_float(d.get("work_contract_bonus_per_coin"), 0.02),
+            work_contract_min_amount=_as_int(d.get("work_contract_min_amount"), 1),
+            work_contract_max_amount=_as_int(d.get("work_contract_max_amount"), 1000),
             work_partner_bonus=_as_float(d.get("work_partner_bonus"), 0.20),
             work_partner_daily_limit=_as_int(d.get("work_partner_daily_limit"), 1),
             intimacy_decay=_as_int(d.get("intimacy_decay"), 0),
