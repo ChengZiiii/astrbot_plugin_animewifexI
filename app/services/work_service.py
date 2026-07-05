@@ -637,6 +637,9 @@ class WorkService:
                     if ts < o.work_ends_at:
                         continue
 
+                    # 捕获 umo — _resolve_due_work_inner 内部会 clear_work_state
+                    saved_umo = o.work_umo
+
                     profile = profiles.get(o.uid)
                     nick = profile.nick if profile else ""
 
@@ -647,7 +650,7 @@ class WorkService:
                         ownership_store.save_all(ownerships)
                         profile_store.save_all(profiles)
                         activity_store.save_all(activity_logs)
-                        results.append((o.work_umo, result))
+                        results.append((saved_umo, result))
             except Exception:
                 logger.error(f"结算群 {gid} 的到期打工失败")
                 continue

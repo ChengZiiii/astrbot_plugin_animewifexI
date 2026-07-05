@@ -725,3 +725,74 @@ class TestWorkUmo:
         ownerships = store.load_all()
         o = next(o for o in ownerships if o.uid == uid)
         assert o.work_umo == "aiocqhttp:group:999"
+
+
+class TestSettleAllDue:
+    @pytest.mark.asyncio
+    async def test_settle_all_due_returns_umo(self, tmp_paths, work_config, locks):
+        """settle_all_due 应在结果中返回 work_umo（而非被 clear_work_state 清空后返回空字符串）"""
+        from app.models.ownership import Ownership
+        from app.models.profile import UserProfile
+        from app.utils.time import now_ts
+
+        gid, uid, nick, today = "g1", "u1", "Alice", "2026-07-04"
+        test_umo = "aiocqhttp:group:12345"
+
+        # 创建打工中的 ownership，work_ends_at 已过
+        store = OwnershipStore(tmp_paths, gid)
+        ownerships = store.load_all()
+        ownerships.append(Ownership(
+            wid="w1", uid=uid, is_primary=True,
+            is_working=True, work_mode="normal",
+            work_started_at=now_ts() - 10000,
+            work_ends_at=now_ts() - 1,  # 已到期
+            work_umo=test_umo,
+        ))
+        store.save_all(ownerships)
+
+        # 创建 profile
+        profile_store = ProfileStore(tmp_paths, gid)
+        profiles = profile_store.load_all()
+        profiles[uid] = UserProfile(uid=uid, nick=nick, coins=100)
+        profile_store.save_all(profiles)
+
+        svc = WorkService(tmp_paths, work_config, locks)
+        results = await svc.settle_all_due()
+
+        assert len(results) == 1
+        umo, result = results[0]
+        assert umo == test_umo, f"work_umo 应为 {test_umo!r}，实际为 {umo!r}"
+        assert result.ok is True
+
+    @pytest.mark.asyncio
+    async def test_settle_all_due_clears_work_state_after(self, tmp_paths, work_config, locks):
+        """settle_all_due 结算后 ownership 的打工状态应被清空"""
+        from app.models.ownership import Ownership
+        from app.models.profile import UserProfile
+        from app.utils.time import now_ts
+
+        gid, uid, nick, today = "g1", "u1", "Alice", "2026-07-04"
+
+        store = OwnershipStore(tmp_paths, gid)
+        ownerships = store.load_all()
+        ownerships.append(Ownership(
+            wid="w1", uid=uid, is_primary=True,
+            is_working=True, work_mode="normal",
+            work_started_at=now_ts() - 10000,
+            work_ends_at=now_ts() - 1,
+            work_umo="aiocqhttp:group:12345",
+        ))
+        store.save_all(ownerships)
+
+        profile_store = ProfileStore(tmp_paths, gid)
+        profiles = profile_store.load_all()
+        profiles[uid] = UserProfile(uid=uid, nick=nick, coins=100)
+        profile_store.save_all(profiles)
+
+        svc = WorkService(tmp_paths, work_config, locks)
+        await svc.settle_all_due()
+
+        ownerships = store.load_all()
+        o = next(o for o in ownerships if o.uid == uid)
+        assert o.is_working is False
+        assert o.work_umo == ""
