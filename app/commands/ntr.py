@@ -130,8 +130,9 @@ async def handle_ntr(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGener
     )
     if result.stolen_work_reward > 0:
         extra_lines = [f"💼 顺手截胡了对方打工收益：+{result.stolen_work_reward} 币"]
-        if result.contract_voided:
-            extra_lines.append("📜 对方的打工合约已作废")
+        if result.contract_inherited and result.contract_amount > 0:
+            bonus_pct = int(result.contract_amount * ctx.config.work_contract_bonus_per_coin * 100)
+            extra_lines.append(f"📜 截获合约加成：原合约 {result.contract_amount} 币（+{bonus_pct}%）")
         if result.partner_broken:
             extra_lines.append("🤝 对方的打工搭档关系已解除")
         if result.insurance_used:
