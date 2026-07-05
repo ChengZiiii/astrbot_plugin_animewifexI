@@ -610,11 +610,13 @@ class WorkService:
         results: list[tuple[str, WorkSettleResult]] = []
         groups_dir = self._paths.groups_dir
         if not os.path.isdir(groups_dir):
+            logger.warning(f"[settle_all_due] groups_dir 不存在: {groups_dir}")
             return results
 
         today = get_today(ZoneInfo("Asia/Shanghai"))
 
-        for gid in os.listdir(groups_dir):
+        all_gids = os.listdir(groups_dir)
+        for gid in all_gids:
             gid_path = os.path.join(groups_dir, gid)
             if not os.path.isdir(gid_path):
                 continue
@@ -625,6 +627,13 @@ class WorkService:
             try:
                 ownership_store = OwnershipStore(self._paths, gid)
                 ownerships = ownership_store.load_all()
+                working = [o for o in ownerships if o.is_working]
+                if working:
+                    ts = now_ts()
+                    for o in working:
+                        remaining = o.work_ends_at - ts
+                        logger.info(f"[settle_all_due] 群{gid} wid={o.wid} 打工中: 剩余{remaining:.0f}s,到期={remaining<=0}, umo={o.work_umo!r}")
+
                 profile_store = self._profile_store(gid)
                 profiles = profile_store.load_all()
                 activity_store = self._activity_store(gid)
@@ -635,7 +644,6 @@ class WorkService:
                         continue
                     ts = now_ts()
                     if ts < o.work_ends_at:
-                        logger.debug(f"[settle_all_due] 群{gid} wid={o.wid} 打工中未到期: 剩余{o.work_ends_at - ts:.0f}s, umo={o.work_umo!r}")
                         continue
 
                     # 捕获 umo — _resolve_due_work_inner 内部会 clear_work_state
