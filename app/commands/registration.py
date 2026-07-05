@@ -40,7 +40,7 @@ from .swap import (
 )
 from .switch import handle_switch_primary
 from .view import handle_view
-from .work import handle_work
+from .work import handle_work, handle_contract_query
 
 __all__ = ["build_registry"]
 
@@ -93,6 +93,7 @@ def build_registry() -> CommandRegistry:
 
     # ---------- 分组命令：打工 ----------
     registry.register_grouped("打工", handle_work)
+    registry.register_grouped("合约", handle_contract_query)
 
     # ---------- 管理员命令 ----------
     registry.register_grouped("重置本群", handle_admin_reset_group)

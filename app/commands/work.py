@@ -9,12 +9,12 @@ from typing import AsyncGenerator, Optional
 from astrbot.api.event import AstrMessageEvent
 
 from ..api.events import get_group_id, get_sender_nick, get_sender_uid, parse_at_target
-from ..storage.stores import ProfileStore, WivesMasterStore
+from ..storage.stores import OwnershipStore, ProfileStore, WivesMasterStore
 from ..services.work_service import WorkContractResult, WorkPartnerResult, WorkService, WorkSettleResult
 from .context import CommandContext
 from .view import find_wid_by_position
 
-__all__ = ["handle_work", "try_settle_work"]
+__all__ = ["handle_work", "try_settle_work", "handle_contract_query"]
 
 # 模式别名映射
 MODE_ALIASES = {
@@ -54,6 +54,14 @@ _WORK_TAUNTS = {
     ],
 }
 
+# 合约打工暗示文案
+_WORK_TAUNTS_CONTRACT = [
+    "{name}身上挂着{contract_amount}币的合约打工中……如果被牛走，合约加成可就全归别人了哦~",
+    "听说有人对{name}下了{contract_amount}币的重注？她正在打工，千载难逢的机会~",
+    "{name}打工中，合约持有者{contract_holder}正盯着收益……有没有人想截胡？",
+    "打工中的{name}带着{contract_amount}币合约，这可是一块肥肉……",
+]
+
 
 async def try_settle_work(
     event: AstrMessageEvent, ctx: CommandContext
@@ -71,11 +79,18 @@ async def try_settle_work(
         wife_name = _wife_name(ctx, result.wid)
         mode_name = _mode_name(result.mode)
         taunt = random.choice(_WORK_SETTLE_FLAVOR).format(name=wife_name, reward=result.reward)
+        bonus_lines = []
+        if result.contract_used and result.contract_amount > 0:
+            bonus_pct = int(result.contract_amount * ctx.config.work_contract_bonus_per_coin * 100)
+            bonus_lines.append(f"📜 打工合约生效，本次收益 +{bonus_pct}%！")
+        if result.partner_bonus_used:
+            bonus_lines.append("🤝 打工搭档加成生效，本次收益提升！")
         return (
             f"🎉 {wife_name} 的{mode_name}打工结算完成！获得 {result.reward} 币，"
             f"亲密度 +{result.intimacy_gain}\n"
             f"余额：{result.coin_balance} 币"
-            f"\n\n💬 {taunt}"
+            + ("\n" + "\n".join(bonus_lines) if bonus_lines else "")
+            + f"\n\n💬 {taunt}"
         )
     return None
 
@@ -136,8 +151,9 @@ async def handle_work(
         wife_name = _wife_name(ctx, settle_result.wid)
         mode_name = _mode_name(settle_result.mode)
         bonus_lines = []
-        if settle_result.contract_used:
-            bonus_lines.append("📜 打工合约生效，本次收益提升！")
+        if settle_result.contract_used and settle_result.contract_amount > 0:
+            bonus_pct = int(settle_result.contract_amount * ctx.config.work_contract_bonus_per_coin * 100)
+            bonus_lines.append(f"📜 打工合约生效，本次收益 +{bonus_pct}%！")
         if settle_result.partner_bonus_used:
             bonus_lines.append("🤝 打工搭档加成生效，本次收益提升！")
         taunt = random.choice(_WORK_SETTLE_FLAVOR).format(name=wife_name, reward=settle_result.reward)
@@ -178,12 +194,37 @@ async def handle_work(
     # 打工成功
     mode_name = _mode_name(mode)
     wife_name = _wife_name(ctx, result.wid)
-    taunt = random.choice(_WORK_TAUNTS.get(mode, _WORK_TAUNTS["normal"]))
+
+    # 查询合约信息并生成暗示
+    ownership_store = OwnershipStore(ctx.paths, gid)
+    ownerships = ownership_store.load_all()
+    working = ownership_store.find_by_wid(result.wid, ownerships)
+    contract_hint = ""
+    if working and working.work_contract_amount > 0:
+        holder_nick = ""
+        profiles = ProfileStore(ctx.paths, gid).load_all()
+        holder_profile = profiles.get(working.work_contract_uid)
+        if holder_profile:
+            holder_nick = holder_profile.nick
+        amount = working.work_contract_amount
+        bonus_pct = int(amount * ctx.config.work_contract_bonus_per_coin * 100)
+        contract_hint = (
+            f"\n📜 {holder_nick or '某人'} 投下了 {amount} 币合约，"
+            f"本次打工收益 +{bonus_pct}%！"
+            f"\n💡 牛走打工中的老婆可以拿走全部打工收益（含合约加成）哦~"
+        )
+        taunt = random.choice(_WORK_TAUNTS_CONTRACT).format(
+            name=wife_name, contract_amount=amount, contract_holder=holder_nick or "某人",
+        )
+    else:
+        taunt = random.choice(_WORK_TAUNTS.get(mode, _WORK_TAUNTS["normal"]))
+
     yield event.plain_result(
         f"🔨 {nick} 派 {wife_name} 开始{mode_name}打工！\n"
         f"消耗 {result.start_cost} 币，余额 {result.coin_balance} 币\n"
-        f"预计完成后结算奖励~\n\n"
-        f"📢 {taunt.format(name=wife_name)}"
+        f"预计完成后结算奖励~"
+        f"{contract_hint}"
+        f"\n\n📢 {taunt.format(name=wife_name)}"
     )
 
 
@@ -212,30 +253,58 @@ async def _handle_work_contract(
     nick: str,
     rest: str,
 ) -> AsyncGenerator:
-    """预约下一次指定模式的打工合约。"""
+    """预约打工合约：老婆 打工 合约 [模式] [金额]"""
+    # 解析模式
     mode = "normal"
     for alias, mode_key in MODE_ALIASES.items():
         if alias in rest:
             mode = mode_key
             break
 
-    result = await work_service.reserve_work_contract(gid, uid, nick, mode)
+    # 解析金额（末尾数字）
+    amount = 0
+    clean = rest.replace("合约", "").strip()
+    for alias in MODE_ALIASES:
+        clean = clean.replace(alias, "").strip()
+    num_match = re.search(r"(\d+)\s*$", clean)
+    if num_match:
+        amount = int(num_match.group(1))
+
+    if amount <= 0:
+        bonus_pct = int(ctx.config.work_contract_bonus_per_coin * 100)
+        yield event.plain_result(
+            f"📜 合约用法：老婆 打工 合约 [模式] [金额]\n"
+            f"模式可选：普通 / 加班 / 远征\n"
+            f"金额范围：{ctx.config.work_contract_min_amount}-{ctx.config.work_contract_max_amount} 币\n"
+            f"每1币 = +{bonus_pct}% 收益加成\n\n"
+            f"示例：老婆 打工 合约 加班 200（投入200币，下次加班 +{200 * bonus_pct}% 收益）"
+        )
+        return
+
+    result = await work_service.reserve_work_contract(gid, uid, nick, mode, amount)
     if not result.ok:
         if result.reason == "invalid_mode":
-            yield event.plain_result("可预约的合约模式：老婆 打工 合约 / 老婆 打工 合约 加班 / 老婆 打工 合约 远征")
-        elif result.reason == "already_reserved":
-            yield event.plain_result(f"{nick}，你已经预约过一次{_mode_name(result.mode)}打工合约了，先完成再说吧~")
+            yield event.plain_result("可用模式：普通 / 加班 / 远征")
+        elif result.reason == "no_wife":
+            yield event.plain_result(f"{nick}，你还没有老婆，先去抽一个吧~")
+        elif result.reason == "already_has_contract":
+            yield event.plain_result(f"{nick}，你的主老婆已经有合约了，先完成当前合约吧~")
+        elif result.reason == "amount_too_low":
+            yield event.plain_result(f"{nick}，合约金额至少 {ctx.config.work_contract_min_amount} 币~")
+        elif result.reason == "amount_too_high":
+            yield event.plain_result(f"{nick}，合约金额最多 {ctx.config.work_contract_max_amount} 币~")
         elif result.reason == "not_enough_coins":
             yield event.plain_result(
-                f"{nick}，预约打工合约需要 {ctx.config.work_contract_cost} 币，当前只有 {result.coin_balance} 币~"
+                f"{nick}，预约打工合约需要 {result.amount} 币，当前只有 {result.coin_balance} 币~"
             )
         else:
             yield event.plain_result(f"{nick}，预约打工合约失败了~")
         return
 
+    bonus_pct = int(amount * ctx.config.work_contract_bonus_per_coin * 100)
     yield event.plain_result(
         f"📜 {nick} 已预约下一次{_mode_name(result.mode)}打工合约！\n"
-        f"下次同模式打工完成时收益 x{ctx.config.work_contract_reward_multiplier:.1f}\n"
+        f"投入 {result.amount} 币，收益 +{bonus_pct}%\n"
         f"余额：{result.coin_balance} 币"
     )
 
@@ -320,3 +389,35 @@ async def _handle_work_cancel(
         f"🚫 {nick} 中断了 {wife_name} 的{mode_name}打工！\n"
         f"打工奖励已没收，启动费不退还~"
     )
+
+
+async def handle_contract_query(
+    event: AstrMessageEvent, ctx: CommandContext
+) -> AsyncGenerator:
+    """查看当前合约状态：老婆 合约"""
+    gid = get_group_id(event)
+    if not gid:
+        return
+    uid = get_sender_uid(event)
+    nick = get_sender_nick(event)
+
+    ownership_store = OwnershipStore(ctx.paths, gid)
+    ownerships = ownership_store.load_all()
+    my_wives = ownership_store.list_by_user(uid, ownerships)
+    wives_meta = WivesMasterStore(ctx.paths).load_all()
+
+    if not my_wives:
+        yield event.plain_result(f"{nick}，你还没有老婆~")
+        return
+
+    lines = [f"📜 {nick} 的合约状态："]
+    for o in my_wives:
+        meta = wives_meta.get(o.wid)
+        name = (meta.chara or meta.img or "未知") if meta else "未知"
+        if o.work_contract_amount > 0:
+            bonus_pct = int(o.work_contract_amount * ctx.config.work_contract_bonus_per_coin * 100)
+            lines.append(f"  {name} - {_mode_name(o.work_contract_mode)}打工 - {o.work_contract_amount} 币（+{bonus_pct}%）")
+        else:
+            lines.append(f"  {name} - 无合约")
+
+    yield event.plain_result("\n".join(lines))
