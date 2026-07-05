@@ -162,7 +162,6 @@ class WifePluginCore(Star):
             try:
                 work_service = WorkService(self.paths, self.plugin_config, self.locks)
                 settled = await work_service.settle_all_due()
-                logger.info(f"[打工结算] 心跳: 结算 {len(settled)} 笔")
                 for umo, result in settled:
                     if not umo:
                         logger.warning(f"[打工结算] 结算结果 umo 为空，跳过推送: wid={result.wid}, mode={result.mode}")
@@ -180,7 +179,6 @@ class WifePluginCore(Star):
                         from astrbot.api.event import MessageChain
                         chain = MessageChain().message(msg)
                         await self.context.send_message(umo, chain)
-                        logger.info(f"[打工结算] 推送成功: umo={umo}, wid={result.wid}")
                     except Exception as e:
                         logger.warning(f"[打工结算] 推送失败: umo={umo}, error={e}")
             except asyncio.CancelledError:
