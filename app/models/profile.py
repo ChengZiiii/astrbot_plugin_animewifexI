@@ -66,7 +66,6 @@ class UserProfile:
     work_last_settle_date: str = ""       # 最近打工结算日期（YYYY-MM-DD）
     work_week_key: str = ""               # 本周打工 key（YYYY-WW）
     work_week_income: int = 0             # 本周打工收入
-    work_contract_reserved: str = ""      # 打工合约预留模式
     work_partner_uid: str = ""            # 打工搭档 uid
     work_partner_date: str = ""           # 打工搭档日期（YYYY-MM-DD）
     work_partner_count: int = 0           # 当日已绑定打工搭档次数
@@ -112,7 +111,6 @@ class UserProfile:
             "work_last_settle_date": self.work_last_settle_date,
             "work_week_key": self.work_week_key,
             "work_week_income": self.work_week_income,
-            "work_contract_reserved": self.work_contract_reserved,
             "work_partner_uid": self.work_partner_uid,
             "work_partner_date": self.work_partner_date,
             "work_partner_count": self.work_partner_count,
@@ -183,7 +181,6 @@ class UserProfile:
             work_last_settle_date=str(data.get("work_last_settle_date", "") or ""),
             work_week_key=str(data.get("work_week_key", "") or ""),
             work_week_income=int(data.get("work_week_income", 0) or 0),
-            work_contract_reserved=str(data.get("work_contract_reserved", "") or ""),
             work_partner_uid=str(data.get("work_partner_uid", "") or ""),
             work_partner_date=str(data.get("work_partner_date", "") or ""),
             work_partner_count=int(data.get("work_partner_count", 0) or 0),

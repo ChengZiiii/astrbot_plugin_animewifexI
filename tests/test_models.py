@@ -243,3 +243,15 @@ class TestOwnershipContract:
         d = {"wid": "w_test", "uid": "u1", "is_working": True}
         o = Ownership.from_dict(d)
         assert o.work_contract_amount == 0
+
+
+class TestProfileNoContract:
+    def test_no_contract_field_in_dict(self):
+        p = UserProfile(uid="u1", nick="test")
+        d = p.to_dict()
+        assert "work_contract_reserved" not in d
+
+    def test_from_dict_ignores_old_contract(self):
+        d = {"uid": "u1", "work_contract_reserved": "overtime"}
+        p = UserProfile.from_dict(d)
+        assert p.uid == "u1"
