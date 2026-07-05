@@ -218,3 +218,28 @@ class TestActivityLog:
         assert "2026-07-01" in log.days
         assert "2026-07-03" in log.days
         assert "2026-07-02" not in log.days
+
+
+class TestOwnershipContract:
+    def test_contract_fields_defaults(self):
+        o = Ownership(wid="w_test", uid="u1")
+        assert o.work_contract_amount == 0
+        assert o.work_contract_uid == ""
+        assert o.work_contract_mode == ""
+
+    def test_contract_fields_roundtrip(self):
+        o = Ownership(
+            wid="w_test", uid="u1",
+            work_contract_amount=200, work_contract_uid="u1", work_contract_mode="overtime",
+        )
+        d = o.to_dict()
+        o2 = Ownership.from_dict(d)
+        assert o2.work_contract_amount == 200
+        assert o2.work_contract_uid == "u1"
+        assert o2.work_contract_mode == "overtime"
+
+    def test_contract_fields_old_data_ignored(self):
+        """旧数据没有 contract 字段时，默认值为 0"""
+        d = {"wid": "w_test", "uid": "u1", "is_working": True}
+        o = Ownership.from_dict(d)
+        assert o.work_contract_amount == 0

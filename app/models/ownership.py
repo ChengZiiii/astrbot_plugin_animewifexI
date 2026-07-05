@@ -36,6 +36,10 @@ class Ownership:
     work_started_at: int = 0           # 打工开始时间戳
     work_ends_at: int = 0              # 打工结束时间戳
     work_umo: str = ""                 # 打工启动时的 UMO（用于到期推送）
+    # Phase 4: 打工合约（绑定到具体老婆）
+    work_contract_amount: int = 0       # 投入的币数（100 = +100% 加成）
+    work_contract_uid: str = ""         # 合约购买者 uid
+    work_contract_mode: str = ""        # 适用的打工模式（normal/overtime/expedition）
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -54,6 +58,10 @@ class Ownership:
             "work_started_at": self.work_started_at,
             "work_ends_at": self.work_ends_at,
             "work_umo": self.work_umo,
+            # Phase 4: 合约
+            "work_contract_amount": self.work_contract_amount,
+            "work_contract_uid": self.work_contract_uid,
+            "work_contract_mode": self.work_contract_mode,
         }
 
     @classmethod
@@ -78,4 +86,8 @@ class Ownership:
             work_started_at=int(data.get("work_started_at", 0) or 0),
             work_ends_at=int(data.get("work_ends_at", 0) or 0),
             work_umo=str(data.get("work_umo", "") or ""),
+            # Phase 4: 合约
+            work_contract_amount=int(data.get("work_contract_amount", 0) or 0),
+            work_contract_uid=str(data.get("work_contract_uid", "") or ""),
+            work_contract_mode=str(data.get("work_contract_mode", "") or ""),
         )
