@@ -635,10 +635,12 @@ class WorkService:
                         continue
                     ts = now_ts()
                     if ts < o.work_ends_at:
+                        logger.debug(f"[settle_all_due] 群{gid} wid={o.wid} 打工中未到期: 剩余{o.work_ends_at - ts:.0f}s, umo={o.work_umo!r}")
                         continue
 
                     # 捕获 umo — _resolve_due_work_inner 内部会 clear_work_state
                     saved_umo = o.work_umo
+                    logger.info(f"[settle_all_due] 群{gid} wid={o.wid} 到期结算: umo={saved_umo!r}")
 
                     profile = profiles.get(o.uid)
                     nick = profile.nick if profile else ""

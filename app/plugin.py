@@ -157,12 +157,16 @@ class WifePluginCore(Star):
     async def _work_settlement_loop(self):
         """每 60 秒检查并结算到期的打工，推送消息到原群"""
         await asyncio.sleep(30)  # 启动缓冲
+        logger.info("[打工结算] 定时循环已启动")
         while True:
             try:
                 work_service = WorkService(self.paths, self.plugin_config, self.locks)
                 settled = await work_service.settle_all_due()
+                if settled:
+                    logger.info(f"[打工结算] 本次结算 {len(settled)} 笔")
                 for umo, result in settled:
                     if not umo:
+                        logger.warning(f"[打工结算] 结算结果 umo 为空，跳过推送: wid={result.wid}, mode={result.mode}")
                         continue
                     wife_name = self._get_wife_name(result.wid)
                     mode_name = {
@@ -177,8 +181,9 @@ class WifePluginCore(Star):
                         from astrbot.api.event import MessageChain
                         chain = MessageChain().message(msg)
                         await self.context.send_message(umo, chain)
-                    except Exception:
-                        logger.warning(f"发送打工结算通知失败: umo={umo}")
+                        logger.info(f"[打工结算] 推送成功: umo={umo}, wid={result.wid}")
+                    except Exception as e:
+                        logger.warning(f"[打工结算] 推送失败: umo={umo}, error={e}")
             except asyncio.CancelledError:
                 raise
             except Exception:
