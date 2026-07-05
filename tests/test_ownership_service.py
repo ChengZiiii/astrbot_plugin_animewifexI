@@ -251,11 +251,13 @@ class TestTryNtr:
         victim.work_mode = "normal"
         victim.work_started_at = ts - 7200
         victim.work_ends_at = ts + 7200
+        victim.work_contract_amount = 100
+        victim.work_contract_uid = "u_victim"
+        victim.work_contract_mode = "normal"
         ownership_store.save_all(ownerships)
 
         profile_store = ProfileStore(tmp_paths, "g1")
         profiles = profile_store.load_all()
-        profiles["u_victim"].work_contract_reserved = "normal"
         profile_store.save_all(profiles)
 
         result = await ownership_service.try_ntr(
@@ -265,10 +267,10 @@ class TestTryNtr:
         assert result.ok is True
         assert result.success is True
         assert result.stolen_work_reward > 0
-        assert result.contract_voided is True
+        assert result.contract_inherited is True
+        assert result.contract_amount == 100
 
         profiles = profile_store.load_all()
-        assert profiles["u_victim"].work_contract_reserved == ""
         assert profiles["u_attacker"].coins >= result.stolen_work_reward
 
     @pytest.mark.asyncio

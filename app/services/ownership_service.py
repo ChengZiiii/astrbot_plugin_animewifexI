@@ -137,7 +137,8 @@ class NtrResult:
     stolen_work_wid: str = ""
     insurance_used: bool = False
     insurance_bonus_coins: int = 0
-    contract_voided: bool = False
+    contract_inherited: bool = False      # 被牛时合约加成生效
+    contract_amount: int = 0              # 合约金额
     partner_broken: bool = False
 
 
@@ -821,7 +822,8 @@ class OwnershipService:
             stolen_work_reward = 0
             insurance_used = False
             insurance_bonus_coins = 0
-            contract_voided = False
+            contract_inherited = False
+            contract_amount = 0
             partner_broken = False
             stolen_work_wid = ""
             if is_target_working and target_wife:
@@ -844,7 +846,8 @@ class OwnershipService:
                     stolen_work_wid = stolen_result.wid
                     insurance_used = stolen_result.insurance_used
                     insurance_bonus_coins = stolen_result.insurance_bonus_coins
-                    contract_voided = stolen_result.contract_voided
+                    contract_inherited = stolen_result.contract_inherited
+                    contract_amount = stolen_result.contract_amount
                     partner_broken = stolen_result.partner_broken
 
             ownership_store.transfer(
@@ -957,7 +960,8 @@ class OwnershipService:
                 stolen_work_wid=stolen_work_wid,
                 insurance_used=insurance_used,
                 insurance_bonus_coins=insurance_bonus_coins,
-                contract_voided=contract_voided,
+                contract_inherited=contract_inherited,
+                contract_amount=contract_amount,
                 partner_broken=partner_broken,
             )
 

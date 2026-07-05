@@ -60,6 +60,8 @@ class WorkSettleResult:
     mode: str = ""
     contract_used: bool = False
     contract_voided: bool = False
+    contract_inherited: bool = False      # 被牛时合约加成生效
+    contract_amount: int = 0              # 合约金额
     partner_bonus_used: bool = False
     partner_broken: bool = False
     insurance_used: bool = False
@@ -73,6 +75,7 @@ class WorkContractResult:
     ok: bool
     reason: str = ""
     mode: str = ""
+    amount: int = 0               # 投入金额
     coin_balance: int = 0
 
 
@@ -175,38 +178,62 @@ class WorkService:
         uid: str,
         nick: str,
         mode: str,
+        amount: int = 0,
     ) -> WorkContractResult:
         """预约下一次指定模式的打工合约。"""
         mode_config = self._config.work_modes.get(mode)
         if not mode_config:
             return WorkContractResult(ok=False, reason="invalid_mode")
 
+        # 校验金额范围
+        if amount <= 0:
+            return WorkContractResult(ok=False, reason="invalid_amount")
+        if amount < self._config.work_contract_min_amount:
+            return WorkContractResult(ok=False, reason="amount_too_low")
+        if amount > self._config.work_contract_max_amount:
+            return WorkContractResult(ok=False, reason="amount_too_high")
+
         async with self._locks.acquire(gid):
+            ownership_store = self._ownership_store(gid)
             profile_store = self._profile_store(gid)
+            ownerships = ownership_store.load_all()
             profiles = profile_store.load_all()
             profile = ProfileStore.get_or_create(profiles, uid, nick, self._config.initial_coins)
 
-            if profile.work_contract_reserved:
+            # 找到用户主老婆
+            primary = ownership_store.get_primary(uid, ownerships)
+            if primary is None:
+                return WorkContractResult(ok=False, reason="no_wife")
+
+            # 该老婆是否已有合约
+            if primary.work_contract_amount > 0:
                 return WorkContractResult(
                     ok=False,
-                    reason="already_reserved",
-                    mode=profile.work_contract_reserved,
+                    reason="already_has_contract",
                     coin_balance=profile.coins,
                 )
 
-            if profile.coins < self._config.work_contract_cost:
+            # 检查余额
+            if profile.coins < amount:
                 return WorkContractResult(
                     ok=False,
                     reason="not_enough_coins",
                     coin_balance=profile.coins,
                 )
 
-            profile.coins -= self._config.work_contract_cost
-            profile.work_contract_reserved = mode
+            # 扣费并设置合约
+            profile.coins -= amount
+            primary.work_contract_amount = amount
+            primary.work_contract_uid = uid
+            primary.work_contract_mode = mode
+
             profile_store.save_all(profiles)
+            ownership_store.save_all(ownerships)
+
             return WorkContractResult(
                 ok=True,
                 mode=mode,
+                amount=amount,
                 coin_balance=profile.coins,
             )
 
@@ -443,10 +470,15 @@ class WorkService:
         streak_bonus = 1.0 + (profile.work_streak - 1) * self._config.work_streak_bonus
         reward = int(base_reward * streak_bonus)
 
-        contract_used = profile.work_contract_reserved == mode
+        contract_used = working.work_contract_amount > 0 and working.work_contract_mode == mode
+        contract_amount = working.work_contract_amount
         if contract_used:
-            reward = int(reward * self._config.work_contract_reward_multiplier)
-            profile.work_contract_reserved = ""
+            contract_bonus = working.work_contract_amount * self._config.work_contract_bonus_per_coin
+            reward = int(reward * (1 + contract_bonus))
+            # 合约结算后清除
+            working.work_contract_amount = 0
+            working.work_contract_uid = ""
+            working.work_contract_mode = ""
 
         partner_bonus_used = self._has_partner_bonus(profiles, activity_logs, uid, today)
         if partner_bonus_used:
@@ -476,6 +508,7 @@ class WorkService:
             wid=working.wid,
             mode=mode,
             contract_used=contract_used,
+            contract_amount=contract_amount if contract_used else 0,
             partner_bonus_used=partner_bonus_used,
         )
 
@@ -556,9 +589,12 @@ class WorkService:
         base_reward = random.randint(reward_min, reward_max)
         reward = int(base_reward * progress)
 
-        contract_voided = victim_profile.work_contract_reserved == mode
-        if contract_voided:
-            victim_profile.work_contract_reserved = ""
+        # 合约加成：被牛时加成也生效
+        contract_inherited = working.work_contract_amount > 0 and working.work_contract_mode == mode
+        contract_amount = working.work_contract_amount
+        if contract_inherited:
+            contract_bonus = working.work_contract_amount * self._config.work_contract_bonus_per_coin
+            reward = int(reward * (1 + contract_bonus))
 
         partner_broken = self._clear_partner_link(profiles, uid)
 
@@ -591,7 +627,8 @@ class WorkService:
             wid=working.wid,
             mode=mode,
             coin_balance=recipient_balance,
-            contract_voided=contract_voided,
+            contract_inherited=contract_inherited,
+            contract_amount=contract_amount if contract_inherited else 0,
             partner_broken=partner_broken,
             insurance_used=insurance_used,
             insurance_bonus_coins=insurance_bonus_coins,

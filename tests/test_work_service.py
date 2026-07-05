@@ -226,16 +226,28 @@ class TestStartWork:
         profile_store = ProfileStore(tmp_paths, gid)
         profiles = profile_store.load_all()
         from app.models.profile import UserProfile
+        from app.models.ownership import Ownership
+        from app.models.enums import AcquireVia
 
         profiles[uid] = UserProfile(uid=uid, nick=nick, coins=100)
         profile_store.save_all(profiles)
 
-        result = await work_service.reserve_work_contract(gid, uid, nick, "normal")
+        ownership_store = OwnershipStore(tmp_paths, gid)
+        ownerships = ownership_store.load_all()
+        ownerships.append(Ownership(wid="w1", uid=uid, acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True))
+        ownership_store.save_all(ownerships)
+
+        result = await work_service.reserve_work_contract(gid, uid, nick, "normal", amount=50)
         assert result.ok is True
         assert result.mode == "normal"
+        assert result.amount == 50
+
+        ownerships = ownership_store.load_all()
+        primary = next(o for o in ownerships if o.uid == uid and o.is_primary)
+        assert primary.work_contract_amount == 50
+        assert primary.work_contract_mode == "normal"
 
         profiles = profile_store.load_all()
-        assert profiles[uid].work_contract_reserved == "normal"
         assert profiles[uid].coins == 50
 
     @pytest.mark.asyncio
@@ -537,13 +549,13 @@ class TestResolveDueWork:
         ownership_store = OwnershipStore(tmp_paths, gid)
         ownerships = ownership_store.load_all()
         ts = now_ts()
-        ownerships.append(Ownership(wid="w1", uid="u1", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True, is_working=True, work_mode="normal", work_started_at=ts - 15000, work_ends_at=ts - 1))
+        ownerships.append(Ownership(wid="w1", uid="u1", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True, is_working=True, work_mode="normal", work_started_at=ts - 15000, work_ends_at=ts - 1, work_contract_amount=100, work_contract_uid="u1", work_contract_mode="normal"))
         ownerships.append(Ownership(wid="w2", uid="u2", acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True))
         ownership_store.save_all(ownerships)
 
         profile_store = ProfileStore(tmp_paths, gid)
         profiles = profile_store.load_all()
-        profiles["u1"] = UserProfile(uid="u1", nick="Alice", coins=50, work_contract_reserved="normal", work_partner_uid="u2", work_partner_date=today)
+        profiles["u1"] = UserProfile(uid="u1", nick="Alice", coins=50, work_partner_uid="u2", work_partner_date=today)
         profiles["u2"] = UserProfile(uid="u2", nick="Bob", coins=50, work_partner_uid="u1", work_partner_date=today)
         profile_store.save_all(profiles)
 
@@ -563,8 +575,9 @@ class TestResolveDueWork:
         assert result.contract_used is True
         assert result.partner_bonus_used is True
 
-        profiles = profile_store.load_all()
-        assert profiles["u1"].work_contract_reserved == ""
+        ownerships = ownership_store.load_all()
+        primary = next(o for o in ownerships if o.uid == "u1" and o.is_primary)
+        assert primary.work_contract_amount == 0
 
     @pytest.mark.asyncio
     async def test_resolve_due_work_for_non_primary_worker(self, work_service, tmp_paths):
@@ -641,7 +654,7 @@ class TestResolveStolenWork:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_resolve_stolen_work_voids_contract_and_uses_insurance(self, work_service, tmp_paths):
+    async def test_resolve_stolen_work_inherits_contract_and_uses_insurance(self, work_service, tmp_paths):
         gid, uid, today = "g1", "u1", "2026-07-04"
         from app.models.ownership import Ownership
         from app.models.enums import AcquireVia
@@ -651,12 +664,12 @@ class TestResolveStolenWork:
         ownership_store = OwnershipStore(tmp_paths, gid)
         ownerships = ownership_store.load_all()
         ts = now_ts()
-        ownerships.append(Ownership(wid="w_test", uid=uid, acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True, is_working=True, work_mode="normal", work_started_at=ts - 7200, work_ends_at=ts + 7200))
+        ownerships.append(Ownership(wid="w_test", uid=uid, acquired_at=0, acquired_via=AcquireVia.DRAW, is_primary=True, is_working=True, work_mode="normal", work_started_at=ts - 7200, work_ends_at=ts + 7200, work_contract_amount=100, work_contract_uid=uid, work_contract_mode="normal"))
         ownership_store.save_all(ownerships)
 
         profile_store = ProfileStore(tmp_paths, gid)
         profiles = profile_store.load_all()
-        profiles[uid] = UserProfile(uid=uid, nick="Alice", coins=50, work_contract_reserved="normal", inventory={
+        profiles[uid] = UserProfile(uid=uid, nick="Alice", coins=50, inventory={
             "lock_item": 0,
             "protection_charm": 0,
             "draw_ticket_single": 0,
@@ -668,11 +681,11 @@ class TestResolveStolenWork:
 
         result = await work_service.resolve_stolen_work(gid, uid, today, attacker_uid="u2", attacker_nick="Bob")
         assert result is not None
-        assert result.contract_voided is True
+        assert result.contract_inherited is True
+        assert result.contract_amount == 100
         assert result.insurance_used is True
 
         profiles = profile_store.load_all()
-        assert profiles[uid].work_contract_reserved == ""
         assert profiles[uid].inventory["insurance_card"] == 0
         assert profiles[uid].inventory["revenge_token"] == 1
 
