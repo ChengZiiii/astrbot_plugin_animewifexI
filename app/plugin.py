@@ -162,8 +162,7 @@ class WifePluginCore(Star):
             try:
                 work_service = WorkService(self.paths, self.plugin_config, self.locks)
                 settled = await work_service.settle_all_due()
-                if settled:
-                    logger.info(f"[打工结算] 本次结算 {len(settled)} 笔")
+                logger.info(f"[打工结算] 心跳: 结算 {len(settled)} 笔")
                 for umo, result in settled:
                     if not umo:
                         logger.warning(f"[打工结算] 结算结果 umo 为空，跳过推送: wid={result.wid}, mode={result.mode}")
