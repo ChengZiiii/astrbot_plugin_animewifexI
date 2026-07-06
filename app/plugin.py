@@ -96,6 +96,10 @@ class WifePluginCore(Star):
             work_coro.close()
             self._work_settlement_task = None
 
+        # 跨插件 facade（impact 日老婆联动）
+        from .interop import WifeInterop, set_facade
+        set_facade(WifeInterop(self.ownership_service, self.locks, self.plugin_config, self.paths))
+
     # ---------- 时区 ----------
 
     @staticmethod
