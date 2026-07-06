@@ -8,7 +8,7 @@ from app.interop import WifeInterop, get_wife_interop, set_facade
 from app.models.ownership import Ownership
 from app.models.wife import WifeMeta
 from app.storage.locks import GroupLocks
-from app.storage.stores import OwnershipStore, WivesMasterStore
+from app.storage.stores import OwnershipStore, ProfileStore, WivesMasterStore
 
 
 async def test_peek_wife_primary(tmp_paths, config):
@@ -69,3 +69,98 @@ def test_set_facade_and_get(tmp_paths, config):
     set_facade(interop)
     assert get_wife_interop() is interop
     set_facade(None)  # cleanup
+
+
+# ==================== compute_ntr_resistance ====================
+
+
+@pytest.mark.asyncio
+async def test_resistance_locked_wife(tmp_paths, config):
+    """锁定的老婆 → locked=True，resistance=1.0（锁定已前置拒绝，乘积不叠加）"""
+    os_store = OwnershipStore(tmp_paths, "g1")
+    locked = Ownership(wid="w_l", uid="u1", intimacy=10, is_locked=True, lock_expires_at=9999999999)
+    os_store.save_all([locked])
+    interop = WifeInterop(None, GroupLocks(), config, tmp_paths)
+    res = await interop.compute_ntr_resistance("g1", "w_l")
+    assert res["locked"] is True
+    assert res["resistance"] == 1.0
+    assert res["target_owner_uid"] == "u1"
+
+
+@pytest.mark.asyncio
+async def test_resistance_shield_lowers(tmp_paths, config):
+    """亲密度 ≥ 60 → shielded=True，resistance 乘以 intimacy_shield_reduction"""
+    os_store = OwnershipStore(tmp_paths, "g1")
+    os_store.save_all([Ownership(wid="w_s", uid="u1", intimacy=70)])  # Lv4 → shield
+    interop = WifeInterop(None, GroupLocks(), config, tmp_paths)
+    res = await interop.compute_ntr_resistance("g1", "w_s")
+    assert res["shielded"] is True
+    assert res["intimacy"] == 70
+    assert res["level"] == 4  # intimacy 70 → Lv4 (60-79 range)
+    # config default: intimacy_shield_reduction = 0.30
+    assert abs(res["resistance"] - 0.30) < 1e-9
+
+
+@pytest.mark.asyncio
+async def test_resistance_no_shield(tmp_paths, config):
+    """亲密度 < 60 → shielded=False，resistance=1.0"""
+    os_store = OwnershipStore(tmp_paths, "g1")
+    os_store.save_all([Ownership(wid="w_ns", uid="u1", intimacy=40)])  # Lv3, no shield
+    interop = WifeInterop(None, GroupLocks(), config, tmp_paths)
+    res = await interop.compute_ntr_resistance("g1", "w_ns")
+    assert res["shielded"] is False
+    assert res["resistance"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_resistance_working_wife(tmp_paths, config):
+    """打工中的老婆 → working=True，resistance 乘以 work_modes[mode].ntr_multiplier"""
+    os_store = OwnershipStore(tmp_paths, "g1")
+    os_store.save_all([Ownership(wid="w_w", uid="u1", intimacy=10, is_working=True, work_mode="normal")])
+    interop = WifeInterop(None, GroupLocks(), config, tmp_paths)
+    res = await interop.compute_ntr_resistance("g1", "w_w")
+    assert res["working"] is True
+    # config default: work_modes.normal.ntr_multiplier = 1.5
+    assert abs(res["resistance"] - 1.5) < 1e-9
+
+
+@pytest.mark.asyncio
+async def test_resistance_protection_charm(tmp_paths, config):
+    """目标 owner 背包有 protection_charm → has_charm=True，resistance ×0.3"""
+    from app.models.profile import UserProfile
+
+    os_store = OwnershipStore(tmp_paths, "g1")
+    os_store.save_all([Ownership(wid="w_c", uid="u1", intimacy=10)])
+    # 写入 owner profile，带 protection_charm
+    profiles = {"u1": UserProfile(uid="u1", inventory={"protection_charm": 1})}
+    ProfileStore(tmp_paths, "g1").save_all(profiles)
+    interop = WifeInterop(None, GroupLocks(), config, tmp_paths)
+    res = await interop.compute_ntr_resistance("g1", "w_c")
+    assert res["has_charm"] is True
+    assert abs(res["resistance"] - 0.30) < 1e-9
+
+
+@pytest.mark.asyncio
+async def test_resistance_combined_factors(tmp_paths, config):
+    """多个因子叠加：shield + work + charm"""
+    from app.models.profile import UserProfile
+
+    os_store = OwnershipStore(tmp_paths, "g1")
+    os_store.save_all([Ownership(wid="w_combo", uid="u1", intimacy=80, is_working=True, work_mode="overtime")])
+    profiles = {"u1": UserProfile(uid="u1", inventory={"protection_charm": 2})}
+    ProfileStore(tmp_paths, "g1").save_all(profiles)
+    interop = WifeInterop(None, GroupLocks(), config, tmp_paths)
+    res = await interop.compute_ntr_resistance("g1", "w_combo")
+    assert res["shielded"] is True
+    assert res["working"] is True
+    assert res["has_charm"] is True
+    # shield(0.3) * work_overtime(2.0) * charm(0.3) = 0.18
+    assert abs(res["resistance"] - 0.18) < 1e-9
+
+
+@pytest.mark.asyncio
+async def test_resistance_wife_not_found(tmp_paths, config):
+    """老婆不存在 → 返回空 dict"""
+    interop = WifeInterop(None, GroupLocks(), config, tmp_paths)
+    res = await interop.compute_ntr_resistance("g1", "nonexistent")
+    assert res == {}
