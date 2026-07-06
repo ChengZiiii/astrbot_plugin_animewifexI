@@ -212,6 +212,9 @@ class WifePluginCore(Star):
                 except asyncio.CancelledError:
                     pass
 
+        from .interop import set_facade
+        set_facade(None)
+
 
 def _safe_zoneinfo(name: str) -> ZoneInfo:
     """容错构造 ZoneInfo，缺失 tzdata 时回退 UTC"""

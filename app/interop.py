@@ -49,7 +49,6 @@ class WifeInterop:
         meta = WivesMasterStore(self._paths).load_all().get(picked.wid)
         intimacy = picked.intimacy or 0
         level = OwnershipService.get_intimacy_level_no(intimacy)
-        level_names = {1: "相识", 2: "熟悉", 3: "亲密", 4: "挚爱", 5: "灵魂伴侣"}
         return {
             "wid": picked.wid,
             "name": meta.chara if meta else "",
@@ -57,6 +56,6 @@ class WifeInterop:
             "img": meta.img if meta else "",
             "intimacy": intimacy,
             "level": level,
-            "level_name": level_names.get(level, ""),
+            "level_name": OwnershipService.get_intimacy_level_name(intimacy),
             "is_primary": bool(picked.is_primary),
         }
