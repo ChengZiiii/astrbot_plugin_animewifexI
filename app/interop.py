@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Dict, Optional
 
 from .services.marry_service import MarryService
@@ -126,3 +127,45 @@ class WifeInterop:
             "intimacy": intimacy,
             "level": level,
         }
+
+    async def record_sex_act(
+        self, gid: str, wid: str, actor_uid: str, is_ntr: bool, intimacy_delta: int,
+    ) -> Dict[str, Any]:
+        """走 GroupLocks 安全改亲密度（**不转移所有权**，区别于 try_ntr）。
+
+        复刻完整 pet_wife 序列：load → guard → mutate → levelup check → save。
+        """
+        today = date.today().isoformat()
+
+        async with self._locks.acquire(gid):
+            os_store = OwnershipStore(self._paths, gid)
+            profile_store = ProfileStore(self._paths, gid)
+
+            ownerships = os_store.load_all()
+            profiles = profile_store.load_all()
+
+            target = os_store.find_by_wid(wid, ownerships)
+            if target is None:
+                return {"ok": False}
+
+            if MarryService.is_locked(target):
+                return {"ok": False}
+
+            profile = ProfileStore.get_or_create(profiles, target.uid, "")
+
+            old_intimacy = target.intimacy
+            new_intimacy = min(self._config.intimacy_max, old_intimacy + intimacy_delta)
+            target.intimacy = new_intimacy
+            target.intimacy_updated_date = today
+
+            self._os._check_intimacy_levelup(old_intimacy, new_intimacy, profile)
+
+            os_store.save_all(ownerships)
+            profile_store.save_all(profiles)
+
+            return {
+                "ok": True,
+                "new_intimacy": new_intimacy,
+                "level": OwnershipService.get_intimacy_level_no(new_intimacy),
+                "level_name": OwnershipService.get_intimacy_level_name(new_intimacy),
+            }

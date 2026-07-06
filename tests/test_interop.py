@@ -1,6 +1,8 @@
-"""Tests for app.interop: WifeInterop facade with peek_wife."""
+"""Tests for app.interop: WifeInterop facade (peek_wife, compute_ntr_resistance, record_sex_act)."""
 
 from __future__ import annotations
+
+import asyncio
 
 import pytest
 
@@ -164,3 +166,73 @@ async def test_resistance_wife_not_found(tmp_paths, config):
     interop = WifeInterop(None, GroupLocks(), config, tmp_paths)
     res = await interop.compute_ntr_resistance("g1", "nonexistent")
     assert res == {}
+
+
+# ==================== record_sex_act ====================
+
+
+async def test_record_sex_act_increments_intimacy(tmp_paths, config, ownership_service):
+    """亲密度增加 delta，持久化到磁盘"""
+    os_store = OwnershipStore(tmp_paths, "g1")
+    os_store.save_all([Ownership(wid="w_r", uid="u1", intimacy=10)])
+    interop = WifeInterop(ownership_service, GroupLocks(), config, tmp_paths)
+
+    res = await interop.record_sex_act("g1", "w_r", "u_actor", False, 5)
+
+    assert res["ok"] is True
+    assert res["new_intimacy"] == 15
+    assert res["level"] == 1
+    assert res["level_name"] == "相识"
+
+    reloaded = OwnershipStore(tmp_paths, "g1").load_all()
+    assert reloaded[0].intimacy == 15
+
+
+async def test_record_sex_act_does_not_transfer_ownership(tmp_paths, config, ownership_service):
+    """NTR 场景下 uid 不变（不转移所有权）"""
+    os_store = OwnershipStore(tmp_paths, "g1")
+    os_store.save_all([Ownership(wid="w_ntr", uid="u_victim", intimacy=10)])
+    interop = WifeInterop(ownership_service, GroupLocks(), config, tmp_paths)
+
+    await interop.record_sex_act("g1", "w_ntr", "u_attacker", True, 5)
+
+    reloaded = OwnershipStore(tmp_paths, "g1").load_all()
+    assert reloaded[0].uid == "u_victim"
+
+
+async def test_record_sex_act_concurrent_no_lost_update(tmp_paths, config, ownership_service):
+    """10 个并发 +1 → 亲密度 = 10（GroupLocks 序列化保证无丢失更新）"""
+    os_store = OwnershipStore(tmp_paths, "g1")
+    os_store.save_all([Ownership(wid="w_c", uid="u1", intimacy=0)])
+    locks = GroupLocks()
+    interop = WifeInterop(ownership_service, locks, config, tmp_paths)
+
+    results = await asyncio.gather(*(
+        interop.record_sex_act("g1", "w_c", f"u_{i}", False, 1)
+        for i in range(10)
+    ))
+
+    final = OwnershipStore(tmp_paths, "g1").load_all()
+    assert final[0].intimacy == 10
+
+
+async def test_record_sex_act_locked_wife_fails(tmp_paths, config, ownership_service):
+    """锁定中的老婆 → ok=False"""
+    os_store = OwnershipStore(tmp_paths, "g1")
+    os_store.save_all([
+        Ownership(wid="w_lk", uid="u1", intimacy=10, is_locked=True, lock_expires_at=9999999999),
+    ])
+    interop = WifeInterop(ownership_service, GroupLocks(), config, tmp_paths)
+
+    res = await interop.record_sex_act("g1", "w_lk", "u_actor", False, 5)
+
+    assert res["ok"] is False
+
+
+async def test_record_sex_act_wife_not_found(tmp_paths, config, ownership_service):
+    """不存在的 wid → ok=False"""
+    interop = WifeInterop(ownership_service, GroupLocks(), config, tmp_paths)
+
+    res = await interop.record_sex_act("g1", "nonexistent", "u_actor", False, 5)
+
+    assert res["ok"] is False
