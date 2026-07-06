@@ -105,7 +105,10 @@ async def handle_ntr(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGener
         return
 
     if result.reason == "target_locked":
-        yield event.plain_result("对方的老婆正在锁定中，这次牛不走哦~")
+        wives_meta = WivesMasterStore(ctx.paths).load_all()
+        w = wives_meta.get(result.wid)
+        wife_name = (w.chara or w.img or "该老婆") if w else "该老婆"
+        yield event.plain_result(f"{wife_name}正在锁定中，这次牛不走哦~")
         return
 
     # 概率失败

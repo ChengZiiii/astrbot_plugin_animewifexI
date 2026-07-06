@@ -673,7 +673,8 @@ class OwnershipService:
                         profile=attacker_profile,
                     )
             else:
-                # 随机选目标的一个老婆
+                # 随机选目标的一个老婆（跳过被锁的）
+                from .marry_service import MarryService
                 target_wives = ownership_store.list_by_user(tid, ownerships)
                 if not target_wives:
                     profile_store.save_all(profiles)
@@ -686,7 +687,23 @@ class OwnershipService:
                         remaining_attempts=remaining,
                         profile=attacker_profile,
                     )
-                target_wife = _random.choice(target_wives)
+                unlocked_wives = [w for w in target_wives if not MarryService.is_locked(w)]
+                if not unlocked_wives:
+                    # 全部被锁，返回锁定拒绝（用第一个被锁的老婆信息）
+                    target_wife = target_wives[0]
+                    target_wid = target_wife.wid
+                    profile_store.save_all(profiles)
+                    daily_store.save_all(daily_counts)
+                    return NtrResult(
+                        ok=True,
+                        success=False,
+                        consumed_attempt=True,
+                        reason="target_locked",
+                        remaining_attempts=remaining,
+                        profile=attacker_profile,
+                        wid=target_wid,
+                    )
+                target_wife = _random.choice(unlocked_wives)
                 target_wid = target_wife.wid
 
             target_profile = profiles.get(tid)
