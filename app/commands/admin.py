@@ -336,7 +336,7 @@ async def handle_admin_test_intimacy(
 
     msg = (event.message_str or "").strip()
     import re
-    numbers = re.findall(r"\d+", msg)
+    numbers = re.findall(r"-?\d+", msg)
     value = int(numbers[-1]) if numbers else 0
 
     from ..storage.stores import OwnershipStore
@@ -374,7 +374,7 @@ async def handle_admin_test_coins(
 
     msg = (event.message_str or "").strip()
     import re
-    numbers = re.findall(r"\d+", msg)
+    numbers = re.findall(r"-?\d+", msg)
     value = int(numbers[-1]) if numbers else 0
 
     from ..storage.stores import ProfileStore
