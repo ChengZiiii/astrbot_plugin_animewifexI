@@ -8,9 +8,11 @@ import pytest
 
 from app.models.enums import AcquireVia
 from app.models.ownership import Ownership
+from app.models.profile import UserProfile
+from app.models.wife import WifeMeta
 from app.services.ownership_service import OwnershipService
 from app.services.plugin_config import PluginConfig
-from app.storage.stores import OwnershipStore, ProfileStore
+from app.storage.stores import OwnershipStore, ProfileStore, WivesMasterStore
 from app.utils.time import now_ts
 
 
@@ -116,6 +118,49 @@ class TestRevengeWindow:
         # The revenge check should fail (target != last_ntr_by.uid),
         # but it still proceeds as a normal NTR attempt
         assert result.ok  # NTR attempt is valid
+
+
+    @pytest.mark.asyncio
+    async def test_revenge_targets_recorded_stolen_wife_not_random_one(self, revenge_service, tmp_paths, monkeypatch):
+        """复仇必须牛回 last_ntr_by.wid 记录的原老婆，而不是随机牛攻击者其他老婆。"""
+        gid, today = "g1", "2026-07-04"
+        ts = int(now_ts())
+        stolen_wid = "w_stolen"
+        other_wid_1 = "w_other_1"
+        other_wid_2 = "w_other_2"
+
+        WivesMasterStore(tmp_paths).save_all({
+            stolen_wid: WifeMeta(wid=stolen_wid, img="B被牛走.jpg", chara="B被牛走"),
+            other_wid_1: WifeMeta(wid=other_wid_1, img="A其他1.jpg", chara="A其他1"),
+            other_wid_2: WifeMeta(wid=other_wid_2, img="A其他2.jpg", chara="A其他2"),
+        })
+        OwnershipStore(tmp_paths, gid).save_all([
+            Ownership(wid=stolen_wid, uid="u2", acquired_at=ts, acquired_via=AcquireVia.NTR, is_primary=True),
+            Ownership(wid=other_wid_1, uid="u2", acquired_at=ts, acquired_via=AcquireVia.DRAW, is_primary=False),
+            Ownership(wid=other_wid_2, uid="u2", acquired_at=ts, acquired_via=AcquireVia.DRAW, is_primary=False),
+        ])
+        ProfileStore(tmp_paths, gid).save_all({
+            "u1": UserProfile(
+                uid="u1",
+                nick="Alice",
+                coins=1000,
+                last_ntr_by={"uid": "u2", "ts": now_ts(), "wid": stolen_wid, "lost_intimacy": 0},
+            ),
+            "u2": UserProfile(uid="u2", nick="Bob", coins=1000),
+        })
+
+        # 如果复仇仍走随机目标，random.choice 会选中 A 的其他老婆；正确实现应完全绕过随机选择。
+        monkeypatch.setattr("app.services.ownership_service._random.choice", lambda seq: seq[1])
+        monkeypatch.setattr("app.services.ownership_service._random.random", lambda: 0.0)
+
+        revenge = await revenge_service.try_ntr(gid, "u1", "u2", "Alice", today, is_revenge=True)
+
+        assert revenge.success
+        assert revenge.wid == stolen_wid
+        ownerships = OwnershipStore(tmp_paths, gid).load_all()
+        assert any(o.uid == "u1" and o.wid == stolen_wid for o in ownerships)
+        assert any(o.uid == "u2" and o.wid == other_wid_1 for o in ownerships)
+        assert any(o.uid == "u2" and o.wid == other_wid_2 for o in ownerships)
 
 
 class TestIntimacyResetOnNTR:

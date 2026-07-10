@@ -653,6 +653,19 @@ class OwnershipService:
                 coins=self._config.initial_coins,
             )
 
+            # 复仇必须固定追回 last_ntr_by.wid 记录的那位老婆；
+            # 否则会退化成随机 NTR，可能牛回攻击者的其他老婆。
+            if is_revenge and not target_wid and attacker_profile.last_ntr_by:
+                rev_uid = attacker_profile.last_ntr_by.get("uid", "")
+                rev_ts = float(attacker_profile.last_ntr_by.get("ts", 0))
+                rev_wid = str(attacker_profile.last_ntr_by.get("wid", "") or "")
+                if (
+                    rev_wid
+                    and rev_uid == tid
+                    and (now_ts() - rev_ts) < self._config.revenge_window_hours * 3600
+                ):
+                    target_wid = rev_wid
+
             # 先消耗当日次数（无论后续成功/失败，与 v2.x 一致）
             new_count = DailyCountStore.increment(
                 daily_counts, uid, DailyAction.NTR_ATTEMPT, today
