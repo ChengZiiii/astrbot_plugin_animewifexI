@@ -34,6 +34,7 @@ __all__ = [
     "accumulate_status_layers",
     "swap_if_dead",
     "do_turn",
+    "check_timeout",
     "ELEMENT_ADVANTAGE_MAP",
 ]
 
@@ -569,3 +570,47 @@ def _apply_attack_result(
 
     # 状态层累积（气魄 / 弱点）
     on_hit_apply_layers(attacker_status, defender_status, is_attacker_hit=True)
+
+
+# ============== 战斗超时 / HP 比判定（spec §S7.1） ==============
+
+
+def check_timeout(battle: "PkBattle") -> Optional[str]:
+    """12 回合到后的胜负判定（spec §S7.1）。
+
+    规则：
+
+    * 一方全死 → 另一方胜（无回合上限约束）
+    * 双方都全死 → 守方胜（默认）
+    * turn_idx >= MAX_TURNS 时按剩余 HP 比判：
+
+      * atk_total > def_total → atk 胜
+      * atk_total < def_total → def 胜
+      * 相等 → def 胜（默认）
+    * 否则返回 None（继续）
+
+    返回：``None``（继续）/ ``atk_uid`` / ``def_uid``。
+    """
+    atk_alive = any(m.is_alive for m in battle.atk_formation)
+    df_alive = any(m.is_alive for m in battle.def_formation)
+
+    # 一方全死 → 另一方胜（不依赖 turn_idx）
+    if not atk_alive and not df_alive:
+        return battle.def_uid
+    if not atk_alive:
+        return battle.def_uid
+    if not df_alive:
+        return battle.atk_uid
+
+    # 还没到回合上限 → 不判超时
+    if battle.turn_idx < PkV2Defaults.MAX_TURNS:
+        return None
+
+    # 12 回合到 → HP 比判定
+    atk_total_hp = sum(m.current_hp for m in battle.atk_formation if m.is_alive)
+    df_total_hp = sum(m.current_hp for m in battle.def_formation if m.is_alive)
+
+    if atk_total_hp > df_total_hp:
+        return battle.atk_uid
+    # atk_total_hp <= df_total_hp → 守方胜（持平 / 攻方少都判守方）
+    return battle.def_uid
