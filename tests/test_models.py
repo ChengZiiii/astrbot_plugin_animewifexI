@@ -257,6 +257,39 @@ class TestProfileNoContract:
         assert p.uid == "u1"
 
 
+class TestProfileFormation:
+    """v3 接力战：UserProfile.formation 字段（编队持久化）"""
+
+    def test_defaults_to_empty_list(self):
+        p = UserProfile(uid="u1", nick="test")
+        assert p.formation == []
+
+    def test_round_trip(self):
+        p = UserProfile(uid="u1", nick="test", formation=["w_a", "w_b", "w_c", "w_d"])
+        data = p.to_dict()
+        assert data["formation"] == ["w_a", "w_b", "w_c", "w_d"]
+        p2 = UserProfile.from_dict(data)
+        assert p2.formation == ["w_a", "w_b", "w_c", "w_d"]
+
+    def test_round_trip_partial_formation(self):
+        p = UserProfile(uid="u1", nick="test", formation=["w_a"])
+        data = p.to_dict()
+        p2 = UserProfile.from_dict(data)
+        assert p2.formation == ["w_a"]
+
+    def test_legacy_profile_missing_formation_field_defaults_to_empty(self):
+        """旧档案（Phase 4 时代）没有 formation 字段时，回退为空列表"""
+        d = {"uid": "u1", "nick": "old_player", "coins": 100}
+        p = UserProfile.from_dict(d)
+        assert p.formation == []
+
+    def test_legacy_profile_formation_is_non_list_falls_back(self):
+        """老数据格式异常（非 list）时，兜底为空列表"""
+        d = {"uid": "u1", "formation": "broken"}
+        p = UserProfile.from_dict(d)
+        assert p.formation == []
+
+
 # ==================== v3 接力战 数据模型 ====================
 
 

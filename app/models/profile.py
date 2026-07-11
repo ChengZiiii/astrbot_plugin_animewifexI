@@ -29,6 +29,16 @@ def _default_last_ntr_by() -> Dict[str, Any]:
     return {}
 
 
+def _sanitize_formation(raw: Any) -> List[str]:
+    """从老档案 / 异常数据中安全读取 ``formation`` 字段。
+
+    缺失或非 list 类型都回退为空列表（让用户后续 PK 时再提示设置编队）。
+    """
+    if not isinstance(raw, list):
+        return []
+    return [str(x) for x in raw if isinstance(x, (str, int))]
+
+
 @dataclass
 class UserProfile:
     """用户在某群的综合档案"""
@@ -75,6 +85,11 @@ class UserProfile:
     newbie_guide_claimed: List[str] = field(default_factory=list)  # 已领取的新手引导任务
     last_ntr_target_uid: str = ""         # 最近一次成功 NTR 的目标 uid
     same_target_ntr_streak: int = 0       # 对同一目标连续成功次数
+    # Phase 5 / v3 接力战：编队持久化（用户自定义 1-4 位出战顺序）
+    # 长度 0 = 未设置（PK 时提示用户先 `老婆 编队`）
+    # 长度 4 = [wid1, wid2, wid3, wid4]
+    # 长度 < 4 = 部分编队（PK 时按实际数量算 1vN 或 Nv1）
+    formation: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -120,6 +135,7 @@ class UserProfile:
             "newbie_guide_claimed": list(self.newbie_guide_claimed),
             "last_ntr_target_uid": self.last_ntr_target_uid,
             "same_target_ntr_streak": self.same_target_ntr_streak,
+            "formation": list(self.formation),
         }
 
     @classmethod
@@ -190,6 +206,7 @@ class UserProfile:
             newbie_guide_claimed=[str(x) for x in newbie_guide_raw],
             last_ntr_target_uid=str(data.get("last_ntr_target_uid", "") or ""),
             same_target_ntr_streak=int(data.get("same_target_ntr_streak", 0) or 0),
+            formation=_sanitize_formation(data.get("formation")),
         )
 
     @classmethod
