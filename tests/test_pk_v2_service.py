@@ -511,10 +511,12 @@ class _MockPairStoreBlocked(_MockPairStore):
 class TestStartBattleCooldown:
     @pytest.mark.asyncio
     async def test_start_battle_blocked_within_cooldown(self):
-        """24h 内已 PK 过 → start_battle 返回冷却文案，且不再启动战斗"""
+        """同对手冷却内已 PK 过 → start_battle 返回冷却文案（需配置 >0 才启用）"""
+        from app.services.plugin_config import PluginConfig
+        config = PluginConfig(pk_v2_turn_delay_ms=1, pk_pair_cooldown_hours=24)
         pair_store = _MockPairStoreBlocked()
         sender = _MockSender()
-        service = _service_with_mocks(sender=sender, pair_store=pair_store)
+        service = _service_with_mocks(sender=sender, pair_store=pair_store, config=config)
         battle = _make_battle()
 
         msg = await service.start_battle(battle, "umo")

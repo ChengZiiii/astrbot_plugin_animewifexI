@@ -54,7 +54,7 @@ class PluginConfig:
     ntr_cooldown: int = 60
     draw_cooldown: int = 0
     swap_cooldown: int = 30
-    pk_cooldown: int = 120
+    pk_cooldown: int = 600  # 自冷却 10 分钟（默认）
     pk_max_per_day: int = 5
 
     # ---------- NTR ----------
@@ -146,7 +146,7 @@ class PluginConfig:
     pk_random_variance: float = 0.10
     pk_score_per_win: int = 5
     pk_score_per_lose: int = 1
-    pk_pair_cooldown_hours: int = 24
+    pk_pair_cooldown_hours: int = 0  # 0 = 不限制同对手（默认仅靠自冷却）
     pk_score_decay_days: int = 30
     pk_score_decay_amount: int = 50
     pk_element_advantage: float = 1.20
@@ -349,7 +349,7 @@ class PluginConfig:
             ntr_cooldown=_as_int(d.get("ntr_cooldown"), 60),
             draw_cooldown=_as_int(d.get("draw_cooldown"), 0),
             swap_cooldown=_as_int(d.get("swap_cooldown"), 30),
-            pk_cooldown=_as_int(d.get("pk_cooldown"), 120),
+            pk_cooldown=_as_int(d.get("pk_cooldown"), 600),
             pk_max_per_day=_as_int(d.get("pk_max_per_day"), 5),
             ntr_max=_as_int(d.get("ntr_max"), 3),
             ntr_possibility=_as_float(d.get("ntr_possibility"), 0.20),
@@ -404,7 +404,7 @@ class PluginConfig:
             pk_random_variance=_as_float(d.get("pk_random_variance"), 0.10),
             pk_score_per_win=_as_int(d.get("pk_score_per_win"), 5),
             pk_score_per_lose=_as_int(d.get("pk_score_per_lose"), 1),
-            pk_pair_cooldown_hours=_as_int(d.get("pk_pair_cooldown_hours"), 24),
+            pk_pair_cooldown_hours=_as_int(d.get("pk_pair_cooldown_hours"), 0),
             pk_score_decay_days=_as_int(d.get("pk_score_decay_days"), 30),
             pk_score_decay_amount=_as_int(d.get("pk_score_decay_amount"), 50),
             pk_element_advantage=_as_float(d.get("pk_element_advantage"), 1.20),

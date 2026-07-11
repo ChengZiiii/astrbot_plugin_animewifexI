@@ -147,18 +147,20 @@ class PkV2Service:
            （无 running loop 时静默 try/except）
         4. 返回 ``"✅ 4v4 接力战启动！请查看后续战报..."``
         """
-        # 0) 24h 同对手防刷预检
-        try:
-            pair_store = self._get_pair_store(battle.gid)
-            pairs = pair_store.load_all()
-            can_fight = pair_store.can_pk(
-                pairs, battle.atk_uid, battle.def_uid, self._config.pk_pair_cooldown_hours
-            )
-        except Exception:
-            logger.exception("pk_v2 can_pk 预检失败，放行")
-            can_fight = True
-        if not can_fight:
-            return "你们 24 小时内已经 PK 过，休息一下吧~"
+        # 0) 同对手防刷预检（配置 >0 小时时启用，默认 0 = 不限制）
+        pair_cd = self._config.pk_pair_cooldown_hours
+        if pair_cd > 0:
+            try:
+                pair_store = self._get_pair_store(battle.gid)
+                pairs = pair_store.load_all()
+                can_fight = pair_store.can_pk(
+                    pairs, battle.atk_uid, battle.def_uid, pair_cd
+                )
+            except Exception:
+                logger.exception("pk_v2 can_pk 预检失败，放行")
+                can_fight = True
+            if not can_fight:
+                return f"你们 {pair_cd} 小时内已经 PK 过，休息一下吧~"
 
         # 1) 持 umo（in-memory dict）
         self._battle_umos[battle.battle_id] = umo

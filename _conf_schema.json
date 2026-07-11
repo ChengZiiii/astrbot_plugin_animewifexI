@@ -45,10 +45,10 @@
         "hint": "两次交换请求之间的最小间隔（Phase 2 接入）"
     },
     "pk_cooldown": {
-        "description": "PK 冷却（秒）",
+        "description": "PK 自冷却（秒）",
         "type": "int",
-        "default": 120,
-        "hint": "两次 PK 之间的最小间隔（Phase 3 接入）"
+        "default": 600,
+        "hint": "自己对同一人/不同人 PK 之间的最小间隔（默认 10 分钟）"
     },
     "ntr_max": {
         "description": "每日可牛老婆次数",
@@ -362,10 +362,10 @@
         "hint": "Phase 4: PK失败获得的段位积分（战力差接近时）"
     },
     "pk_pair_cooldown_hours": {
-        "description": "同对手PK冷却（小时）",
+        "description": "同对手PK冷却（小时·0=不限制）",
         "type": "int",
-        "default": 24,
-        "hint": "Phase 4: 对同一对手发起PK的冷却时间"
+        "default": 0,
+        "hint": "对同一对手PK的冷却时间（小时），0 表示不限制仅靠自冷却（默认）"
     },
     "pk_score_decay_days": {
         "description": "PK积分衰减天数",

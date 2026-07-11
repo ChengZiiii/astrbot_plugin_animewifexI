@@ -126,11 +126,15 @@ class PkService:
         if today_count >= self._config.pk_max_per_day:
             return PkResult(ok=False, reason="limit", msg=f"今天已经 PK 了 {self._config.pk_max_per_day} 次啦，明天再来吧~")
 
-        # T41: 检查 24h 同对手限制
-        pk_pair_store = PkPairStore(self._paths, gid)
-        pk_pairs = pk_pair_store.load_all()
-        if not pk_pair_store.can_pk(pk_pairs, attacker_uid, defender_uid, self._config.pk_pair_cooldown_hours):
-            return PkResult(ok=False, reason="same_target", msg=f"24小时内不能对同一对手重复 PK 哦~")
+        # T41: 检查同对手限制（仅配置 >0 小时时启用，默认 0 = 不限制）
+        pk_pair_store = None
+        pk_pairs = None
+        pair_cd = self._config.pk_pair_cooldown_hours
+        if pair_cd > 0:
+            pk_pair_store = PkPairStore(self._paths, gid)
+            pk_pairs = pk_pair_store.load_all()
+            if not pk_pair_store.can_pk(pk_pairs, attacker_uid, defender_uid, pair_cd):
+                return PkResult(ok=False, reason="same_target", msg=f"{pair_cd}小时内不能对同一对手重复 PK 哦~")
 
         # 获取双方主老婆
         ownership_store = OwnershipStore(self._paths, gid)
@@ -257,9 +261,10 @@ class PkService:
         DailyCountStore.increment(daily_data, attacker_uid, "pk", today)
         daily_store.save_all(daily_data)
 
-        # T41: 记录 PK 对对手（24h 防刷）
-        pk_pair_store.record_pk(pk_pairs, attacker_uid, defender_uid)
-        pk_pair_store.save_all(pk_pairs)
+        # T41: 记录 PK 对对手（仅启用时）
+        if pk_pair_store is not None and pk_pairs is not None:
+            pk_pair_store.record_pk(pk_pairs, attacker_uid, defender_uid)
+            pk_pair_store.save_all(pk_pairs)
 
         # T43: 计算元素和克制关系
         atk_element = self._derive_element(atk_wife)
