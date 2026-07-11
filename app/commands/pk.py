@@ -182,6 +182,9 @@ async def _handle_pk_v2_4v4(
         send_node=_pk_v2_send_node,
         forward_sender_id=bot_id,
         forward_sender_name=sender_name,
+        # Phase 6: 注入 lifespan_service，让 _apply_lifespan_damage 真的扣寿命
+        # 不传则战斗后所有参战老婆寿命不变（恢复后会看到这个修复的旧 bug）
+        lifespan_service=ctx.lifespan_service,
     )
     try:
         ack = await service.start_battle(battle, umo)

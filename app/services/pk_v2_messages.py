@@ -341,6 +341,8 @@ def render_settle_message(
     def_total: int = 4,
     atk_total_hp: int = 1830,
     def_total_hp: int = 1830,
+    atk_nick: str = "",
+    def_nick: str = "",
 ) -> str:
     """结算贴：胜负 + 奖励 + 积分 + 段位 + 英雄一览 + 编队提示。
 
@@ -357,30 +359,40 @@ def render_settle_message(
         双方队伍总人数（击破敌将分母，动态）。
     atk_total_hp / def_total_hp
         双方队伍总 HP（己方损耗分母，动态）。
+    atk_nick / def_nick
+        攻方 / 守方的玩家昵称。平局分支用于渲染"攻方 @xxx / 守方 @xxx"。
+
+    Notes
+    -----
+    非平局分支用 ``@winner_nick`` / ``@loser_nick`` 标签——不再用 "攻方/守方"
+    标签，避免把 QQ uid 误判成 ``"atk"`` 字符串的老 bug。
     """
     sep = "═" * 30
 
-    # 平局分支
+    # 平局分支：用 atk_nick / def_nick 渲染攻方/守方（这两参数在平局中才有意义）
     if is_tie:
+        # 平局显示仍然按"攻方/守方"，因为平局没有"胜方"
+        atk_label_nick = atk_nick or winner_nick
+        def_label_nick = def_nick or loser_nick
         lines: List[str] = [
             sep,
             "🤝 4v4 接力战平局！",
             sep,
             "",
-            f"🔴 攻方 @{winner_nick}",
+            f"🔴 攻方 @{atk_label_nick}",
             f"  击破敌将：{atk_kills}/{atk_total}",
             f"  己方损耗：{atk_dmg_total}/{atk_total_hp} HP",
             f"  奖励：+{reward_winner} 币 | +{winner_score_gain} PK 积分（{winner_rank}）",
             "",
-            f"🔵 守方 @{loser_nick}",
+            f"🔵 守方 @{def_label_nick}",
             f"  击破敌将：{def_kills}/{def_total}",
             f"  己方损耗：{def_dmg_total}/{def_total_hp} HP",
             f"  奖励：+{reward_loser} 币 | +{loser_score_gain} PK 积分（{loser_rank}）",
             "",
         ]
         if formations_hero:
-            first_nick = formations_hero[0][0]
-            lines.append(f"📢 @{first_nick} 你的编队一览：")
+            # 平局也用攻方昵称作为"编队一览"的标题前缀（保持与启动贴的"攻方"指代一致）
+            lines.append(f"📢 @{atk_label_nick} 你的编队一览：")
             for nick, kills, in_winner in formations_hero:
                 tag = _kill_tag(kills)
                 suffix = f"（击杀 {kills}）" if kills > 0 else ""
@@ -389,27 +401,27 @@ def render_settle_message(
         lines.append(sep)
         return "\n".join(lines)
 
+    # 非平局：用 @winner_nick / @loser_nick 直接打标签（不再用攻守方误判）
     lines = [
         sep,
         "🏆 4v4 接力战结束！",
         sep,
         "",
-        f"🔴 攻方 @{winner_nick if winner_uid == 'atk' else loser_nick} — 胜利！🏆",
+        f"🏆 胜方 @{winner_nick}",
         f"  击破敌将：{atk_kills}/{atk_total}",
         f"  己方损耗：{atk_dmg_total}/{atk_total_hp} HP",
         f"  奖励：+{reward_winner} 币 | +{winner_score_gain} PK 积分（{winner_rank}）",
         "",
-        f"🔵 守方 @{loser_nick if winner_uid == 'atk' else winner_nick} — 失败",
+        f"💀 败方 @{loser_nick}",
         f"  击破敌将：{def_kills}/{def_total}",
         f"  己方损耗：{def_dmg_total}/{def_total_hp} HP",
         f"  奖励：+{reward_loser} 币 | +{loser_score_gain} PK 积分（{loser_rank}）",
         "",
     ]
 
-    # 英雄一览
+    # 英雄一览：用 winner_nick（玩家昵称），不是 formations_hero[0][0]（老婆名！）
     if formations_hero:
-        first_nick = formations_hero[0][0]
-        lines.append(f"📢 @{first_nick} 你的编队一览：")
+        lines.append(f"📢 @{winner_nick} 你的编队一览：")
         for nick, kills, in_winner in formations_hero:
             tag = _kill_tag(kills)
             suffix = f"（击杀 {kills}）" if kills > 0 else ""

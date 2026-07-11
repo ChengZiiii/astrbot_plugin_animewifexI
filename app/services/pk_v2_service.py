@@ -330,6 +330,9 @@ class PkV2Service:
             is_tie=is_tie,
             atk_total=atk_total, def_total=def_total,
             atk_total_hp=atk_total_hp, def_total_hp=def_total_hp,
+            # 平局分支渲染"攻方/守方"行需要这两个玩家昵称
+            atk_nick=battle.atk_nick,
+            def_nick=battle.def_nick,
         )
         self._buffer_append(battle.battle_id, text)
 

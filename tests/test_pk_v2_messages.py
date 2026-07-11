@@ -417,3 +417,97 @@ class TestRenderSettleMessageDynamic:
         ))
         assert "平局" in msg
         assert "+8" in msg
+
+    # ============== 回归测试：3 个 bug 的修复 ==============
+
+    def test_bug1_no_atk_def_mislabel_regression(self):
+        """Bug #1 回归：结算贴不再用 "攻方 @xxx / 守方 @xxx" 的互换标签，
+        也不再有把 winner_uid 误判为 "atk" 字符串的逻辑 bug。
+
+        测试要点：
+        - winner_uid="u1"（不是字符串 "atk"）
+        - 渲染结果：胜方行用 winner_nick "alice"，败方行用 loser_nick "bob"
+        - alice（胜方）绝不出现在"败方"行；bob（败方）绝不出现在"胜方"行
+        - 没有"攻方/守方"标签（只在平局分支才有，平局分支已经单独测了）
+        """
+        msg = render_settle_message(
+            winner_uid="u1", winner_nick="alice",
+            loser_uid="u2", loser_nick="bob",
+            atk_kills=0, def_kills=3,
+            atk_dmg_total=500, def_dmg_total=800,
+            reward_winner=15, reward_loser=1,
+            winner_score_gain=5, loser_score_gain=0,
+            winner_rank="白银 I", loser_rank="青铜 I",
+            formations_hero=[("优妮", 0, True), ("无声铃鹿", 3, False)],
+            target_needs_formation=False,
+            atk_nick="alice", def_nick="bob",
+        )
+        # 没有 "攻方" / "守方" 标签（非平局分支）
+        assert "攻方" not in msg
+        assert "守方" not in msg
+        # 用胜/败方标签
+        assert "胜方 @alice" in msg
+        assert "败方 @bob" in msg
+        # 关键回归断言：胜方 "alice" 不出现在败方行；败方 "bob" 不出现在胜方行
+        for line in msg.splitlines():
+            if line.startswith("💀 败方"):
+                assert "alice" not in line, (
+                    f"bug #1 未修复：alice（胜方）居然出现在败方行：{line!r}"
+                )
+            if line.startswith("🏆 胜方"):
+                assert "bob" not in line, (
+                    f"bug #1 未修复：bob（败方）居然出现在胜方行：{line!r}"
+                )
+        # alice 的胜方行 + 英雄一览行 = 2 处出现（合法的）；bob 败方行 + 编队提示 = 可能 1~2 处
+        alice_count = sum(1 for ln in msg.splitlines() if "@alice" in ln)
+        bob_count = sum(1 for ln in msg.splitlines() if "@bob" in ln)
+        assert alice_count >= 1, "alice 至少应在胜方行出现"
+        assert bob_count >= 1, "bob 至少应在败方行出现"
+
+    def test_bug2_hero_roster_uses_winner_nick_not_wife_name_regression(self):
+        """Bug #2 回归：英雄一览的 "@xxx 你的编队一览" 必须用 **玩家昵称**
+        （winner_nick），而不是 formations_hero 第一项的老婆名。
+
+        历史上 formations_hero[0][0] 是老婆昵称（"优妮"），导致出现
+        "@优妮 你的编队一览" 这种荒诞结果。
+        """
+        msg = render_settle_message(
+            winner_uid="u1", winner_nick="玩家A",
+            loser_uid="u2", loser_nick="玩家B",
+            atk_kills=2, def_kills=1,
+            atk_dmg_total=300, def_dmg_total=400,
+            reward_winner=15, reward_loser=1,
+            winner_score_gain=5, loser_score_gain=0,
+            winner_rank="白银 I", loser_rank="青铜 I",
+            formations_hero=[
+                ("优妮", 2, True),    # 第一项是老婆名"优妮"
+                ("中川夏纪", 0, True),
+            ],
+            target_needs_formation=False,
+            atk_nick="玩家A", def_nick="玩家B",
+        )
+        # 必须用 winner_nick，而不是老婆名
+        assert "📢 @玩家A 你的编队一览" in msg
+        assert "📢 @优妮 你的编队一览" not in msg, (
+            "bug #2 未修复：英雄一览居然用了 formations_hero[0][0]（老婆名）而不是 winner_nick"
+        )
+
+    def test_tie_uses_atk_def_nicks_for_labels_regression(self):
+        """平局分支：攻方/守方标签分别用 atk_nick / def_nick 平局分支仍然按攻守方打标签，靠这两个参数渲染。"""
+        msg = render_settle_message(
+            winner_uid="u1", winner_nick="soren",
+            loser_uid="u2", loser_nick="xxx",
+            atk_kills=1, def_kills=1,
+            atk_dmg_total=300, def_dmg_total=300,
+            reward_winner=8, reward_loser=8,
+            winner_score_gain=2, loser_score_gain=2,
+            winner_rank="白银 I", loser_rank="白银 I",
+            formations_hero=[("优妮", 1, True), ("无形铃鹿", 1, False)],
+            target_needs_formation=False,
+            is_tie=True,
+            atk_nick="攻方Alice", def_nick="守方Bob",
+        )
+        assert "攻方 @攻方Alice" in msg
+        assert "守方 @守方Bob" in msg
+        # 平局分支英雄一览也用 atk_label_nick（默认 atk_nick）
+        assert "📢 @攻方Alice 你的编队一览" in msg
