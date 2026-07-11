@@ -413,3 +413,115 @@ class TestTurnDelay:
 
         # 没崩就算过
         assert sender.calls
+
+
+# ============== decide_rewards（单一奖励决策） ==============
+
+
+class TestDecideRewards:
+    """decide_rewards 必须按 §S9 经济表产出精确币数（驱动显示与实际发放）。"""
+
+    def _service(self) -> PkV2Service:
+        from app.services.plugin_config import PluginConfig
+        return PkV2Service(
+            paths=None, config=PluginConfig(), locks=None,
+            pair_store=_MockPairStore(),
+            profile_store_provider=lambda gid: _MockProfileStore(),
+        )
+
+    def _battle(self, atk_members, def_members, end_reason: str = "all_dead") -> PkBattle:
+        atk_layers = [BattleStatusLayer() for _ in atk_members]
+        def_layers = [BattleStatusLayer() for _ in def_members]
+        return PkBattle(
+            gid="g1", battle_id="b", atk_uid="u1", atk_nick="alice",
+            def_uid="u2", def_nick="bob",
+            atk_formation=atk_members, def_formation=def_members,
+            atk_status_layers=atk_layers, def_status_layers=def_layers,
+            end_reason=end_reason,
+        )
+
+    def test_decide_win_far_gives_winner_15_loser_1(self):
+        """胜（大优势）：win +15/+5，loser +1/+0"""
+        svc = self._service()
+        atk = [_make_member("a", 1, "A", "SSR", "力量", 80, 60, 500, 90, current_hp=300, is_alive=True)]
+        df = [_make_member("d", 1, "D", "SSR", "力量", 80, 60, 500, 90, current_hp=0, is_alive=False)]
+        r = svc.decide_rewards(self._battle(atk, df), svc._config)
+        assert r["is_tie"] is False
+        assert r["winner_uid"] == "u1"
+        assert r["win_coins"] == 15
+        assert r["win_score"] == 5
+        assert r["lose_coins"] == 1
+        assert r["lose_score"] == 0
+
+    def test_decide_close_loss_gives_loser_5(self):
+        """负（战力差 ≤ 50%）：loser +5/+1"""
+        svc = self._service()
+        atk = [_make_member("a", 1, "A", "SSR", "力量", 80, 60, 500, 90, current_hp=300, is_alive=True)]
+        df = [_make_member("d", 1, "D", "SSR", "力量", 80, 60, 500, 90, current_hp=200, is_alive=True)]
+        r = svc.decide_rewards(self._battle(atk, df), svc._config)
+        assert r["winner_uid"] == "u1"
+        assert r["lose_coins"] == 5
+        assert r["lose_score"] == 1
+
+    def test_decide_far_loss_gives_loser_1(self):
+        """负（战力差 > 50%）：loser +1/+0"""
+        svc = self._service()
+        atk = [_make_member("a", 1, "A", "SSR", "力量", 80, 60, 500, 90, current_hp=500, is_alive=True)]
+        df = [_make_member("d", 1, "D", "SSR", "力量", 80, 60, 500, 90, current_hp=50, is_alive=True)]
+        r = svc.decide_rewards(self._battle(atk, df), svc._config)
+        assert r["lose_coins"] == 1
+        assert r["lose_score"] == 0
+
+    def test_decide_tie_gives_both_8(self):
+        """平：双方 +8/+2"""
+        svc = self._service()
+        atk = [_make_member("a", 1, "A", "SSR", "力量", 80, 60, 500, 90, current_hp=200, is_alive=True)]
+        df = [_make_member("d", 1, "D", "SSR", "力量", 80, 60, 500, 90, current_hp=200, is_alive=True)]
+        r = svc.decide_rewards(self._battle(atk, df), svc._config)
+        assert r["is_tie"] is True
+        assert r["win_coins"] == 8
+        assert r["lose_coins"] == 8
+        assert r["win_score"] == 2
+        assert r["lose_score"] == 2
+
+    def test_decide_timeout_judges_by_hp(self):
+        """超时（end_reason=timeout）按 HP 比判胜，胜方走 +15/+5"""
+        svc = self._service()
+        atk = [_make_member("a", 1, "A", "SSR", "力量", 80, 60, 500, 90, current_hp=300, is_alive=True)]
+        df = [_make_member("d", 1, "D", "SSR", "力量", 80, 60, 500, 90, current_hp=100, is_alive=True)]
+        r = svc.decide_rewards(self._battle(atk, df, end_reason="timeout"), svc._config)
+        assert r["is_tie"] is False
+        assert r["winner_uid"] == "u1"
+        assert r["win_coins"] == 15
+        assert r["win_score"] == 5
+
+
+# ============== start_battle 24h 防刷预检 ==============
+
+
+@dataclass
+class _MockPairStoreBlocked(_MockPairStore):
+    """can_pk 永远返回 False 的 pair store。"""
+
+    def can_pk(self, *args, **kwargs) -> bool:
+        self.can_pk_calls += 1
+        return False
+
+
+class TestStartBattleCooldown:
+    @pytest.mark.asyncio
+    async def test_start_battle_blocked_within_cooldown(self):
+        """24h 内已 PK 过 → start_battle 返回冷却文案，且不再启动战斗"""
+        pair_store = _MockPairStoreBlocked()
+        sender = _MockSender()
+        service = _service_with_mocks(sender=sender, pair_store=pair_store)
+        battle = _make_battle()
+
+        msg = await service.start_battle(battle, "umo")
+
+        # 返回冷却文案
+        assert ("24" in msg) or ("PK 过" in msg) or ("休息" in msg)
+        # can_pk 预检确实被调用
+        assert pair_store.can_pk_calls >= 1
+        # 不应推启动贴 / 结算贴（未启动）
+        assert sender.calls == []

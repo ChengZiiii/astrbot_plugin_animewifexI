@@ -30,7 +30,7 @@ from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from ..models.pk_battle import BattleStatusLayer, FormationMember, PkBattle
-from ..storage.stores import PkBattleStore, PkPairStore
+from ..storage.stores import PkBattleStore, PkPairStore, ProfileStore
 from ..utils.time import now_ts
 from .pk_v2_battle import (
     PkV2Defaults,
@@ -140,12 +140,26 @@ class PkV2Service:
 
         流程：
 
+        0. 24h 同对手防刷预检（spec §S4.2#3 / §S7.3）：未满足冷却直接返回文案
         1. 保存 ``battle`` 到 PkBattleStore（崩溃恢复用）
         2. 推送启动贴（带 umo + 双方编队 + 战力）
         3. ``asyncio.create_task(self._auto_advance_battle(battle, umo))``
            （无 running loop 时静默 try/except）
         4. 返回 ``"✅ 4v4 接力战启动！请查看后续战报..."``
         """
+        # 0) 24h 同对手防刷预检
+        try:
+            pair_store = self._get_pair_store(battle.gid)
+            pairs = pair_store.load_all()
+            can_fight = pair_store.can_pk(
+                pairs, battle.atk_uid, battle.def_uid, self._config.pk_pair_cooldown_hours
+            )
+        except Exception:
+            logger.exception("pk_v2 can_pk 预检失败，放行")
+            can_fight = True
+        if not can_fight:
+            return "你们 24 小时内已经 PK 过，休息一下吧~"
+
         # 1) 持 umo（in-memory dict）
         self._battle_umos[battle.battle_id] = umo
 
@@ -232,59 +246,39 @@ class PkV2Service:
         await self._safe_send(umo, text, tag=f"death_{side}")
 
     async def _emit_settle_message(self, battle: PkBattle, umo: str) -> None:
-        # 找 winner / loser / kills / dmg
-        winner_uid = battle.winner_uid
+        # 单一奖励决策（显示与发放共用）
+        rewards = self.decide_rewards(battle, self._config)
+        is_tie = rewards["is_tie"]
+        winner_uid = rewards["winner_uid"]
+        loser_uid = rewards["loser_uid"]
+
         atk_kills = sum(m.kills for m in battle.atk_formation)
         def_kills = sum(m.kills for m in battle.def_formation)
         atk_dmg_total = sum(m.damage_dealt for m in battle.atk_formation)
         def_dmg_total = sum(m.damage_dealt for m in battle.def_formation)
-        # 己方损耗 = 受到的伤害
-        atk_taken = sum(m.damage_taken for m in battle.atk_formation)
-        def_taken = sum(m.damage_taken for m in battle.def_formation)
-        if winner_uid == battle.atk_uid:
+
+        # 昵称
+        if is_tie:
             winner_nick = battle.atk_nick
-            loser_uid = battle.def_uid
             loser_nick = battle.def_nick
-            winner_kills = atk_kills
-            loser_kills = def_kills
-            winner_dmg_taken = atk_taken
-            loser_dmg_taken = def_taken
         else:
-            winner_nick = battle.def_nick
-            loser_uid = battle.atk_uid
-            loser_nick = battle.atk_nick
-            winner_kills = def_kills
-            loser_kills = atk_kills
-            winner_dmg_taken = def_taken
-            loser_dmg_taken = atk_taken
+            winner_nick = battle.atk_nick if winner_uid == battle.atk_uid else battle.def_nick
+            loser_nick = battle.def_nick if winner_uid == battle.def_uid else battle.atk_nick
 
         # 段位
         from .pk_service import PkService
-        winner_profile = self._load_profile(battle.gid, winner_uid)
-        loser_profile = self._load_profile(battle.gid, loser_uid)
-        winner_score = winner_profile.pk_score if winner_profile else 0
-        loser_score = loser_profile.pk_score if loser_profile else 0
+        atk_profile = self._load_profile(battle.gid, battle.atk_uid)
+        def_profile = self._load_profile(battle.gid, battle.def_uid)
+        atk_score = atk_profile.pk_score if atk_profile else 0
+        def_score = def_profile.pk_score if def_profile else 0
+        if is_tie:
+            winner_score, loser_score = atk_score, def_score
+        elif winner_uid == battle.atk_uid:
+            winner_score, loser_score = atk_score, def_score
+        else:
+            winner_score, loser_score = def_score, atk_score
         winner_rank = PkService.get_pk_rank(winner_score)
         loser_rank = PkService.get_pk_rank(loser_score)
-
-        # 奖励数字（实际发放见 _apply_rewards）
-        if battle.end_reason == "timeout":
-            reward_winner = self._config.pk_tie_reward
-            reward_loser = self._config.pk_tie_reward
-            score_gain = self._config.pk_score_per_lose
-            winner_score_gain = score_gain
-            loser_score_gain = score_gain
-        else:
-            reward_winner = self._config.pk_winner_reward
-            winner_score_gain = self._config.pk_score_per_win
-            # 战力差判 close_threshold（这里简化为 loser_close = 总伤害差 ≤ 200）
-            power_diff = abs(winner_dmg_taken - loser_dmg_taken)
-            if power_diff < 200:
-                reward_loser = self._config.pk_loser_reward_close_threshold
-                loser_score_gain = int(self._config.pk_score_per_lose)
-            else:
-                reward_loser = self._config.pk_loser_reward
-                loser_score_gain = 0
 
         # 双方出过战的成员（一览）
         formations_hero: List[Tuple[str, int, bool]] = []
@@ -293,6 +287,19 @@ class PkV2Service:
         for m in battle.def_formation:
             formations_hero.append((m.nickname, m.kills, False))
 
+        # 动态分母（Minor #5）
+        atk_total = len(battle.atk_formation)
+        def_total = len(battle.def_formation)
+        atk_total_hp = sum(m.base_hp for m in battle.atk_formation)
+        def_total_hp = sum(m.base_hp for m in battle.def_formation)
+
+        # 败方是否需提示设置编队（Minor #6）：败方编队长度 < 4
+        if is_tie:
+            target_needs_formation = False
+        else:
+            loser_formation = battle.def_formation if loser_uid == battle.def_uid else battle.atk_formation
+            target_needs_formation = len(loser_formation) < 4
+
         text = render_settle_message(
             winner_uid=winner_uid,
             winner_nick=winner_nick,
@@ -300,14 +307,17 @@ class PkV2Service:
             loser_nick=loser_nick,
             atk_kills=atk_kills, def_kills=def_kills,
             atk_dmg_total=atk_dmg_total, def_dmg_total=def_dmg_total,
-            reward_winner=int(reward_winner),
-            reward_loser=int(reward_loser),
-            winner_score_gain=int(winner_score_gain),
-            loser_score_gain=int(loser_score_gain),
+            reward_winner=int(rewards["win_coins"]),
+            reward_loser=int(rewards["lose_coins"]),
+            winner_score_gain=int(rewards["win_score"]),
+            loser_score_gain=int(rewards["lose_score"]),
             winner_rank=winner_rank,
             loser_rank=loser_rank,
             formations_hero=formations_hero,
-            target_needs_formation=False,
+            target_needs_formation=target_needs_formation,
+            is_tie=is_tie,
+            atk_total=atk_total, def_total=def_total,
+            atk_total_hp=atk_total_hp, def_total_hp=def_total_hp,
         )
         await self._safe_send(umo, text, tag="settle_message")
 
@@ -341,79 +351,128 @@ class PkV2Service:
         profiles = store.load_all()
         return profiles.get(uid)
 
-    # ---------- 奖励（沿用 Phase 4 PK 规则） ----------
+    # ---------- 奖励（§S9 经济表：单一决策驱动显示 + 发放） ----------
+
+    def decide_rewards(self, battle: PkBattle, config) -> dict:
+        """单一奖励决策：同时驱动 ``_emit_settle_message``（显示）与 ``_apply_rewards``（发放）。
+
+        按 spec §S9 / §S7.1 判定：
+
+        * 用双方**剩余 HP（存活成员 current_hp）** 判胜负（HP 比定胜）。
+        * 双方都存活且剩余 HP 相等 → 真·平局（``is_tie=True``），双方 +8 币 / +2 分。
+        * 否则胜方：+15 币 / +5 分。
+        * 负方按"战力差 ≤ 50%" 区分：
+          - 败方剩余 HP ≥ 胜方剩余 HP 的 50%（即战力差小、险胜）→ +5 币 / +1 分；
+          - 否则（大劣势）→ +1 币 / +0 分。
+
+        返回 dict：
+            win_coins / win_score / lose_coins / lose_score / is_tie /
+            winner_uid / loser_uid
+        """
+        atk_total = sum(m.current_hp for m in battle.atk_formation if m.is_alive)
+        def_total = sum(m.current_hp for m in battle.def_formation if m.is_alive)
+
+        win_coins = int(config.pk_winner_reward)
+        win_score = int(config.pk_score_per_win)
+
+        # 真·平局：双方都存活且剩余 HP 相等
+        if atk_total > 0 and def_total > 0 and atk_total == def_total:
+            tie_coins = int(config.pk_tie_reward)
+            return {
+                "win_coins": tie_coins, "win_score": 2,
+                "lose_coins": tie_coins, "lose_score": 2,
+                "is_tie": True,
+                "winner_uid": battle.atk_uid,   # 平局占位，显示用
+                "loser_uid": battle.def_uid,
+            }
+
+        # 非平局：HP 比判胜（沿用 §S7.1）
+        if atk_total > def_total:
+            winner_uid, loser_uid = battle.atk_uid, battle.def_uid
+            winner_total_hp, loser_total_hp = atk_total, def_total
+        elif def_total > atk_total:
+            winner_uid, loser_uid = battle.def_uid, battle.atk_uid
+            winner_total_hp, loser_total_hp = def_total, atk_total
+        else:
+            # 双方剩余 HP 均为 0（全灭且 HP 同为 0）→ 沿用状态机已判定的 winner
+            winner_uid = battle.winner_uid or battle.atk_uid
+            loser_uid = battle.def_uid if winner_uid == battle.atk_uid else battle.atk_uid
+            winner_total_hp, loser_total_hp = 0, 0
+
+        # 战力差：败方剩余 HP 占胜方比例（≥ 0.5 = 险胜/近战差）
+        ratio = (loser_total_hp / winner_total_hp) if winner_total_hp > 0 else 0.0
+        if ratio >= 0.5:
+            lose_coins = int(config.pk_loser_reward)
+            lose_score = int(config.pk_score_per_lose)
+        else:
+            lose_coins = 1
+            lose_score = 0
+
+        return {
+            "win_coins": win_coins, "win_score": win_score,
+            "lose_coins": lose_coins, "lose_score": lose_score,
+            "is_tie": False, "winner_uid": winner_uid, "loser_uid": loser_uid,
+        }
 
     def _apply_rewards(self, battle: PkBattle) -> None:
-        """按 §S9 发放币 + 积分。winner / loser 加到对应 profile。"""
+        """按 §S9 发放币 + 积分。实际数字全部来自 ``decide_rewards``（单一决策）。"""
         gid = battle.gid
-        winner_uid = battle.winner_uid
-        if winner_uid == battle.atk_uid:
-            loser_uid = battle.def_uid
-        else:
-            loser_uid = battle.atk_uid
+        rewards = self.decide_rewards(battle, self._config)
 
-        # 决定奖励
-        if battle.end_reason == "timeout":
-            winner_coins = int(self._config.pk_tie_reward)
-            loser_coins = int(self._config.pk_tie_reward)
-            winner_score = int(self._config.pk_score_per_lose)
-            loser_score = int(self._config.pk_score_per_lose)
-        else:
-            winner_coins = int(self._config.pk_winner_reward)
-            winner_score = int(self._config.pk_score_per_win)
-            # 战力差判 close（用双方存活成员 HP 总量作近似）
-            winner_total_hp = sum(
-                m.base_hp for m in (battle.atk_formation if winner_uid == battle.atk_uid else battle.def_formation)
-            )
-            loser_total_hp = sum(
-                m.base_hp for m in (battle.atk_formation if winner_uid != battle.atk_uid else battle.def_formation)
-            )
-            power_diff_ratio = abs(winner_total_hp - loser_total_hp) / max(winner_total_hp + loser_total_hp, 1)
-            if power_diff_ratio < 0.5:
-                loser_coins = int(self._config.pk_loser_reward_close_threshold)
-                loser_score = int(self._config.pk_score_per_lose)
-            else:
-                loser_coins = int(self._config.pk_loser_reward)
-                loser_score = 0
-
-        # 加载 profiles
         store = self._get_profile_store(gid)
         profiles = store.load_all()
-        from ..storage.stores import ProfileStore
-        winner_profile = ProfileStore.get_or_create(
-            profiles, winner_uid,
-            battle.atk_nick if winner_uid == battle.atk_uid else battle.def_nick,
-            self._config.initial_coins,
-        )
-        loser_profile = ProfileStore.get_or_create(
-            profiles, loser_uid,
-            battle.def_nick if winner_uid == battle.atk_uid else battle.atk_nick,
-            self._config.initial_coins,
-        )
 
-        # pk_score 按月懒重置（沿用 PkService 规则）
-        current_month = _current_month()
-        if winner_profile.pk_score_season != current_month:
-            winner_profile.pk_score = 0
-            winner_profile.pk_score_season = current_month
-        if loser_profile.pk_score_season != current_month:
-            loser_profile.pk_score = 0
-            loser_profile.pk_score_season = current_month
+        def _get(uid: str, nick: str):
+            return ProfileStore.get_or_create(profiles, uid, nick, self._config.initial_coins)
 
-        winner_profile.coins += winner_coins
-        winner_profile.pk_score += winner_score
-        winner_profile.total_pk_win = winner_profile.total_pk_win + 1
-        winner_profile.pk_last_active_date = _today_str()
+        def _season_reset(p) -> None:
+            current_month = _current_month()
+            if p.pk_score_season != current_month:
+                p.pk_score = 0
+                p.pk_score_season = current_month
 
-        loser_profile.coins += loser_coins
-        loser_profile.pk_score += loser_score
-        loser_profile.total_pk_lost = loser_profile.total_pk_lost + 1
-        loser_profile.pk_last_active_date = _today_str()
+        if rewards["is_tie"]:
+            # 平局：双方都 +8 币 / +2 分，不计胜负场次
+            for uid, nick, coins, score in (
+                (battle.atk_uid, battle.atk_nick, rewards["win_coins"], rewards["win_score"]),
+                (battle.def_uid, battle.def_nick, rewards["lose_coins"], rewards["lose_score"]),
+            ):
+                p = _get(uid, nick)
+                _season_reset(p)
+                p.coins += coins
+                p.pk_score += score
+                p.pk_last_active_date = _today_str()
+            store.save_all(profiles)
+            logger.debug(
+                f"pk_v2 rewards (tie): atk={battle.atk_uid} +{rewards['win_coins']}币; "
+                f"def={battle.def_uid} +{rewards['lose_coins']}币"
+            )
+            return
+
+        winner_uid = rewards["winner_uid"]
+        loser_uid = rewards["loser_uid"]
+        winner_nick = battle.atk_nick if winner_uid == battle.atk_uid else battle.def_nick
+        loser_nick = battle.def_nick if winner_uid == battle.def_uid else battle.atk_nick
+
+        wp = _get(winner_uid, winner_nick)
+        _season_reset(wp)
+        lp = _get(loser_uid, loser_nick)
+        _season_reset(lp)
+
+        wp.coins += rewards["win_coins"]
+        wp.pk_score += rewards["win_score"]
+        wp.total_pk_win = wp.total_pk_win + 1
+        wp.pk_last_active_date = _today_str()
+
+        lp.coins += rewards["lose_coins"]
+        lp.pk_score += rewards["lose_score"]
+        lp.total_pk_lost = lp.total_pk_lost + 1
+        lp.pk_last_active_date = _today_str()
 
         store.save_all(profiles)
         logger.debug(
-            f"pk_v2 rewards: winner={winner_uid} +{winner_coins}币 +{winner_score}分; "
-            f"loser={loser_uid} +{loser_coins}币 +{loser_score}分"
+            f"pk_v2 rewards: winner={winner_uid} +{rewards['win_coins']}币 +{rewards['win_score']}分; "
+            f"loser={loser_uid} +{rewards['lose_coins']}币 +{rewards['lose_score']}分"
         )
 
     # ---------- 后台协程：状态机主循环 ----------

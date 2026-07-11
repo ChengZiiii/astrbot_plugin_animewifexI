@@ -372,3 +372,48 @@ class TestRenderSettleMessage:
         # 损耗含 HP / xxxxx 数字
         assert "1234" in msg
         assert "1830" in msg
+
+
+class TestRenderSettleMessageDynamic:
+    """Minor #5 / #6：结算贴分母动态化 + 平局渲染。"""
+
+    def _args(self, **overrides):
+        base = dict(
+            winner_uid="u1", winner_nick="soren",
+            loser_uid="u2", loser_nick="xxx",
+            atk_kills=2, def_kills=3,
+            atk_dmg_total=500, def_dmg_total=700,
+            reward_winner=15, reward_loser=5,
+            winner_score_gain=5, loser_score_gain=1,
+            winner_rank="黄金 II", loser_rank="白银 III",
+            formations_hero=[("三笠", 1, True)],
+            target_needs_formation=False,
+            atk_total=4, def_total=4,
+            atk_total_hp=1830, def_total_hp=1830,
+        )
+        base.update(overrides)
+        return base
+
+    def test_uses_dynamic_team_size(self):
+        """击破敌将分母动态：传入 3 / 5 时显示 /3 与 /5，且不出现硬编码 /4"""
+        msg = render_settle_message(**self._args(atk_total=3, def_total=5))
+        assert "/3" in msg
+        assert "/5" in msg
+        assert "/4" not in msg
+
+    def test_uses_dynamic_total_hp(self):
+        """己方损耗分母动态：传入 900 / 1200 时显示，且不出现硬编码 1830"""
+        msg = render_settle_message(**self._args(atk_total_hp=900, def_total_hp=1200))
+        assert "900" in msg
+        assert "1200" in msg
+        assert "1830" not in msg
+
+    def test_tie_renders_draw(self):
+        """平局：显示平局 + 双方 +8"""
+        msg = render_settle_message(**self._args(
+            is_tie=True,
+            reward_winner=8, reward_loser=8,
+            winner_score_gain=2, loser_score_gain=2,
+        ))
+        assert "平局" in msg
+        assert "+8" in msg

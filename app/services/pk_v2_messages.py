@@ -320,6 +320,11 @@ def render_settle_message(
     loser_rank: str,
     formations_hero: Sequence[Tuple[str, int, bool]],
     target_needs_formation: bool = False,
+    is_tie: bool = False,
+    atk_total: int = 4,
+    def_total: int = 4,
+    atk_total_hp: int = 1830,
+    def_total_hp: int = 1830,
 ) -> str:
     """结算贴：胜负 + 奖励 + 积分 + 段位 + 英雄一览 + 编队提示。
 
@@ -330,43 +335,69 @@ def render_settle_message(
         ``is_winner_team=False`` 时该成员用"奋勇作战"等中性标签。
     target_needs_formation
         败方是否需要提示设置编队（spec §S8.4 末行）。
+    is_tie
+        是否平局（双方 +8 币 / +2 分，无胜负）。
+    atk_total / def_total
+        双方队伍总人数（击破敌将分母，动态）。
+    atk_total_hp / def_total_hp
+        双方队伍总 HP（己方损耗分母，动态）。
     """
     sep = "═" * 30
-    lines: List[str] = [
+
+    # 平局分支
+    if is_tie:
+        lines: List[str] = [
+            sep,
+            "🤝 4v4 接力战平局！",
+            sep,
+            "",
+            f"🔴 攻方 @{winner_nick}",
+            f"  击破敌将：{atk_kills}/{atk_total}",
+            f"  己方损耗：{atk_dmg_total}/{atk_total_hp} HP",
+            f"  奖励：+{reward_winner} 币 | +{winner_score_gain} PK 积分（{winner_rank}）",
+            "",
+            f"🔵 守方 @{loser_nick}",
+            f"  击破敌将：{def_kills}/{def_total}",
+            f"  己方损耗：{def_dmg_total}/{def_total_hp} HP",
+            f"  奖励：+{reward_loser} 币 | +{loser_score_gain} PK 积分（{loser_rank}）",
+            "",
+        ]
+        if formations_hero:
+            first_nick = formations_hero[0][0]
+            lines.append(f"📢 @{first_nick} 你的编队一览：")
+            for nick, kills, in_winner in formations_hero:
+                tag = _kill_tag(kills)
+                suffix = f"（击杀 {kills}）" if kills > 0 else ""
+                lines.append(f"  [✓] {nick} {tag}{suffix}".rstrip())
+            lines.append("")
+        lines.append(sep)
+        return "\n".join(lines)
+
+    lines = [
         sep,
         "🏆 4v4 接力战结束！",
         sep,
         "",
         f"🔴 攻方 @{winner_nick if winner_uid == 'atk' else loser_nick} — 胜利！🏆",
-        f"  击破敌将：{atk_kills}/4",
-        f"  己方损耗：{atk_dmg_total}/1830 HP",
+        f"  击破敌将：{atk_kills}/{atk_total}",
+        f"  己方损耗：{atk_dmg_total}/{atk_total_hp} HP",
         f"  奖励：+{reward_winner} 币 | +{winner_score_gain} PK 积分（{winner_rank}）",
         "",
         f"🔵 守方 @{loser_nick if winner_uid == 'atk' else winner_nick} — 失败",
-        f"  击破敌将：{def_kills}/4",
-        f"  己方损耗：{def_dmg_total}/1830 HP",
+        f"  击破敌将：{def_kills}/{def_total}",
+        f"  己方损耗：{def_dmg_total}/{def_total_hp} HP",
         f"  奖励：+{reward_loser} 币 | +{loser_score_gain} PK 积分（{loser_rank}）",
         "",
     ]
 
     # 英雄一览
     if formations_hero:
-        # 至少有一位
         first_nick = formations_hero[0][0]
         lines.append(f"📢 @{first_nick} 你的编队一览：")
         for nick, kills, in_winner in formations_hero:
-            if kills >= 3:
-                tag = "⭐MVP！"
-            elif kills >= 2:
-                tag = "⭐立大功！"
-            elif kills >= 1:
-                tag = "⭐奋勇作战！"
-            else:
-                tag = ""
+            tag = _kill_tag(kills)
             suffix = f"（击杀 {kills}）" if kills > 0 else ""
-            check = "✓"
-            # 当前实现以一队概览：MVP/立功按 kills 决定
-            lines.append(f"  [{check}] {nick} {tag}{suffix}".rstrip())
+            lines.append(f"  [✓] {nick} {tag}{suffix}".rstrip())
         lines.append("")
 
     if target_needs_formation:
@@ -376,3 +407,14 @@ def render_settle_message(
         lines.append(sep)
 
     return "\n".join(lines)
+
+
+def _kill_tag(kills: int) -> str:
+    """按击杀数给出英雄标签。"""
+    if kills >= 3:
+        return "⭐MVP！"
+    elif kills >= 2:
+        return "⭐立大功！"
+    elif kills >= 1:
+        return "⭐奋勇作战！"
+    return ""
