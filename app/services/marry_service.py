@@ -26,11 +26,24 @@ __all__ = ["MarryService", "MarryResult"]
 LOCK_DAYS = 7
 
 
+def _format_lifespan_str(ownership: Ownership) -> str:
+    """Phase 6 / 寿命标注尾巴：死亡 / 危险 / 正常 / 满血。"""
+    lifespan_max = getattr(ownership, "lifespan_max", 100) or 100
+    if getattr(ownership, "is_dead", False):
+        return " ☠️已离世"
+    current_ls = getattr(ownership, "lifespan", lifespan_max)
+    if current_ls < 30:
+        return f" ❤️{current_ls}/{lifespan_max} ⚠️危险"
+    return f" ❤️{current_ls}/{lifespan_max}"
+
+
 @dataclass
 class MarryResult:
     ok: bool
     reason: str = ""
     msg: str = ""
+    # Phase 6 / 寿命标注：锁定/解锁后老婆当前的寿命尾巴（" ❤️80/100" / " ☠️已离世" / ""）
+    lifespan_str: str = ""
 
 
 class MarryService:
@@ -88,7 +101,11 @@ class MarryService:
         store.save_all(ownerships)
 
         logger.debug("lock: gid=%s uid=%s wid=%s -> locked for %d days", gid, uid, wid, LOCK_DAYS)
-        return MarryResult(ok=True, msg=f"锁定成功！消耗 1 张锁定卡，老婆锁定 {LOCK_DAYS} 天 🔒")
+        return MarryResult(
+            ok=True,
+            msg=f"锁定成功！消耗 1 张锁定卡，老婆锁定 {LOCK_DAYS} 天 🔒",
+            lifespan_str=_format_lifespan_str(ownership),
+        )
 
     async def unlock(self, gid: str, uid: str, wid: str) -> MarryResult:
         """主动解锁"""
@@ -113,7 +130,11 @@ class MarryService:
         store.save_all(ownerships)
 
         logger.debug("unlock: gid=%s uid=%s wid=%s -> unlocked", gid, uid, wid)
-        return MarryResult(ok=True, msg="解锁成功！老婆已解除锁定 🔓")
+        return MarryResult(
+            ok=True,
+            msg="解锁成功！老婆已解除锁定 🔓",
+            lifespan_str=_format_lifespan_str(ownership),
+        )
 
     @staticmethod
     def is_locked(ownership: Ownership) -> bool:

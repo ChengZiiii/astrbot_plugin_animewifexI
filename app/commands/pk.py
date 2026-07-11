@@ -452,6 +452,10 @@ def _build_formation(
                 kills=0, damage_dealt=0, damage_taken=0,
                 passive_id=passive_id,
                 work_mode=ow.work_mode if ow.is_working else "",
+                # Phase 6: 寿命系统 — 战报显示用
+                lifespan=getattr(ow, "lifespan", -1),
+                lifespan_max=getattr(ow, "lifespan_max", 100),
+                is_dead=bool(getattr(ow, "is_dead", False)),
             )
         )
 

@@ -31,7 +31,7 @@ async def handle_lock(
 
     marry = MarryService(ctx.paths, ctx.config, ctx.locks)
     result = await marry.lock(gid, uid, wid, nick)
-    yield event.plain_result(result.msg)
+    yield event.plain_result(f"{result.msg}{result.lifespan_str}")
 
 
 async def handle_unlock(
@@ -50,4 +50,4 @@ async def handle_unlock(
 
     marry = MarryService(ctx.paths, ctx.config, ctx.locks)
     result = await marry.unlock(gid, uid, wid)
-    yield event.plain_result(result.msg)
+    yield event.plain_result(f"{result.msg}{result.lifespan_str}")

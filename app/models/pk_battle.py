@@ -79,6 +79,13 @@ class FormationMember:
     damage_taken: int = 0
     passive_id: str = ""
     work_mode: str = ""  # 打工模式（"normal"/"overtime"/"expedition"，空 = 不在打工）
+    # Phase 6 / 寿命系统：PK 战报展示
+    # lifespan: 当前寿命（-1 表示已死亡/不可用，战报会显示 ☠️）
+    # lifespan_max: 上限（默认 100）
+    # is_dead: 死亡标记
+    lifespan: int = -1
+    lifespan_max: int = 100
+    is_dead: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -100,6 +107,9 @@ class FormationMember:
             "damage_taken": self.damage_taken,
             "passive_id": self.passive_id,
             "work_mode": self.work_mode,
+            "lifespan": self.lifespan,
+            "lifespan_max": self.lifespan_max,
+            "is_dead": self.is_dead,
         }
 
     @classmethod
@@ -123,6 +133,9 @@ class FormationMember:
             damage_taken=int(data.get("damage_taken", 0) or 0),
             passive_id=str(data.get("passive_id", "") or ""),
             work_mode=str(data.get("work_mode", "") or ""),
+            lifespan=int(data.get("lifespan", -1) or -1),
+            lifespan_max=int(data.get("lifespan_max", 100) or 100),
+            is_dead=bool(data.get("is_dead", False)),
         )
 
 

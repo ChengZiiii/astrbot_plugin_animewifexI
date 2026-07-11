@@ -5,7 +5,11 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, Dict, Optional
 
-from .services.lifespan_service import DEATH_CAUSE_IMPACT
+from .services.lifespan_service import (
+    DEATH_CAUSE_IMPACT,
+    pick_impact_damage_announce,
+    pick_impact_death_announce,
+)
 from .services.marry_service import MarryService
 from .services.ownership_service import OwnershipService
 from .storage.locks import GroupLocks
@@ -61,6 +65,7 @@ class WifeInterop:
             "name": meta.chara if meta else "",
             "source": meta.source if meta else "",
             "img": meta.img if meta else "",
+            "rarity": meta.rarity if meta else "N",  # Phase 6: impact 需要展示稀有度
             "intimacy": intimacy,
             "level": level,
             "level_name": OwnershipService.get_intimacy_level_name(intimacy),
@@ -179,7 +184,9 @@ class WifeInterop:
         gid: "str | int",
         wid: str,
         actor_uid: str,
+        actor_nick: str,
         delta: int,
+        owner_nick: str = "",
     ) -> Dict[str, Any]:
         """Phase 6 / 跨插件：impact 插件调用此方法扣减目标老婆寿命。
 
@@ -195,16 +202,23 @@ class WifeInterop:
             gid: 群 ID（int/str 都接受；内部转 str）
             wid: 目标老婆 wid
             actor_uid: 发起人 uid（用于"不能 ri 自己的老婆"二次校验）
+            actor_nick: 发起人昵称（拼恶趣味文案用；可空）
             delta: 寿命减少量（正数；<=0 时直接返回 ok=True 表示"无变化"）
+            owner_nick: 老婆主人昵称（拼恶趣味文案用；可空，内部可查 profile）
 
         Returns::
             {
                 "ok": bool,
                 "wid": str,
-                "wife_owner_uid": str,    # 老婆当前持有者（便于 impact 写提示）
-                "new_lifespan": int,      # 扣后寿命
-                "death_occurred": bool,   # 这次扣减是否导致死亡
-                "skipped": str,           # 跳过原因（self_ri / no_owner / disabled / not_alive / no_damage）
+                "wife_owner_uid": str,     # 老婆当前持有者
+                "wife_name": str,          # 老婆名（拼文案用）
+                "wife_rarity": str,        # 老婆稀有度
+                "new_lifespan": int,       # 扣后寿命
+                "death_occurred": bool,    # 这次扣减是否导致死亡
+                "delta_applied": int,      # 实际扣减（一般等于 delta；上限时 < delta）
+                "death_announce": str,     # 死亡时返回的恶趣味文案（已 format 好）
+                "damage_announce": str,    # 扣减但没死时返回的"她不行了"文案
+                "skipped": str,            # 跳过原因
             }
         """
         # 类型规整：impact 那边 gid 是 int
@@ -222,6 +236,7 @@ class WifeInterop:
                 "wid": wid,
                 "new_lifespan": -1,
                 "death_occurred": False,
+                "delta_applied": 0,
                 "skipped": "no_damage",
             }
 
@@ -246,16 +261,53 @@ class WifeInterop:
                 "wife_owner_uid": target.uid,
             }
 
+        # 解析老婆名 + 稀有度（拼文案用）
+        wives_master = WivesMasterStore(self._paths).load_all()
+        wife_meta = wives_master.get(wid)
+        wife_name = (wife_meta.chara or wife_meta.img) if wife_meta else ""
+        wife_rarity = wife_meta.rarity if wife_meta else "N"
+
+        # 解析 owner 昵称（如果调用方没传）
+        if not owner_nick:
+            profile_store = ProfileStore(self._paths, gid_str)
+            profiles = profile_store.load_all()
+            owner_profile = profiles.get(target.uid)
+            owner_nick = owner_profile.nick if owner_profile else "某群友"
+
         # 持群锁后正式扣减（避免与 work/pk/ntr 并发）
         async with self._locks.acquire(gid_str):
             damage = self._lifespan.apply_damage(
                 gid_str, wid, delta, cause=DEATH_CAUSE_IMPACT,
             )
-        return {
+
+        result: Dict[str, Any] = {
             "ok": damage.ok,
             "wid": wid,
             "wife_owner_uid": target.uid,
+            "wife_name": wife_name,
+            "wife_rarity": wife_rarity,
             "new_lifespan": damage.new_lifespan,
             "death_occurred": damage.death_occurred,
+            "delta_applied": damage.damage_applied,
             "skipped": "" if damage.ok else damage.reason,
         }
+
+        # 拼恶趣味 / 损伤文案（死亡优先）
+        if damage.ok:
+            if damage.death_occurred:
+                result["death_announce"] = pick_impact_death_announce(
+                    owner_nick=owner_nick,
+                    wife_name=wife_name,
+                    rarity=wife_rarity,
+                    actor_nick=actor_nick,
+                )
+            elif damage.damage_applied > 0:
+                result["damage_announce"] = pick_impact_damage_announce(
+                    owner_nick=owner_nick,
+                    wife_name=wife_name,
+                    rarity=wife_rarity,
+                    actor_nick=actor_nick,
+                    delta=damage.damage_applied,
+                )
+
+        return result

@@ -300,9 +300,20 @@ def render_death_message(
 
 
 def _format_member_tag(m: FormationMember, side_char: str = "?") -> str:
-    """简短的 [守·祢豆子 SR ❤️70] 标签。"""
+    """简短的 [守·祢豆子 SR ❤️70] 标签。
+
+    Phase 6 寿命标注：
+    * 死亡 → ` ☠️` 尾巴
+    * 满血 → ` ❤️{lifespan}/{max}` 尾巴
+    * 旧数据（lifespan=-1）→ 不加尾巴（向后兼容）
+    """
     intimacy = m.intimacy if m.intimacy else 0
-    return f"{side_char}·{m.nickname} {m.rarity} ❤️{intimacy}"
+    suffix = ""
+    if m.is_dead:
+        suffix = " ☠️"
+    elif m.lifespan >= 0:
+        suffix = f" ❤️{m.lifespan}/{m.lifespan_max}"
+    return f"{side_char}·{m.nickname} {m.rarity} ❤️{intimacy}{suffix}"
 
 
 # ============== §S8.4 结算贴 ==============

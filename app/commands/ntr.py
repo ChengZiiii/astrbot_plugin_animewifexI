@@ -135,8 +135,23 @@ async def handle_ntr(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGener
     w = wives_meta.get(result.wid)
     wife_name = (w.chara or w.img or "该老婆") if w else "该老婆"
     taunt = random.choice(_NTR_SUCCESS_FLAVOR).format(name=wife_name)
+
+    # Phase 6: 寿命标注 — 显示牛到手的这位老婆当前状态
+    ownership_store = OwnershipStore(ctx.paths, gid)
+    new_own = ownership_store.find_by_wid(result.wid, ownership_store.load_all())
+    lifespan_str = ""
+    if new_own is not None:
+        lifespan_max = getattr(new_own, "lifespan_max", 100) or 100
+        if getattr(new_own, "is_dead", False):
+            lifespan_str = f" ☠️已离世（请考虑「老婆 休息 <编号>」复活）"
+        else:
+            current_ls = getattr(new_own, "lifespan", lifespan_max)
+            lifespan_str = f" ❤️{current_ls}/{lifespan_max}"
+            if current_ls < 30:
+                lifespan_str += " ⚠️危险"
+
     yield event.plain_result(
-        f"{nick}，牛老婆成功！老婆已归你所有，恭喜恭喜~\n\n📢 {taunt}"
+        f"{nick}，牛老婆成功！老婆已归你所有，恭喜恭喜~{lifespan_str}\n\n📢 {taunt}"
     )
     if result.stolen_work_reward > 0:
         extra_lines = [f"💼 顺手截胡了对方打工收益：+{result.stolen_work_reward} 币"]

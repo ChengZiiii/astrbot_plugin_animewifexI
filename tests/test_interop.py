@@ -249,7 +249,9 @@ async def test_apply_lifespan_damage_basic(tmp_paths, config, ownership_service,
         ownership_service, GroupLocks(), config, tmp_paths,
         lifespan_service=lifespan_service,
     )
-    res = await interop.apply_lifespan_damage_from_impact("g1", "w_v", "u_attacker", 5)
+    res = await interop.apply_lifespan_damage_from_impact(
+        "g1", "w_v", "u_attacker", "Bob", 5, owner_nick="Alice",
+    )
     assert res["ok"] is True
     assert res["new_lifespan"] == 75
     assert res["death_occurred"] is False
@@ -264,7 +266,9 @@ async def test_apply_lifespan_damage_zero_delta_noop(tmp_paths, config, ownershi
         ownership_service, GroupLocks(), config, tmp_paths,
         lifespan_service=lifespan_service,
     )
-    res = await interop.apply_lifespan_damage_from_impact("g1", "w_v", "u_attacker", 0)
+    res = await interop.apply_lifespan_damage_from_impact(
+        "g1", "w_v", "u_attacker", "Bob", 0, owner_nick="Alice",
+    )
     assert res["ok"] is True
     assert res["skipped"] == "no_damage"
     # 状态没变
@@ -280,7 +284,9 @@ async def test_apply_lifespan_damage_self_ri_rejected(tmp_paths, config, ownersh
         ownership_service, GroupLocks(), config, tmp_paths,
         lifespan_service=lifespan_service,
     )
-    res = await interop.apply_lifespan_damage_from_impact("g1", "w_v", "u_self", 5)
+    res = await interop.apply_lifespan_damage_from_impact(
+        "g1", "w_v", "u_self", "Bob", 5, owner_nick="Alice",
+    )
     assert res["ok"] is False
     assert res["skipped"] == "self_ri"
 
@@ -292,7 +298,9 @@ async def test_apply_lifespan_damage_already_dead(tmp_paths, config, ownership_s
         ownership_service, GroupLocks(), config, tmp_paths,
         lifespan_service=lifespan_service,
     )
-    res = await interop.apply_lifespan_damage_from_impact("g1", "w_v", "u_attacker", 5)
+    res = await interop.apply_lifespan_damage_from_impact(
+        "g1", "w_v", "u_attacker", "Bob", 5, owner_nick="Alice",
+    )
     assert res["ok"] is False
     assert res["skipped"] == "not_alive"
 
@@ -302,7 +310,9 @@ async def test_apply_lifespan_damage_wife_not_found(tmp_paths, config, ownership
         ownership_service, GroupLocks(), config, tmp_paths,
         lifespan_service=lifespan_service,
     )
-    res = await interop.apply_lifespan_damage_from_impact("g1", "nonexistent", "u_attacker", 5)
+    res = await interop.apply_lifespan_damage_from_impact(
+        "g1", "nonexistent", "u_attacker", "Bob", 5, owner_nick="Alice",
+    )
     assert res["ok"] is False
     assert res["skipped"] == "wife_not_found"
 
@@ -315,7 +325,9 @@ async def test_apply_lifespan_damage_no_lifespan_service(tmp_paths, config, owne
         ownership_service, GroupLocks(), config, tmp_paths,
         lifespan_service=None,
     )
-    res = await interop.apply_lifespan_damage_from_impact("g1", "w_v", "u_attacker", 5)
+    res = await interop.apply_lifespan_damage_from_impact(
+        "g1", "w_v", "u_attacker", "Bob", 5, owner_nick="Alice",
+    )
     assert res["ok"] is False
     assert res["skipped"] == "no_lifespan_service"
 
@@ -328,7 +340,9 @@ async def test_apply_lifespan_damage_gid_int_accepted(tmp_paths, config, ownersh
         ownership_service, GroupLocks(), config, tmp_paths,
         lifespan_service=lifespan_service,
     )
-    res = await interop.apply_lifespan_damage_from_impact(12345, "w_v", "u_attacker", 3)
+    res = await interop.apply_lifespan_damage_from_impact(
+        12345, "w_v", "u_attacker", "Bob", 3, owner_nick="Alice",
+    )
     assert res["ok"] is True
     assert res["new_lifespan"] == 77
 
@@ -341,9 +355,14 @@ async def test_apply_lifespan_damage_can_trigger_death(tmp_paths, config, owners
         ownership_service, GroupLocks(), config, tmp_paths,
         lifespan_service=lifespan_service,
     )
-    res = await interop.apply_lifespan_damage_from_impact("g1", "w_v", "u_attacker", 100)
+    res = await interop.apply_lifespan_damage_from_impact(
+        "g1", "w_v", "u_attacker", "Bob", 100, owner_nick="Alice",
+    )
     assert res["ok"] is True
     assert res["death_occurred"] is True
     assert res["new_lifespan"] == 0
     reloaded = OwnershipStore(tmp_paths, "g1").load_all()
     assert reloaded[0].is_dead is True
+    # Phase 6.1: 死亡文案应填好（包含 Bob/Alice）
+    assert res["death_announce"]
+    assert "Bob" in res["death_announce"] or "Alice" in res["death_announce"]

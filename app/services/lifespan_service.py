@@ -70,6 +70,8 @@ __all__ = [
     "DEATH_CAUSE_PK",
     "DEATH_CAUSE_IMPACT",
     "DEATH_CAUSE_MANUAL",
+    "pick_impact_death_announce",
+    "pick_impact_damage_announce",
 ]
 
 # 死亡原因枚举常量（写入 ownership.death_cause）
@@ -77,6 +79,61 @@ DEATH_CAUSE_WORK = "work_exhaustion"
 DEATH_CAUSE_PK = "pk_exhaustion"
 DEATH_CAUSE_IMPACT = "impact"
 DEATH_CAUSE_MANUAL = "manual"
+
+# Phase 6: impact 联动恶趣味文案（给老婆被日死用）
+# 设计原则：恶趣味但不辱骂；明确"是谁"的老婆"被谁"玩死；带具体老婆名便于回看。
+# 模板用 {owner_nick} / {wife_name} / {rarity} / {actor_nick} 占位。
+_IMPACT_DEATH_ANNOUNCES = (
+    "💀 {owner_nick} 的 [{wife_name}] {rarity} 实在撑不住了，被 {actor_nick} 活活玩死在床上……",
+    "💀 {owner_nick} 心碎地看着 [{wife_name}] {rarity} 在 {actor_nick} 身下咽了气……",
+    "☠️ {owner_nick} 冲进房间时 [{wife_name}] {rarity} 已经凉透了——凶手 {actor_nick} 还在擦手。",
+    "💀 急救室灯光惨白：[{wife_name}] {rarity} 因 {actor_nick} 过度使用当场离世，{owner_nick} 在走廊里哭得站不起来。",
+    "☠️ {owner_nick} 的 [{wife_name}] {rarity} 因 {actor_nick} 太过凶猛，已永久离世。",
+    "💀 {actor_nick} 这次玩得太狠——{owner_nick} 的 [{wife_name}] {rarity} 没挺住，当场断气。",
+    "☠️ 棺材铺老板：\"{owner_nick}，您订的 [{wife_name}] {rarity} 棺椁做好了。\"——凶手是 {actor_nick}。",
+)
+
+# Phase 6: impact 联动非死亡损伤文案（仅扣寿命但没死）
+_IMPACT_DAMAGE_ANNOUNCES = (
+    "💢 {owner_nick} 的 [{wife_name}] {rarity} 脸色苍白——{actor_nick} 这下把她折腾得够呛（寿命 -{delta}）。",
+    "💢 [{wife_name}] {rarity} 瘫软在 {actor_nick} 怀里，{owner_nick} 看在眼里疼在心里（寿命 -{delta}）。",
+    "💢 {actor_nick} 不知道收敛，把 {owner_nick} 的 [{wife_name}] {rarity} 寿命削了 {delta} 点……",
+    "💢 [{wife_name}] {rarity} 扶着墙勉强站住，{actor_nick} 满意离去，{owner_nick} 默默收拾（寿命 -{delta}）。",
+)
+
+
+def pick_impact_death_announce(
+    owner_nick: str,
+    wife_name: str,
+    rarity: str,
+    actor_nick: str,
+) -> str:
+    """随机选一条"老婆被日死"恶趣味文案。"""
+    import random as _r
+    return _r.choice(_IMPACT_DEATH_ANNOUNCES).format(
+        owner_nick=owner_nick or "某群友",
+        wife_name=wife_name or "该老婆",
+        rarity=rarity or "?",
+        actor_nick=actor_nick or "某人",
+    )
+
+
+def pick_impact_damage_announce(
+    owner_nick: str,
+    wife_name: str,
+    rarity: str,
+    actor_nick: str,
+    delta: int,
+) -> str:
+    """随机选一条"老婆被日伤"非死亡文案。"""
+    import random as _r
+    return _r.choice(_IMPACT_DAMAGE_ANNOUNCES).format(
+        owner_nick=owner_nick or "某群友",
+        wife_name=wife_name or "该老婆",
+        rarity=rarity or "?",
+        actor_nick=actor_nick or "某人",
+        delta=int(delta or 0),
+    )
 
 logger = logging.getLogger("astrbot_plugin_animewifex.lifespan")
 

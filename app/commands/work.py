@@ -254,8 +254,20 @@ async def handle_work(
     else:
         taunt = random.choice(_WORK_TAUNTS.get(mode, _WORK_TAUNTS["normal"]))
 
+    # Phase 6 / 寿命系统：打工启动贴加寿命条（让用户看到风险）
+    lifespan_str = ""
+    if working is not None:
+        lifespan_max = getattr(working, "lifespan_max", 100) or 100
+        if getattr(working, "is_dead", False):
+            lifespan_str = f" ☠️已离世"  # 防御性提示（start_work 理论上会拒绝 dead）
+        else:
+            current_ls = getattr(working, "lifespan", lifespan_max)
+            lifespan_str = f" ❤️{current_ls}/{lifespan_max}"
+            if current_ls < 30:
+                lifespan_str += " ⚠️危险"
+
     yield event.plain_result(
-        f"🔨 {nick} 派 {wife_name} 开始{mode_name}打工！\n"
+        f"🔨 {nick} 派 {wife_name} 开始{mode_name}打工！{lifespan_str}\n"
         f"消耗 {result.start_cost} 币，余额 {result.coin_balance} 币\n"
         f"预计完成后结算奖励~"
         f"{contract_hint}"
