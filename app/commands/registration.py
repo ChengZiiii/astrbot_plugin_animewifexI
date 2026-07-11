@@ -12,6 +12,7 @@ from .admin import (
     handle_switch_ntr,
 )
 from .context import CommandContext
+from .debt import handle_debt_query
 from .divorce import handle_divorce
 from .draw import handle_draw, handle_draw_ten
 from .economy import (
@@ -95,6 +96,9 @@ def build_registry() -> CommandRegistry:
 
     # ---------- 分组命令：编队（v3 接力战 · Phase A）----------
     registry.register_grouped("编队", handle_formation)
+
+    # ---------- 分组命令：查负债（Phase G · v3 负债展示）----------
+    registry.register_grouped("查负债", handle_debt_query)
 
     # ---------- 分组命令：打工 ----------
     registry.register_grouped("打工", handle_work)
