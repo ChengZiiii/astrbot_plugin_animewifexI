@@ -39,6 +39,16 @@ class _MockSender:
 
 
 @dataclass
+class _MockNodeSender:
+    """记录所有 send_node（合并转发）调用的 mock。"""
+
+    calls: List[Tuple[str, int, str, List[str]]] = field(default_factory=list)
+
+    async def __call__(self, umo: str, sender_id: int, sender_name: str, texts: List[str]) -> None:
+        self.calls.append((umo, sender_id, sender_name, list(texts)))
+
+
+@dataclass
 class _MockBattleStore:
     """In-memory PkBattleStore mock"""
 
@@ -163,6 +173,9 @@ def _service_with_mocks(
     battle_store: Optional[_MockBattleStore] = None,
     profile_store: Optional[_MockProfileStore] = None,
     config=None,
+    node_sender: Optional[_MockNodeSender] = None,
+    forward_sender_id: int = 0,
+    forward_sender_name: str = "哆啦b梦",
 ) -> PkV2Service:
     """Build a PkV2Service with mocked dependencies + a fast turn_delay."""
     from app.services.plugin_config import PluginConfig
@@ -173,6 +186,9 @@ def _service_with_mocks(
         config=config,
         locks=None,
         send_message=(sender if sender else _MockSender()).__call__,
+        send_node=(node_sender if node_sender else None),
+        forward_sender_id=forward_sender_id,
+        forward_sender_name=forward_sender_name,
         battle_store=battle_store or _MockBattleStore(),
         profile_store_provider=lambda gid: (profile_store or _MockProfileStore()),
     )
@@ -300,6 +316,112 @@ class TestRunBattle:
 
         # 不抛异常即通过
         await service._auto_advance_battle(battle, "umo")
+
+
+# ============== send_node 合并转发 ==============
+
+
+class TestFlushBufferForward:
+    """_flush_buffer 走合并转发（send_node）路径的测试。"""
+
+    @pytest.mark.asyncio
+    async def test_flush_buffer_uses_send_node_when_provided(self):
+        """给了 send_node + 合法 forward_sender_id → 走合并转发，不走 send_message"""
+        sender = _MockSender()
+        node_sender = _MockNodeSender()
+        service = _service_with_mocks(
+            sender=sender,
+            node_sender=node_sender,
+            forward_sender_id=10086,
+            forward_sender_name="哆啦b梦",
+        )
+        battle = _make_battle(atk_formation=_def_formation(), def_formation=_def_formation())
+
+        await service._auto_advance_battle(battle, "umo")
+        await _wait_for_settle(service, sender)
+
+        # send_message 不应被调用
+        assert sender.calls == [], "send_message 不应被触发（已走 send_node）"
+        # send_node 应被调用 1 次
+        assert len(node_sender.calls) == 1
+        umo, sender_id, sender_name, texts = node_sender.calls[0]
+        assert umo == "umo"
+        assert sender_id == 10086
+        assert sender_name == "哆啦b梦"
+        # texts 里应包含多回合独立条目（启动贴 + 回合贴 + 结算贴至少各一条）
+        assert len(texts) >= 2
+        assert any("4v4" in t or "接力战即将开始" in t for t in texts)
+        assert any("🏆" in t or "4v4 接力战结束" in t for t in texts)
+        # 关键：回合贴是独立的 Node，不应被 join 成长文本
+        for t in texts:
+            assert "────────────" not in t, "合并转发的每个 Node 应保持独立，不应被 join"
+
+    @pytest.mark.asyncio
+    async def test_flush_buffer_falls_back_when_forward_sender_id_zero(self):
+        """forward_sender_id=0 时回退到 send_message（兼容老测试）"""
+        sender = _MockSender()
+        node_sender = _MockNodeSender()
+        service = _service_with_mocks(
+            sender=sender,
+            node_sender=node_sender,
+            forward_sender_id=0,  # 没拿到 bot id
+        )
+        battle = _make_battle(atk_formation=_def_formation(), def_formation=_def_formation())
+
+        await service._auto_advance_battle(battle, "umo")
+        await _wait_for_settle(service, sender)
+
+        # send_node 不会被调（因为 forward_sender_id == 0）
+        assert node_sender.calls == []
+        # 回退到 send_message
+        assert len(sender.calls) >= 1
+        combined = sender.calls[0][1]
+        assert "────────────" in combined  # 老逻辑的 join 分隔
+
+    @pytest.mark.asyncio
+    async def test_flush_buffer_falls_back_when_no_send_node(self):
+        """没给 send_node → 回退到 send_message（向后兼容）"""
+        sender = _MockSender()
+        service = _service_with_mocks(sender=sender, node_sender=None)
+        battle = _make_battle(atk_formation=_def_formation(), def_formation=_def_formation())
+
+        await service._auto_advance_battle(battle, "umo")
+        await _wait_for_settle(service, sender)
+
+        # 老逻辑：合并成一条长消息
+        assert len(sender.calls) == 1
+        combined = sender.calls[0][1]
+        assert "4v4" in combined or "接力战" in combined
+        assert "────────────" in combined
+
+    @pytest.mark.asyncio
+    async def test_flush_buffer_node_sender_exception_falls_back(self):
+        """send_node 抛异常时回退到 send_message（不让战斗崩）"""
+        sender = _MockSender()
+
+        async def bad_node(umo, sender_id, sender_name, texts):
+            raise RuntimeError("forward API down")
+
+        from app.services.plugin_config import PluginConfig
+        service = PkV2Service(
+            paths=None,
+            config=PluginConfig(pk_v2_turn_delay_ms=1),
+            locks=None,
+            send_message=sender.__call__,
+            send_node=bad_node,
+            forward_sender_id=10086,
+            forward_sender_name="哆啦b梦",
+            battle_store=_MockBattleStore(),
+            profile_store_provider=lambda gid: _MockProfileStore(),
+        )
+        battle = _make_battle(atk_formation=_def_formation(), def_formation=_def_formation())
+
+        # 不抛异常即通过
+        await service._auto_advance_battle(battle, "umo")
+        await _wait_for_settle(service, sender)
+
+        # 回退：send_message 应被调用
+        assert len(sender.calls) >= 1
 
 
 # ============== start_battle 公共 API ==============

@@ -73,9 +73,31 @@ def _install_astrbot_stub() -> None:
         def fromFileSystem(cls, path: str) -> "_Image":
             return cls(file_path=path)
 
+    class _Node:
+        """合并转发节点桩（OneBot v11 / NapCat 节点结构）"""
+
+        def __init__(self, uin: int = 0, name: str = "", content: list = None):
+            self.uin = int(uin or 0)
+            self.name = str(name or "")
+            self.content = list(content) if content is not None else []
+
+        def __repr__(self) -> str:
+            return f"Node(uin={self.uin!r}, name={self.name!r}, content={self.content!r})"
+
+    class _Nodes:
+        """合并转发消息链组件"""
+
+        def __init__(self, nodes: list = None):
+            self.nodes = list(nodes) if nodes is not None else []
+
+        def __repr__(self) -> str:
+            return f"Nodes(nodes={self.nodes!r})"
+
     mc_mod.At = _At
     mc_mod.Plain = _Plain
     mc_mod.Image = _Image
+    mc_mod.Node = _Node
+    mc_mod.Nodes = _Nodes
 
     # astrbot.api.event
     ev_mod = types.ModuleType("astrbot.api.event")

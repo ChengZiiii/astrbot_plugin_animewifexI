@@ -49,6 +49,7 @@ logger = logging.getLogger("astrbot_plugin_animewifex.pk_v2")
 __all__ = ["PkV2Service", "PkStartResult"]
 
 SendMessage = Callable[[str, str], Awaitable[None]]
+SendNodes = Callable[[str, int, str, Sequence[str]], Awaitable[None]]
 
 
 @dataclass
@@ -78,6 +79,9 @@ class PkV2Service:
         locks=None,
         *,
         send_message: Optional[SendMessage] = None,
+        send_node: Optional["SendNodes"] = None,
+        forward_sender_id: int = 0,
+        forward_sender_name: str = "哆啦b梦",
         battle_store: Optional[Any] = None,   # 可注入 PkBattleStore 或 mock
         profile_store_provider: Optional[Callable[[str], Any]] = None,
         ownership_store_provider: Optional[Callable[[str], Any]] = None,
@@ -86,6 +90,12 @@ class PkV2Service:
         self._config = config
         self._locks = locks
         self._send = send_message
+        # 合并转发发送回调：args(umo, sender_id, sender_name, texts)
+        # 当提供时，_flush_buffer 把缓存里每条文本包成一个 Node 一起发；
+        # 不提供时回退到 _send 把所有文本拼成一条长消息。
+        self._send_node = send_node
+        self._forward_sender_id = int(forward_sender_id or 0)
+        self._forward_sender_name = forward_sender_name or "哆啦b梦"
 
         # 默认从 paths 构造；测试可注入 mock
         self._battle_store = battle_store
@@ -170,11 +180,29 @@ class PkV2Service:
             self._message_buffers[battle_id].append(text)
 
     async def _flush_buffer(self, battle_id: str, umo: str) -> None:
-        """将所有缓存消息合并为 1 条消息发送（替代原来的逐条推送）。"""
+        """将所有缓存消息一次性推送。
+
+        * 有 ``send_node`` 回调时：每条文本 = 一个 Node → 走合并转发（QQ 聊天记录卡片）
+        * 否则：回退到老逻辑 —— 所有文本拼成一条长消息发出
+        """
         msgs = self._message_buffers.pop(battle_id, [])
         if not msgs:
             return
-        # 用分隔线合并所有消息为一条大消息
+        # 优先用合并转发（每条独立 Node，UI 可折叠展开）
+        if self._send_node is not None and self._forward_sender_id > 0:
+            try:
+                await self._send_node(
+                    umo,
+                    self._forward_sender_id,
+                    self._forward_sender_name,
+                    list(msgs),
+                )
+                return
+            except Exception:
+                logger.exception(
+                    f"pk_v2 flush_buffer send_node failed: battle_id={battle_id}，回退到 send_message"
+                )
+        # 回退：合并为一条长消息
         combined = "\n\n────────────\n\n".join(msgs)
         if self._send is not None:
             try:

@@ -391,6 +391,30 @@
         "default": 0.80,
         "hint": "Phase 4: PK中被对方元素克制时的战力倍率"
     },
+    "pk_v2_enabled": {
+        "description": "4v4接力战开关",
+        "type": "bool",
+        "default": true,
+        "hint": "Phase 5: 启用 4v4 接力战；关闭后回退 1v1 单回合"
+    },
+    "pk_v2_turn_delay_ms": {
+        "description": "PK回合间延迟（毫秒）",
+        "type": "int",
+        "default": 1000,
+        "hint": "Phase 5: 每回合间主动消息延迟（毫秒），用于节奏控制"
+    },
+    "pk_v2_use_forward": {
+        "description": "PK战报使用合并转发",
+        "type": "bool",
+        "default": true,
+        "hint": "开启后 4v4 战报按回合/事件拆成多条 Node 合并转发（QQ 聊天记录卡片）。仅 OneBot v11 / NapCat 生效；非支持平台自动回退为长消息。"
+    },
+    "pk_v2_forward_sender_name": {
+        "description": "PK合并转发发言人名",
+        "type": "string",
+        "default": "哆啦b梦",
+        "hint": "合并转发卡片里的'发言人'昵称（QQ 号始终是 bot 自己的 self_id）"
+    },
     "duplicate_coin_compensation": {
         "description": "重复抽卡补偿",
         "type": "object",

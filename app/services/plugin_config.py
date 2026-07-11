@@ -232,6 +232,8 @@ class PluginConfig:
     # ---------- Phase 5 / v3 接力战（Phase C 接入）----------
     pk_v2_enabled: bool = True                  # 4v4 接力战总开关（false 回退 1v1）
     pk_v2_turn_delay_ms: int = 1000             # 每回合间主动消息延迟（毫秒）
+    pk_v2_use_forward: bool = True              # 战报用合并转发（QQ 聊天记录卡片）；关掉回退一条长消息
+    pk_v2_forward_sender_name: str = "哆啦b梦"  # 合并转发的"发言人"昵称（可 WebUI 改）
 
     # ---------- Phase E / v3 负债经济 ----------
     debt_floor: int = -500                      # 负债下限硬封顶
@@ -425,6 +427,10 @@ class PluginConfig:
             # Phase 5 / v3 接力战
             pk_v2_enabled=_as_bool(d.get("pk_v2_enabled"), True),
             pk_v2_turn_delay_ms=_as_int(d.get("pk_v2_turn_delay_ms"), 1000),
+            pk_v2_use_forward=_as_bool(d.get("pk_v2_use_forward"), True),
+            pk_v2_forward_sender_name=str(
+                d.get("pk_v2_forward_sender_name") or "哆啦b梦"
+            ),
             # Phase E / v3 负债经济
             debt_floor=_as_int(d.get("debt_floor"), -500),
             debt_block_work=_as_bool(d.get("debt_block_work"), True),

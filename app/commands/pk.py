@@ -135,20 +135,53 @@ async def _handle_pk_v2_4v4(
     # 调 PkV2Service.start_battle（构造 service + 发启动贴）
     umo = event.unified_msg_origin or ""
 
-    # Phase C.3: 从 ctx.context（AstrBot Context）构造 send_message 闭包
+    # 抓 bot 自己的 self_id（合并转发 Node 的 uin 必须是数字）
+    try:
+        bot_id = int(event.get_self_id() or 0)
+    except (TypeError, ValueError):
+        bot_id = 0
+
+    use_forward = bool(getattr(ctx.config, "pk_v2_use_forward", True)) and bot_id > 0
+    sender_name = str(getattr(ctx.config, "pk_v2_forward_sender_name", "哆啦b梦") or "哆啦b梦")
+
+    # 从 ctx.context（AstrBot Context）构造 send_message / send_node 闭包
+    _pk_v2_send = None
+    _pk_v2_send_node = None
     if ctx.context is not None:
         async def _pk_v2_send(umo_arg: str, text: str) -> None:
             from astrbot.api.event import MessageChain
             chain = MessageChain().message(text)
             await ctx.context.send_message(umo_arg, chain)
-    else:
-        _pk_v2_send = None
+
+        if use_forward:
+            async def _pk_v2_send_node(
+                umo_arg: str,
+                sender_id: int,
+                sender_name_arg: str,
+                texts,
+            ) -> None:
+                """把每条文本包成一个 Node 一起发出（QQ 合并转发）"""
+                from astrbot.api.event import MessageChain
+                from astrbot.api.message_components import Node, Nodes, Plain
+                nodes = [
+                    Node(
+                        uin=int(sender_id),
+                        name=str(sender_name_arg),
+                        content=[Plain(t)],
+                    )
+                    for t in texts
+                ]
+                chain = MessageChain([Nodes(nodes=nodes)])
+                await ctx.context.send_message(umo_arg, chain)
 
     service = PkV2Service(
         paths=ctx.paths,
         config=ctx.config,
         locks=ctx.locks,
         send_message=_pk_v2_send,
+        send_node=_pk_v2_send_node,
+        forward_sender_id=bot_id,
+        forward_sender_name=sender_name,
     )
     try:
         ack = await service.start_battle(battle, umo)
