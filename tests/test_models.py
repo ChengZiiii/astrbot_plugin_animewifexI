@@ -255,3 +255,179 @@ class TestProfileNoContract:
         d = {"uid": "u1", "work_contract_reserved": "overtime"}
         p = UserProfile.from_dict(d)
         assert p.uid == "u1"
+
+
+# ==================== v3 接力战 数据模型 ====================
+
+
+class TestFormationMember:
+    def test_round_trip(self):
+        from app.models.pk_battle import FormationMember
+
+        m = FormationMember(
+            wid="w_a1", pos=1, nickname="三笠", rarity="SSR",
+            element="力量", base_atk=80, base_def=60, base_hp=500,
+            intimacy=90, is_locked=False,
+            current_hp=500, is_alive=True, is_active=True,
+            kills=2, damage_dealt=300, damage_taken=120,
+            passive_id="crit_plus",
+        )
+        data = m.to_dict()
+        m2 = FormationMember.from_dict(data)
+        assert m2.wid == "w_a1"
+        assert m2.pos == 1
+        assert m2.nickname == "三笠"
+        assert m2.rarity == "SSR"
+        assert m2.element == "力量"
+        assert m2.base_atk == 80
+        assert m2.base_def == 60
+        assert m2.base_hp == 500
+        assert m2.intimacy == 90
+        assert m2.is_locked is False
+        assert m2.current_hp == 500
+        assert m2.is_alive is True
+        assert m2.is_active is True
+        assert m2.kills == 2
+        assert m2.damage_dealt == 300
+        assert m2.damage_taken == 120
+        assert m2.passive_id == "crit_plus"
+
+    def test_defaults_for_optional_fields(self):
+        from app.models.pk_battle import FormationMember
+
+        m = FormationMember(
+            wid="w_x", pos=2, nickname="X", rarity="N",
+            element="智力", base_atk=10, base_def=10, base_hp=100,
+            intimacy=0, is_locked=False,
+            current_hp=100, is_alive=True, is_active=True,
+        )
+        assert m.kills == 0
+        assert m.damage_dealt == 0
+        assert m.damage_taken == 0
+        assert m.passive_id == ""
+
+
+class TestBattleStatusLayer:
+    def test_round_trip(self):
+        from app.models.pk_battle import BattleStatusLayer
+
+        s = BattleStatusLayer()
+        s.qi_po = 3
+        s.weak_point = 2
+        s.bloodlust = 1
+        s.frenzy = False
+        data = s.to_dict()
+        s2 = BattleStatusLayer.from_dict(data)
+        assert s2.qi_po == 3
+        assert s2.weak_point == 2
+        assert s2.bloodlust == 1
+        assert s2.frenzy is False
+
+    def test_defaults(self):
+        from app.models.pk_battle import BattleStatusLayer
+
+        s = BattleStatusLayer()
+        assert s.qi_po == 0
+        assert s.weak_point == 0
+        assert s.bloodlust == 0
+        assert s.frenzy is False
+
+    def test_frenzy_round_trip(self):
+        from app.models.pk_battle import BattleStatusLayer
+
+        s = BattleStatusLayer(frenzy=True, qi_po=5)
+        data = s.to_dict()
+        s2 = BattleStatusLayer.from_dict(data)
+        assert s2.frenzy is True
+        assert s2.qi_po == 5
+
+
+class TestPkBattle:
+    def test_round_trip_minimal(self):
+        from app.models.pk_battle import PkBattle
+
+        battle = PkBattle(
+            gid="g1", battle_id="b1",
+            atk_uid="u1", atk_nick="alice",
+            def_uid="u2", def_nick="bob",
+        )
+        data = battle.to_dict()
+        b2 = PkBattle.from_dict(data)
+        assert b2.gid == "g1"
+        assert b2.battle_id == "b1"
+        assert b2.atk_uid == "u1"
+        assert b2.atk_nick == "alice"
+        assert b2.def_uid == "u2"
+        assert b2.def_nick == "bob"
+        assert b2.atk_formation == []
+        assert b2.def_formation == []
+        assert b2.atk_status_layers == []
+        assert b2.def_status_layers == []
+        assert b2.turn_idx == 0
+        assert b2.active_idx == (1, 1)
+        assert b2.rng_seed == 0
+        assert b2.rng_state is None
+        assert b2.status == "active"
+        assert b2.winner_uid == ""
+        assert b2.end_reason == ""
+        assert b2.log == []
+        assert b2.created_at == 0
+        assert b2.updated_at == 0
+        assert b2.finished_at == 0
+
+    def test_round_trip_with_formations(self):
+        from app.models.pk_battle import (
+            BattleStatusLayer,
+            FormationMember,
+            PkBattle,
+        )
+
+        members = [
+            FormationMember(
+                wid="w_1", pos=1, nickname="三笠", rarity="SSR",
+                element="力量", base_atk=80, base_def=60, base_hp=500,
+                intimacy=90, is_locked=False,
+                current_hp=500, is_alive=True, is_active=True,
+            ),
+            FormationMember(
+                wid="w_2", pos=2, nickname="蝴蝶忍", rarity="SR",
+                element="敏捷", base_atk=70, base_def=50, base_hp=450,
+                intimacy=70, is_locked=False,
+                current_hp=450, is_alive=True, is_active=False,
+            ),
+        ]
+        layers = [BattleStatusLayer(), BattleStatusLayer()]
+        layers[0].qi_po = 2
+
+        battle = PkBattle(
+            gid="g1", battle_id="b_test",
+            atk_uid="u1", atk_nick="alice",
+            def_uid="u2", def_nick="bob",
+            atk_formation=list(members),
+            def_formation=list(members),
+            atk_status_layers=list(layers),
+            def_status_layers=list(layers),
+            turn_idx=5, active_idx=(2, 1),
+            rng_seed=42,
+            status="settling", winner_uid="u1", end_reason="all_dead",
+            log=["第1回合...", "第2回合..."],
+            created_at=1700000000, updated_at=1700000100, finished_at=1700000200,
+        )
+        data = battle.to_dict()
+        b2 = PkBattle.from_dict(data)
+
+        assert b2.atk_formation[0].wid == "w_1"
+        assert b2.atk_formation[1].wid == "w_2"
+        assert b2.def_formation[0].rarity == "SSR"
+        assert b2.atk_status_layers[0].qi_po == 2
+        assert b2.atk_status_layers[1].qi_po == 0
+        assert b2.turn_idx == 5
+        assert b2.active_idx == (2, 1)
+        assert b2.rng_seed == 42
+        assert b2.status == "settling"
+        assert b2.winner_uid == "u1"
+        assert b2.end_reason == "all_dead"
+        assert b2.log == ["第1回合...", "第2回合..."]
+        assert b2.created_at == 1700000000
+        assert b2.updated_at == 1700000100
+        assert b2.finished_at == 1700000200
