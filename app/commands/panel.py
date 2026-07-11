@@ -102,7 +102,8 @@ async def handle_panel(
     lines = [f"【{nick} 的面板】", ""]
 
     # 基础信息
-    lines.append(f"💰 老婆币：{profile.coins}")
+    debt_suffix = " ⚠️ 负债" if profile.coins < 0 else ""
+    lines.append(f"💰 老婆币：{profile.coins}{debt_suffix}")
     lines.append(f"📅 连续天数：{profile.streak_days}")
     lines.append("👑 主老婆：列表中带 👑 的那位，可用 `老婆 切换 <编号>` 修改")
 
@@ -121,6 +122,15 @@ async def handle_panel(
     lines.append(f"  牛人：{profile.total_ntr_success} 次")
     lines.append(f"  被牛：{profile.total_ntr_lost} 次")
     lines.append(f"  PK胜：{profile.total_pk_win} / 负：{profile.total_pk_lost}")
+
+    # NTR 战绩
+    if profile.total_ntr_lost > 0 or profile.total_ntr_comfort_received > 0:
+        lines.append(
+            f"  NTR 战绩：被牛 {profile.total_ntr_lost} 次"
+            f" / 累计收安慰币 {profile.total_ntr_comfort_received} 币"
+        )
+    else:
+        lines.append("  NTR 战绩：暂无被牛记录")
     lines.append("")
 
     # 持有老婆
