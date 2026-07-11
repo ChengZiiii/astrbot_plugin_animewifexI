@@ -122,6 +122,14 @@ async def handle_panel(
     lines.append(f"  牛人：{profile.total_ntr_success} 次")
     lines.append(f"  被牛：{profile.total_ntr_lost} 次")
     lines.append(f"  PK胜：{profile.total_pk_win} / 负：{profile.total_pk_lost}")
+    # Phase 6: 寿命系统统计
+    if getattr(ctx.config, "lifespan_enabled", True):
+        if profile.total_wife_deaths > 0 or profile.total_lifespan_restored > 0:
+            lines.append(
+                f"  ☠️ 老婆离世：{profile.total_wife_deaths} 次 / "
+                f"💚 修复/复活：{profile.total_lifespan_restored} 次 "
+                f"（累计花费 {profile.total_coins_spent_on_revive} 币）"
+            )
 
     # NTR 战绩
     if profile.total_ntr_lost > 0 or profile.total_ntr_comfort_received > 0:
@@ -142,7 +150,11 @@ async def handle_panel(
             primary_name = primary_meta.chara or primary_meta.img if primary_meta else primary_wife.wid
             lines.append(f"🎯 当前默认老婆：{primary_name}")
             lines.append("")
-        lines.append(f"【持有老婆】{len(my_wives)}/{MAX_WIVES_PER_USER}")
+        # Phase 6: 死亡统计
+        dead_count = sum(1 for o in my_wives if o.is_dead)
+        lines.append(f"【持有老婆】{len(my_wives)}/{MAX_WIVES_PER_USER}"
+                     + (f" (☠️ 离世 {dead_count})" if dead_count else ""))
+        lifespan_max = getattr(ctx.config, "lifespan_max", 100)
         for i, o in enumerate(my_wives, 1):
             wife = wives.get(o.wid)
             if wife:
@@ -157,10 +169,16 @@ async def handle_panel(
                         "expedition": " 💼远征中",
                     }.get(o.work_mode, " 💼打工中")
                 primary = " 👑" if o.is_primary else ""
+                dead = " ☠️" if o.is_dead else ""
+                # Phase 6: 寿命条
+                if o.is_dead:
+                    lifespan_str = " ☠️已离世"
+                else:
+                    lifespan_str = f" ❤️{o.lifespan}/{lifespan_max}"
                 stats = wife.base_stats
                 base_power = stats.atk + stats.defense + int(stats.hp * 0.5)
                 stats_str = f" ⚔️{stats.atk} 🛡️{stats.defense} ❤️{stats.hp} 💪{base_power}"
-                lines.append(f"  {i}. {emoji} {name} (❤️{o.intimacy}){stats_str}{lock}{work}{primary}")
+                lines.append(f"  {i}. {emoji} {name} (❤️{o.intimacy}){lifespan_str}{stats_str}{lock}{work}{primary}{dead}")
     else:
         lines.append("【持有老婆】无")
 

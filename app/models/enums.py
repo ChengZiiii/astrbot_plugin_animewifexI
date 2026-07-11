@@ -61,6 +61,9 @@ class Action:
     WORK_STOLEN = "work_stolen"
     # Phase 4 第二波预留
     SUPPORT = "support"
+    # Phase 6 / 寿命系统
+    WIFE_DEATH = "wife_death"               # 老婆死亡事件（用于统计/榜单）
+    LIFESPAN_RESTORE = "lifespan_restore"   # 老婆币修复/复活
 
     ALL = (
         NTR_SUCCESS,
@@ -80,4 +83,6 @@ class Action:
         WORK_COMPLETE,
         WORK_STOLEN,
         SUPPORT,
+        WIFE_DEATH,
+        LIFESPAN_RESTORE,
     )

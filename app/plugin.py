@@ -17,6 +17,7 @@ from astrbot.api.star import Context, Star, StarTools
 from .commands.context import CommandContext
 from .commands.registration import build_registry
 from .services.cooldown_service import CooldownService
+from .services.lifespan_service import LifespanService
 from .services.ownership_service import OwnershipService
 from .services.plugin_config import PluginConfig
 from .services.wife_service import WifeService
@@ -60,6 +61,10 @@ class WifePluginCore(Star):
         # 业务服务
         self.wife_service = WifeService(self.paths, self.plugin_config)
         self.cooldown_service = CooldownService(self.locks)
+        # Phase 6: 寿命系统（早于 ownership/work 创建，便于注入）
+        self.lifespan_service = LifespanService(
+            self.paths, self.plugin_config, self.locks,
+        )
         self.ownership_service = OwnershipService(
             self.paths, self.plugin_config, self.locks, self.wife_service,
             self.cooldown_service,
@@ -78,6 +83,7 @@ class WifePluginCore(Star):
             cooldown_service=self.cooldown_service,
             tz=self.tz,
             context=self.context,  # AstrBot Context — 主动消息推送用（PkV2Service 等）
+            lifespan_service=self.lifespan_service,
         )
 
         # 启动零点清理任务
@@ -99,7 +105,10 @@ class WifePluginCore(Star):
 
         # 跨插件 facade（impact 日老婆联动）
         from .interop import WifeInterop, set_facade
-        set_facade(WifeInterop(self.ownership_service, self.locks, self.plugin_config, self.paths))
+        set_facade(WifeInterop(
+            self.ownership_service, self.locks, self.plugin_config, self.paths,
+            lifespan_service=self.lifespan_service,
+        ))
 
     # ---------- 时区 ----------
 
@@ -165,7 +174,10 @@ class WifePluginCore(Star):
         logger.info("[打工结算] 定时循环已启动")
         while True:
             try:
-                work_service = WorkService(self.paths, self.plugin_config, self.locks)
+                work_service = WorkService(
+                    self.paths, self.plugin_config, self.locks,
+                    lifespan_service=self.lifespan_service,
+                )
                 settled = await work_service.settle_all_due()
                 for umo, result in settled:
                     if not umo:

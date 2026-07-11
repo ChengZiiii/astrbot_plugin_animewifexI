@@ -98,6 +98,10 @@ class UserProfile:
     total_divorce_coins_earned: int = 0            # 累计离婚返还币
     total_divorce_property_lost: int = 0           # 累计被分走金币（正数 = 损失）
     total_divorce_debt_relieved: int = 0           # 累计减压负债（正数 = 减轻）
+    # Phase 6 / 寿命系统：用户级别的寿命事件统计
+    total_wife_deaths: int = 0                      # 累计目睹老婆死亡次数
+    total_lifespan_restored: int = 0                # 累计修复（复活）次数
+    total_coins_spent_on_revive: int = 0            # 累计花在修复/复活上的老婆币（正数）
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -152,6 +156,10 @@ class UserProfile:
             "total_divorce_coins_earned": self.total_divorce_coins_earned,
             "total_divorce_property_lost": self.total_divorce_property_lost,
             "total_divorce_debt_relieved": self.total_divorce_debt_relieved,
+            # Phase 6 / 寿命系统
+            "total_wife_deaths": self.total_wife_deaths,
+            "total_lifespan_restored": self.total_lifespan_restored,
+            "total_coins_spent_on_revive": self.total_coins_spent_on_revive,
         }
 
     @classmethod
@@ -231,6 +239,10 @@ class UserProfile:
             total_divorce_coins_earned=int(data.get("total_divorce_coins_earned", 0) or 0),
             total_divorce_property_lost=int(data.get("total_divorce_property_lost", 0) or 0),
             total_divorce_debt_relieved=int(data.get("total_divorce_debt_relieved", 0) or 0),
+            # Phase 6 / 寿命系统
+            total_wife_deaths=int(data.get("total_wife_deaths", 0) or 0),
+            total_lifespan_restored=int(data.get("total_lifespan_restored", 0) or 0),
+            total_coins_spent_on_revive=int(data.get("total_coins_spent_on_revive", 0) or 0),
         )
 
     @classmethod

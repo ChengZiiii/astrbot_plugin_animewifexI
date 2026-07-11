@@ -34,6 +34,7 @@ from .ntr import handle_ntr
 from .panel import handle_collection, handle_panel
 from .pk import handle_pk
 from .registry import CommandRegistry
+from .rest import handle_rest
 from .revenge import handle_revenge
 from .swap import (
     handle_swap_accept,
@@ -106,6 +107,11 @@ def build_registry() -> CommandRegistry:
 
     # ---------- 分组命令：离婚（Phase D / v3 离婚系统）----------
     registry.register_grouped("离婚", handle_divorce)
+
+    # ---------- 分组命令：休息 / 养老婆 / 复活（Phase 6 / 寿命系统）----------
+    registry.register_grouped("休息", handle_rest)
+    registry.register_grouped("养老婆", handle_rest)
+    registry.register_grouped("复活", handle_rest)
 
     # ---------- 管理员命令 ----------
     registry.register_grouped("重置本群", handle_admin_reset_group)

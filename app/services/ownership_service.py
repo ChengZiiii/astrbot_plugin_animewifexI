@@ -685,8 +685,21 @@ class OwnershipService:
                         remaining_attempts=remaining,
                         profile=attacker_profile,
                     )
+                # Phase 6: 已死亡的老婆不能被牛
+                if target_wife.is_dead:
+                    profile_store.save_all(profiles)
+                    daily_store.save_all(daily_counts)
+                    return NtrResult(
+                        ok=True,
+                        success=False,
+                        consumed_attempt=True,
+                        reason="target_dead",
+                        remaining_attempts=remaining,
+                        profile=attacker_profile,
+                        wid=target_wid,
+                    )
             else:
-                # 随机选目标的一个老婆（跳过被锁的）
+                # 随机选目标的一个老婆（跳过被锁的、跳过已死亡的）
                 from .marry_service import MarryService
                 target_wives = ownership_store.list_by_user(tid, ownerships)
                 if not target_wives:
@@ -700,13 +713,28 @@ class OwnershipService:
                         remaining_attempts=remaining,
                         profile=attacker_profile,
                     )
-                unlocked_wives = [w for w in target_wives if not MarryService.is_locked(w)]
-                if not unlocked_wives:
-                    # 全部被锁，返回锁定拒绝（用第一个被锁的老婆信息）
+                # Phase 6: 排除死亡老婆（尸体不让牛走）
+                alive_unlocked_wives = [
+                    w for w in target_wives
+                    if not MarryService.is_locked(w) and not w.is_dead
+                ]
+                if not alive_unlocked_wives:
+                    # 全部被锁或全部死亡；用第一个存在的老婆信息（仅供提示）
                     target_wife = target_wives[0]
                     target_wid = target_wife.wid
                     profile_store.save_all(profiles)
                     daily_store.save_all(daily_counts)
+                    # 死亡优先提示
+                    if all(w.is_dead for w in target_wives):
+                        return NtrResult(
+                            ok=True,
+                            success=False,
+                            consumed_attempt=True,
+                            reason="target_all_dead",
+                            remaining_attempts=remaining,
+                            profile=attacker_profile,
+                            wid=target_wid,
+                        )
                     return NtrResult(
                         ok=True,
                         success=False,
@@ -716,7 +744,7 @@ class OwnershipService:
                         profile=attacker_profile,
                         wid=target_wid,
                     )
-                target_wife = _random.choice(unlocked_wives)
+                target_wife = _random.choice(alive_unlocked_wives)
                 target_wid = target_wife.wid
 
             target_profile = profiles.get(tid)
@@ -1241,9 +1269,16 @@ class OwnershipService:
             if MarryService.is_locked(target):
                 return IntimacyResult(ok=False, reason="locked", intimacy=target.intimacy, wid=target.wid)
 
+            # Phase 6: 死亡老婆不能摸头
+            if target.is_dead:
+                return IntimacyResult(
+                    ok=False, reason="wife_dead",
+                    intimacy=target.intimacy, wid=target.wid,
+                )
+
             profile = ProfileStore.get_or_create(
                 profiles, uid, nick,
-    
+
                 coins=self._config.initial_coins,
             )
 
@@ -1309,9 +1344,16 @@ class OwnershipService:
             if MarryService.is_locked(target):
                 return IntimacyResult(ok=False, reason="locked", intimacy=target.intimacy, wid=target.wid)
 
+            # Phase 6: 死亡老婆不能送礼
+            if target.is_dead:
+                return IntimacyResult(
+                    ok=False, reason="wife_dead",
+                    intimacy=target.intimacy, wid=target.wid,
+                )
+
             profile = ProfileStore.get_or_create(
                 profiles, uid, nick,
-    
+
                 coins=self._config.initial_coins,
             )
 
@@ -1384,6 +1426,13 @@ class OwnershipService:
             if MarryService.is_locked(target):
                 return IntimacyResult(ok=False, reason="locked", intimacy=target.intimacy, wid=target.wid)
 
+            # Phase 6: 死亡老婆不能对话
+            if target.is_dead:
+                return IntimacyResult(
+                    ok=False, reason="wife_dead",
+                    intimacy=target.intimacy, wid=target.wid,
+                )
+
             profile = ProfileStore.get_or_create(
                 profiles, uid, nick,
                 coins=self._config.initial_coins,
@@ -1454,6 +1503,13 @@ class OwnershipService:
             from .marry_service import MarryService
             if MarryService.is_locked(target):
                 return IntimacyResult(ok=False, reason="locked", intimacy=target.intimacy, wid=target.wid)
+
+            # Phase 6: 死亡老婆不能约会
+            if target.is_dead:
+                return IntimacyResult(
+                    ok=False, reason="wife_dead",
+                    intimacy=target.intimacy, wid=target.wid,
+                )
 
             profile = ProfileStore.get_or_create(
                 profiles, uid, nick,

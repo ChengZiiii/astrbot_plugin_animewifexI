@@ -238,6 +238,18 @@ def ownership_service(tmp_paths, config, locks, mock_wife_service):
 
 
 @pytest.fixture
+def lifespan_service(tmp_paths, config, locks):
+    """Phase 6: 寿命系统服务（测试用 fixture）"""
+    from app.services.lifespan_service import LifespanService
+
+    return LifespanService(
+        paths=tmp_paths,
+        config=config,
+        locks=locks,
+    )
+
+
+@pytest.fixture
 def event_loop_policy():
     """pytest-asyncio 兼容：使用默认事件循环策略"""
     return asyncio.DefaultEventLoopPolicy()

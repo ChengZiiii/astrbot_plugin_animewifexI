@@ -111,6 +111,13 @@ async def handle_ntr(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGener
         yield event.plain_result(f"{wife_name}正在锁定中，这次牛不走哦~")
         return
 
+    if result.reason == "target_dead" or result.reason == "target_all_dead":
+        wives_meta = WivesMasterStore(ctx.paths).load_all()
+        w = wives_meta.get(result.wid)
+        wife_name = (w.chara or w.img or "该老婆") if w else "该老婆"
+        yield event.plain_result(f"{wife_name}已经离世了，牛不动了~")
+        return
+
     # 概率失败
     if not result.success:
         wives_meta = WivesMasterStore(ctx.paths).load_all()

@@ -73,7 +73,10 @@ async def try_settle_work(
     uid = get_sender_uid(event)
     nick = get_sender_nick(event)
 
-    work_service = WorkService(ctx.paths, ctx.config, ctx.locks)
+    work_service = WorkService(
+        ctx.paths, ctx.config, ctx.locks,
+        lifespan_service=ctx.lifespan_service,
+    )
     result = await work_service.resolve_due_work(gid, uid, nick, ctx.today())
     if result and result.ok:
         wife_name = _wife_name(ctx, result.wid)
@@ -85,11 +88,21 @@ async def try_settle_work(
             bonus_lines.append(f"📜 打工合约生效，本次收益 +{bonus_pct}%！")
         if result.partner_bonus_used:
             bonus_lines.append("🤝 打工搭档加成生效，本次收益提升！")
+        # Phase 6: 寿命/死亡提示
+        death_line = ""
+        if result.death_occurred:
+            death_line = (
+                f"\n\n☠️ 悲剧！{wife_name} 因过度劳累离世了！\n"
+                f"💡 发送「老婆 休息 <编号>」可以花老婆币让她复活"
+            )
+        elif result.lifespan_loss > 0 and result.new_lifespan >= 0:
+            death_line = f"\n❤️ 寿命：{result.new_lifespan}/{ctx.config.lifespan_max}"
         return (
             f"🎉 {wife_name} 的{mode_name}打工结算完成！获得 {result.reward} 币，"
             f"亲密度 +{result.intimacy_gain}\n"
             f"余额：{result.coin_balance} 币"
             + ("\n" + "\n".join(bonus_lines) if bonus_lines else "")
+            + death_line
             + f"\n\n💬 {taunt}"
         )
     return None
@@ -104,7 +117,10 @@ async def handle_work(
         return
     uid = get_sender_uid(event)
     nick = get_sender_nick(event)
-    work_service = WorkService(ctx.paths, ctx.config, ctx.locks)
+    work_service = WorkService(
+        ctx.paths, ctx.config, ctx.locks,
+        lifespan_service=ctx.lifespan_service,
+    )
 
     # 解析参数
     msg = (event.message_str or "").strip()
@@ -127,6 +143,13 @@ async def handle_work(
 
     if rest.startswith("中断"):
         async for item in _handle_work_cancel(event, ctx, work_service, gid, uid, nick, rest):
+            yield item
+        return
+
+    if rest.startswith("休息") or rest.startswith("养老婆") or rest.startswith("复活"):
+        # Phase 6: 转发到 rest handler
+        from .rest import handle_rest
+        async for item in handle_rest(event, ctx):
             yield item
         return
 
@@ -156,12 +179,22 @@ async def handle_work(
             bonus_lines.append(f"📜 打工合约生效，本次收益 +{bonus_pct}%！")
         if settle_result.partner_bonus_used:
             bonus_lines.append("🤝 打工搭档加成生效，本次收益提升！")
+        # Phase 6: 寿命/死亡提示
+        death_line = ""
+        if settle_result.death_occurred:
+            death_line = (
+                f"\n☠️ 悲剧！{wife_name} 因过度劳累离世了！\n"
+                f"💡 发送「老婆 休息 <编号>」可以花老婆币让她复活"
+            )
+        elif settle_result.lifespan_loss > 0 and settle_result.new_lifespan >= 0:
+            death_line = f"\n❤️ 寿命：{settle_result.new_lifespan}/{ctx.config.lifespan_max}"
         taunt = random.choice(_WORK_SETTLE_FLAVOR).format(name=wife_name, reward=settle_result.reward)
         yield event.plain_result(
             f"🎉 {wife_name} 的{mode_name}打工结算完成！获得 {settle_result.reward} 币\n"
             f"亲密度 +{settle_result.intimacy_gain}，连续打工 {settle_result.streak} 天\n"
             f"余额：{settle_result.coin_balance} 币"
             + ("\n" + "\n".join(bonus_lines) if bonus_lines else "")
+            + death_line
             + f"\n\n💬 {taunt}"
         )
 
@@ -177,6 +210,8 @@ async def handle_work(
             yield event.plain_result(f"{nick}，你指定的老婆编号不存在哦~")
         elif result.reason == "locked":
             yield event.plain_result(f"{nick}，该老婆处于锁定状态，不能打工哦~（锁定期间防牛但也无法打工）")
+        elif result.reason == "wife_dead":
+            yield event.plain_result(f"{nick}，该老婆已离世，无法打工~ 用「老婆 休息 <编号>」可以花钱复活")
         elif result.reason == "already_working":
             max_c = ctx.config.work_max_concurrent
             yield event.plain_result(f"{nick}，已经有 {max_c} 位老婆在打工中，达到上限了~")

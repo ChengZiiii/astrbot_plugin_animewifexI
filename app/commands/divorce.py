@@ -189,17 +189,18 @@ async def _handle_preview(
     wife_name = (meta.chara or meta.img or "该老婆") if meta else "该老婆"
     rarity = meta.rarity if meta else "N"
     intimacy = target_ownership.intimacy
+    is_dead = target_ownership.is_dead
 
     # 计算返还
-    divorce_return = calc_divorce_return(rarity, intimacy)
+    divorce_return = calc_divorce_return(rarity, intimacy) if not is_dead else 0
 
     # 计算分家产概率
-    split_prob = calc_divorce_property_split_prob(intimacy)
+    split_prob = calc_divorce_property_split_prob(intimacy) if not is_dead else 0.0
     split_prob_pct = int(split_prob * 100)
 
     # 计算分家产金额（基于当前余额）
-    split_amount = calc_divorce_property_split_amount(profile.coins)
-    new_balance_if_split = profile.coins - split_amount
+    split_amount = calc_divorce_property_split_amount(profile.coins) if not is_dead else 0
+    new_balance_if_split = profile.coins - split_amount if not is_dead else profile.coins
 
     # 保存预览状态
     _divorce_pending[uid] = {
@@ -210,28 +211,49 @@ async def _handle_preview(
     # 生成预览贴
     base_val = RETURN_BASE.get(rarity, "?")
     mult = 1 + intimacy / 100.0
-    lines = [
-        "═══════════════════════════════════════",
-        "⚠️ 离婚预告",
-        "═══════════════════════════════════════",
-        "",
-        f"👋 你考虑放弃 [{wife_name}] {rarity} ❤️ {intimacy}",
-        "",
-        f"💰 离婚返还：{divorce_return} 币（基础 {base_val} × 好感度倍率 {mult:.1f}）",
-        f"📊 分家产概率：{split_prob_pct}%（好感度 {intimacy}，命中 50% 上限）",
-        f"💸 分家产金额（基于当前余额 {profile.coins}）：",
-        f"   • 触发时：{split_amount:+d} 币 → 新余额 {new_balance_if_split}",
-        f"   • 不触发：+{divorce_return} 币 → 新余额 {profile.coins + divorce_return}",
-        "",
-        "📌 离婚后：",
-        f"   • [{wife_name}] 将离开你的持有列表",
-        "   • 图鉴保留（标记'已离异'）",
-        f"   • {DIVORCE_COOLDOWN_DAYS} 天内不能再离婚",
-        "",
-        "⚠️ 确定要执行吗？发送 `老婆 离婚 <编号> 确认`",
-        "  （预览有效期 10 分钟）",
-        "═══════════════════════════════════════",
-    ]
+    if is_dead:
+        lines = [
+            "═══════════════════════════════════════",
+            "⚠️ 离婚预告（离世）",
+            "═══════════════════════════════════════",
+            "",
+            f"🪦 你考虑送走 [{wife_name}] {rarity} ☠️ 已离世",
+            "",
+            "💔 老婆已离世，离婚不返还任何老婆币",
+            "💔 老婆已离世，不会触发分家产",
+            "",
+            "📌 离婚后：",
+            f"   • [{wife_name}] 将从你的持有列表移除",
+            "   • 图鉴保留（标记'已离世'）",
+            f"   • {DIVORCE_COOLDOWN_DAYS} 天内不能再离婚",
+            "",
+            "⚠️ 确定要执行吗？发送 `老婆 离婚 <编号> 确认`",
+            "  （预览有效期 10 分钟）",
+            "═══════════════════════════════════════",
+        ]
+    else:
+        lines = [
+            "═══════════════════════════════════════",
+            "⚠️ 离婚预告",
+            "═══════════════════════════════════════",
+            "",
+            f"👋 你考虑放弃 [{wife_name}] {rarity} ❤️ {intimacy}",
+            "",
+            f"💰 离婚返还：{divorce_return} 币（基础 {base_val} × 好感度倍率 {mult:.1f}）",
+            f"📊 分家产概率：{split_prob_pct}%（好感度 {intimacy}，命中 50% 上限）",
+            f"💸 分家产金额（基于当前余额 {profile.coins}）：",
+            f"   • 触发时：{split_amount:+d} 币 → 新余额 {new_balance_if_split}",
+            f"   • 不触发：+{divorce_return} 币 → 新余额 {profile.coins + divorce_return}",
+            "",
+            "📌 离婚后：",
+            f"   • [{wife_name}] 将离开你的持有列表",
+            "   • 图鉴保留（标记'已离异'）",
+            f"   • {DIVORCE_COOLDOWN_DAYS} 天内不能再离婚",
+            "",
+            "⚠️ 确定要执行吗？发送 `老婆 离婚 <编号> 确认`",
+            "  （预览有效期 10 分钟）",
+            "═══════════════════════════════════════",
+        ]
     yield event.plain_result("\n".join(lines))
 
 
@@ -288,16 +310,24 @@ async def _handle_confirm(
     wife_name = (meta.chara or meta.img or "该老婆") if meta else "该老婆"
     rarity = meta.rarity if meta else "N"
     intimacy = target.intimacy
+    is_dead = target.is_dead
 
-    # 计算返还
-    divorce_return = calc_divorce_return(rarity, intimacy)
+    # Phase 6: 死亡老婆离婚不返不扣
+    if is_dead:
+        divorce_return = 0
+        split_happens = False
+        split_amount = 0
+    else:
+        # 计算返还
+        divorce_return = calc_divorce_return(rarity, intimacy)
 
-    # 计算分家产
-    split_prob = calc_divorce_property_split_prob(intimacy)
-    split_happens = random.random() < split_prob
+        # 计算分家产
+        split_prob = calc_divorce_property_split_prob(intimacy)
+        split_happens = random.random() < split_prob
+
     old_coins = profile.coins
 
-    if split_happens:
+    if not is_dead and split_happens:
         split_amount = calc_divorce_property_split_amount(profile.coins)
         new_coins, _ = apply_divorce_split(profile.coins)
         profile.coins = new_coins
@@ -309,9 +339,10 @@ async def _handle_confirm(
     else:
         split_amount = 0
 
-    # 应用返还
-    profile.coins += divorce_return
-    profile.total_divorce_coins_earned += divorce_return
+    # 应用返还（死亡老婆不返）
+    if not is_dead:
+        profile.coins += divorce_return
+        profile.total_divorce_coins_earned += divorce_return
 
     # 更新统计
     profile.total_divorces += 1
@@ -333,19 +364,23 @@ async def _handle_confirm(
         "💔 离婚完成",
         "═══════════════════════════════════════",
         "",
-        f"👋 [{wife_name}] {rarity} ❤️ {intimacy} 离开了你的持有列表",
-        "   （图鉴保留，标记'已离异'）",
-        "",
-        f"💰 返还币：+{divorce_return} 币",
     ]
-
-    if split_happens:
-        lines.append(f"💸 分家产：触发！")
-        lines.append(
-            f"   • 余额：{old_coins} → {profile.coins} ({split_amount:+d} 币)"
-        )
+    if is_dead:
+        lines.append(f"🪦 [{wife_name}] {rarity} ☠️ 已离世 从你的持有列表移除")
+        lines.append("   （图鉴保留，标记'已离世'）")
     else:
-        lines.append(f"💸 分家产：未触发")
+        lines.append(f"👋 [{wife_name}] {rarity} ❤️ {intimacy} 离开了你的持有列表")
+        lines.append("   （图鉴保留，标记'已离异'）")
+        lines.append("")
+        lines.append(f"💰 返还币：+{divorce_return} 币")
+
+        if split_happens:
+            lines.append(f"💸 分家产：触发！")
+            lines.append(
+                f"   • 余额：{old_coins} → {profile.coins} ({split_amount:+d} 币)"
+            )
+        else:
+            lines.append(f"💸 分家产：未触发")
 
     lines.extend(
         [

@@ -16,6 +16,7 @@ from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
 from ..services.cooldown_service import CooldownService
+from ..services.lifespan_service import LifespanService
 from ..services.ownership_service import OwnershipService
 from ..services.plugin_config import PluginConfig
 from ..services.wife_service import WifeService
@@ -38,6 +39,8 @@ class CommandContext:
     cooldown_service: CooldownService
     tz: ZoneInfo
     context: Optional[Any] = None  # AstrBot Context — 主动消息推送用，由 plugin.py 注入
+    # Phase 6 / 寿命系统
+    lifespan_service: Optional[LifespanService] = None
 
     def today(self) -> str:
         """获取当前时区的今日日期字符串"""

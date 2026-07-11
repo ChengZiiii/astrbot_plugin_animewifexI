@@ -22,6 +22,11 @@ from ..storage.stores import (
     ProfileStore,
 )
 from ..utils.time import get_today, now_ts
+from .lifespan_service import (
+    DEATH_CAUSE_WORK,
+    LifespanService,
+    calc_death_probability,
+)
 from .plugin_config import PluginConfig
 
 __all__ = [
@@ -66,6 +71,10 @@ class WorkSettleResult:
     partner_broken: bool = False
     insurance_used: bool = False
     insurance_bonus_coins: int = 0
+    # Phase 6: 寿命相关
+    lifespan_loss: int = 0                # 实际扣了多少寿命
+    new_lifespan: int = -1                # 扣后寿命（-1 = 寿命系统未启用/未检查）
+    death_occurred: bool = False          # 这次结算是否导致死亡
 
 
 @dataclass
@@ -107,10 +116,13 @@ class WorkService:
         paths: Paths,
         config: PluginConfig,
         locks: GroupLocks,
+        lifespan_service: "LifespanService | None" = None,
     ):
         self._paths = paths
         self._config = config
         self._locks = locks
+        # Phase 6: 寿命系统服务（构造时可选注入；plugin.py 会注入）
+        self._lifespan = lifespan_service
 
     def _ownership_store(self, gid: str) -> OwnershipStore:
         return OwnershipStore(self._paths, gid)
@@ -352,6 +364,10 @@ class WorkService:
             if selected and MarryService.is_locked(selected):
                 return WorkStartResult(ok=False, reason="locked")
 
+            # Phase 6: 死亡老婆不能打工
+            if selected and selected.is_dead:
+                return WorkStartResult(ok=False, reason="wife_dead")
+
             # 检查同时打工上限
             working_count = sum(1 for o in ownerships if o.uid == uid and o.is_working)
             max_concurrent = max(1, self._config.work_max_concurrent)
@@ -491,7 +507,25 @@ class WorkService:
 
         intimacy_gain = mode_config.get("intimacy_gain", 5)
         working.intimacy = min(self._config.intimacy_max, working.intimacy + intimacy_gain)
+        # Phase 6: 打工结算后扣寿命（结算前 clear_work_state 会被调用方覆盖）
+        # 我们必须先 clear_work_state 再扣寿命（因为死亡后老婆不能再打工，所以 death
+        # 检查是结算后立即做的，不影响当前次结算）
+        wid_for_damage = working.wid
+        work_mode = mode
         self.clear_work_state(working)
+
+        # Phase 6: 扣寿命 + 死亡检查（in-place 避免覆盖 in-memory 修改）
+        lifespan_loss = int(self._config.lifespan_loss_work.get(work_mode, 0))
+        death_occurred = False
+        if self._lifespan and lifespan_loss > 0:
+            damage = self._lifespan.apply_damage_inplace(
+                working, lifespan_loss,
+                cause=DEATH_CAUSE_WORK, today=today,
+            )
+            death_occurred = damage.death_occurred
+            # 死亡事件统计（profile + activity）— 单独处理
+            if death_occurred:
+                self._lifespan._record_death_event(gid, working, today)
 
         profile.coins += reward
         profile.work_last_settle_date = today
@@ -515,6 +549,9 @@ class WorkService:
             contract_used=contract_used,
             contract_amount=contract_amount if contract_used else 0,
             partner_bonus_used=partner_bonus_used,
+            lifespan_loss=lifespan_loss if self._lifespan else 0,
+            new_lifespan=(self._config.lifespan_max - lifespan_loss) if self._lifespan else -1,
+            death_occurred=death_occurred,
         )
 
     async def resolve_stolen_work(
@@ -622,7 +659,24 @@ class WorkService:
             victim_profile.inventory["revenge_token"] = victim_profile.inventory.get("revenge_token", 0) + 1
             insurance_used = True
 
+        wid_for_damage = working.wid
+        work_mode = mode
         self.clear_work_state(working)
+
+        # Phase 6: 被牛时也扣寿命（被牛走但仍消耗了体力）
+        stolen_death = False
+        stolen_lifespan_loss = 0
+        if self._lifespan:
+            stolen_lifespan_loss = int(self._config.lifespan_loss_work.get(work_mode, 0))
+            if stolen_lifespan_loss > 0:
+                damage = self._lifespan.apply_damage_inplace(
+                    working, stolen_lifespan_loss,
+                    cause=DEATH_CAUSE_WORK, today=today,
+                )
+                stolen_death = damage.death_occurred
+                if stolen_death:
+                    self._lifespan._record_death_event(gid, working, today)
+
         ActivityStore.log(activity_logs, uid, today, Action.WORK_STOLEN, 1)
 
         return WorkSettleResult(
@@ -637,6 +691,9 @@ class WorkService:
             partner_broken=partner_broken,
             insurance_used=insurance_used,
             insurance_bonus_coins=insurance_bonus_coins,
+            lifespan_loss=stolen_lifespan_loss,
+            new_lifespan=(self._config.lifespan_max - stolen_lifespan_loss) if self._lifespan else -1,
+            death_occurred=stolen_death,
         )
 
     def clear_work_state(self, ownership) -> None:

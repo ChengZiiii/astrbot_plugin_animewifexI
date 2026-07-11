@@ -547,5 +547,62 @@
         "type": "int",
         "default": 0,
         "hint": "每日亲密度自然衰减值，0 表示不衰减；仅对亲密度 ≥ 60 的老婆生效，衰减下限为 50"
+    },
+    "lifespan_enabled": {
+        "description": "寿命系统总开关",
+        "type": "bool",
+        "default": true,
+        "hint": "Phase 6: 关闭后所有寿命/死亡/修复逻辑短路（恢复 v3.x 之前行为）"
+    },
+    "lifespan_max": {
+        "description": "老婆寿命上限",
+        "type": "int",
+        "default": 100,
+        "hint": "Phase 6: 新抽老婆的初始寿命，也是修复满血的目标值"
+    },
+    "lifespan_loss_work": {
+        "description": "打工损失寿命（按模式）",
+        "type": "object",
+        "hint": "Phase 6: 打工结算时每个参与打工的老婆损失多少寿命",
+        "items": {
+            "normal": {"type": "int", "default": 5, "hint": "普通打工损失"},
+            "overtime": {"type": "int", "default": 10, "hint": "加班损失"},
+            "expedition": {"type": "int", "default": 20, "hint": "远征损失"}
+        }
+    },
+    "lifespan_loss_pk_winner": {
+        "description": "PK胜方参战老婆寿命损失",
+        "type": "int",
+        "default": 5,
+        "hint": "Phase 6: 4v4 接力战中胜方每个上场老婆损失多少寿命"
+    },
+    "lifespan_loss_pk_loser": {
+        "description": "PK败方参战老婆寿命损失",
+        "type": "int",
+        "default": 15,
+        "hint": "Phase 6: 4v4 接力战中败方每个上场老婆损失多少寿命"
+    },
+    "lifespan_loss_pk_tie": {
+        "description": "PK平局寿命损失",
+        "type": "int",
+        "default": 8,
+        "hint": "Phase 6: 4v4 接力战平局时双方各扣多少寿命"
+    },
+    "death_probability_base": {
+        "description": "猝死概率基础值",
+        "type": "float",
+        "default": 0.50,
+        "hint": "Phase 6: 实际猝死概率 = base × (1 - 当前寿命/上限)²。寿命=0 时强制死亡（不靠概率）"
+    },
+    "revive_base_cost": {
+        "description": "修复/复活基础价（按稀有度）",
+        "type": "object",
+        "hint": "Phase 6: 不同稀有度的修复基础老婆币。实际价格 = base × (2 - 当前寿命/上限)",
+        "items": {
+            "N": {"type": "int", "default": 30},
+            "R": {"type": "int", "default": 60},
+            "SR": {"type": "int", "default": 120},
+            "SSR": {"type": "int", "default": 250}
+        }
     }
 }

@@ -229,6 +229,30 @@ class PluginConfig:
     work_partner_daily_limit: int = 1
     intimacy_decay: int = 0
 
+    # ---------- Phase 6 / 寿命系统 ----------
+    lifespan_enabled: bool = True                       # 总开关（关闭后所有寿命相关逻辑短路）
+    lifespan_max: int = 100                            # 寿命上限（新抽老婆默认满血）
+    lifespan_loss_work: dict = field(                  # 打工结算时损失寿命
+        default_factory=lambda: {
+            "normal": 5,
+            "overtime": 10,
+            "expedition": 20,
+        }
+    )
+    lifespan_loss_pk_winner: int = 5                   # PK 胜方参战老婆扣寿命
+    lifespan_loss_pk_loser: int = 15                   # PK 败方参战老婆扣寿命
+    lifespan_loss_pk_tie: int = 8                      # PK 平局各扣
+    death_probability_base: float = 0.50               # 寿命=0 时的死亡概率
+                                                       # 实际公式: p = base * (1 - lifespan/max)^2
+    revive_base_cost: dict = field(                    # 复活/修复基础价（按稀有度）
+        default_factory=lambda: {
+            "N": 30,
+            "R": 60,
+            "SR": 120,
+            "SSR": 250,
+        }
+    )
+
     # ---------- Phase 5 / v3 接力战（Phase C 接入）----------
     pk_v2_enabled: bool = True                  # 4v4 接力战总开关（false 回退 1v1）
     pk_v2_turn_delay_ms: int = 1000             # 每回合间主动消息延迟（毫秒）
@@ -338,6 +362,15 @@ class PluginConfig:
                 "day3_pk_once": {"coins": 50, "item": "protection_charm"},
             }
 
+        # Phase 6 / 寿命系统
+        lifespan_loss_work = dict(d.get("lifespan_loss_work") or {})
+        if not lifespan_loss_work:
+            lifespan_loss_work = {"normal": 5, "overtime": 10, "expedition": 20}
+
+        revive_base_cost = dict(d.get("revive_base_cost") or {})
+        if not revive_base_cost:
+            revive_base_cost = {"N": 30, "R": 60, "SR": 120, "SSR": 250}
+
         return cls(
             admins=admins,
             need_prefix=_as_bool(d.get("need_prefix"), False),
@@ -424,6 +457,15 @@ class PluginConfig:
             work_partner_bonus=_as_float(d.get("work_partner_bonus"), 0.20),
             work_partner_daily_limit=_as_int(d.get("work_partner_daily_limit"), 1),
             intimacy_decay=_as_int(d.get("intimacy_decay"), 0),
+            # Phase 6 / 寿命系统
+            lifespan_enabled=_as_bool(d.get("lifespan_enabled"), True),
+            lifespan_max=_as_int(d.get("lifespan_max"), 100),
+            lifespan_loss_work=lifespan_loss_work,
+            lifespan_loss_pk_winner=_as_int(d.get("lifespan_loss_pk_winner"), 5),
+            lifespan_loss_pk_loser=_as_int(d.get("lifespan_loss_pk_loser"), 15),
+            lifespan_loss_pk_tie=_as_int(d.get("lifespan_loss_pk_tie"), 8),
+            death_probability_base=_as_float(d.get("death_probability_base"), 0.50),
+            revive_base_cost=revive_base_cost,
             # Phase 5 / v3 接力战
             pk_v2_enabled=_as_bool(d.get("pk_v2_enabled"), True),
             pk_v2_turn_delay_ms=_as_int(d.get("pk_v2_turn_delay_ms"), 1000),

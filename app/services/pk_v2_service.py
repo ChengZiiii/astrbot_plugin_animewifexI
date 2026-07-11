@@ -85,6 +85,7 @@ class PkV2Service:
         battle_store: Optional[Any] = None,   # 可注入 PkBattleStore 或 mock
         profile_store_provider: Optional[Callable[[str], Any]] = None,
         ownership_store_provider: Optional[Callable[[str], Any]] = None,
+        lifespan_service: Optional[Any] = None,  # Phase 6: 寿命系统
     ):
         self._paths = paths
         self._config = config
@@ -101,6 +102,7 @@ class PkV2Service:
         self._battle_store = battle_store
         self._profile_store_provider = profile_store_provider
         self._ownership_store_provider = ownership_store_provider
+        self._lifespan = lifespan_service
 
         # in-memory umo 派发表（bot 重启会丢失 — spec §S7.6 兜底）
         self._battle_umos: Dict[str, str] = {}
@@ -475,6 +477,74 @@ class PkV2Service:
             f"pk_v2 rewards: winner={winner_uid} +{rewards['win_coins']}币 +{rewards['win_score']}分; "
             f"loser={loser_uid} +{rewards['lose_coins']}币 +{rewards['lose_score']}分"
         )
+
+        # Phase 6: 战斗后扣寿命 + 死亡检查
+        self._apply_lifespan_damage(battle)
+
+    def _apply_lifespan_damage(self, battle: PkBattle) -> None:
+        """Phase 6: 战斗结束后对所有参战老婆扣寿命 + 死亡检查。
+
+        - 胜方参战老婆: lifespan_loss_pk_winner（默认 5）
+        - 败方参战老婆: lifespan_loss_pk_loser（默认 15）
+        - 平局: lifespan_loss_pk_tie（默认 8）
+        - 死亡检查走 lifespan_service.apply_damage
+        """
+        if not self._lifespan:
+            return
+        if not getattr(self._config, "lifespan_enabled", True):
+            return
+
+        from .lifespan_service import DEATH_CAUSE_PK
+
+        # 决定每边的 loss
+        is_tie = bool(battle.end_reason == "tie" or (
+            battle.winner_uid == battle.atk_uid and battle.winner_uid == battle.def_uid
+        ))
+        if is_tie:
+            atk_loss = self._config.lifespan_loss_pk_tie
+            df_loss = self._config.lifespan_loss_pk_tie
+        else:
+            if battle.winner_uid == battle.atk_uid:
+                atk_loss = self._config.lifespan_loss_pk_winner
+                df_loss = self._config.lifespan_loss_pk_loser
+            elif battle.winner_uid == battle.def_uid:
+                atk_loss = self._config.lifespan_loss_pk_loser
+                df_loss = self._config.lifespan_loss_pk_winner
+            else:
+                # winner 未定：按平局处理
+                atk_loss = self._config.lifespan_loss_pk_tie
+                df_loss = self._config.lifespan_loss_pk_tie
+
+        # 收集参战老婆 wid（去重），用 in-place 版本（pk_v2_service 持锁，
+        # 直接 load ownerships、mutate、save）
+        today = datetime.now().strftime("%Y-%m-%d")
+        try:
+            os_store = self._get_ownership_store(battle.gid)
+            ownerships = os_store.load_all()
+            any_dead = []
+            for w in {m.wid for m in battle.atk_formation if m.wid}:
+                tgt = next((o for o in ownerships if o.wid == w), None)
+                if tgt is None or tgt.is_dead:
+                    continue
+                damage = self._lifespan.apply_damage_inplace(
+                    tgt, atk_loss, cause=DEATH_CAUSE_PK, today=today,
+                )
+                if damage.death_occurred:
+                    any_dead.append(tgt)
+            for w in {m.wid for m in battle.def_formation if m.wid}:
+                tgt = next((o for o in ownerships if o.wid == w), None)
+                if tgt is None or tgt.is_dead:
+                    continue
+                damage = self._lifespan.apply_damage_inplace(
+                    tgt, df_loss, cause=DEATH_CAUSE_PK, today=today,
+                )
+                if damage.death_occurred:
+                    any_dead.append(tgt)
+            os_store.save_all(ownerships)
+            for tgt in any_dead:
+                self._lifespan._record_death_event(battle.gid, tgt, today)
+        except Exception:
+            logger.exception("pk_v2 寿命扣减失败（非阻塞）")
 
     # ---------- 后台协程：状态机主循环 ----------
 

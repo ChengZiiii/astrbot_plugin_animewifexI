@@ -43,6 +43,8 @@ async def handle_pet(
             )
         elif result.reason == "locked":
             yield event.plain_result(f"{nick}，该老婆处于锁定状态，不能摸头哦~（锁定期间无法提升亲密度）")
+        elif result.reason == "wife_dead":
+            yield event.plain_result(f"{nick}，该老婆已离世，无法摸头~ 用「老婆 休息 <编号>」可以花钱复活")
         else:
             yield event.plain_result(f"{nick}，摸头失败了~")
         return
@@ -84,6 +86,8 @@ async def handle_gift(
             )
         elif result.reason == "locked":
             yield event.plain_result(f"{nick}，该老婆处于锁定状态，不能送礼哦~（锁定期间无法提升亲密度）")
+        elif result.reason == "wife_dead":
+            yield event.plain_result(f"{nick}，该老婆已离世，无法送礼~ 用「老婆 休息 <编号>」可以花钱复活")
         else:
             yield event.plain_result(f"{nick}，送礼失败了~")
         return
@@ -165,6 +169,8 @@ async def handle_date(
             )
         elif result.reason == "locked":
             yield event.plain_result(f"{nick}，该老婆处于锁定状态，不能约会哦~（锁定期间无法提升亲密度）")
+        elif result.reason == "wife_dead":
+            yield event.plain_result(f"{nick}，该老婆已离世，无法约会~ 用「老婆 休息 <编号>」可以花钱复活")
         else:
             yield event.plain_result(f"{nick}，约会失败了~")
         return

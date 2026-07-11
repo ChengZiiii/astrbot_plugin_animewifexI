@@ -1,10 +1,11 @@
-"""WorkService 单元测试。"""
+"""WorkService 单元测试 + Phase 6 寿命扣减测试。"""
 
 from __future__ import annotations
 
 import pytest
 
 from app.models.enums import Action
+from app.models.profile import UserProfile
 from app.services.plugin_config import PluginConfig
 from app.services.work_service import WorkService
 from app.storage.stores import ActivityStore, OwnershipStore, ProfileStore
@@ -809,3 +810,133 @@ class TestSettleAllDue:
         o = next(o for o in ownerships if o.uid == uid)
         assert o.is_working is False
         assert o.work_umo == ""
+
+
+# ==================== Phase 6 / 寿命系统集成测试 ====================
+
+
+async def test_start_work_rejects_dead_wife(tmp_paths, config, locks, lifespan_service):
+    """死亡老婆不能开始打工（reason=wife_dead）"""
+    from app.models.ownership import Ownership
+
+    # 主老婆已死亡
+    OwnershipStore(tmp_paths, "g1").save_all([
+        Ownership(wid="w_d", uid="u1", is_primary=True, is_dead=True, lifespan=0),
+    ])
+    ProfileStore(tmp_paths, "g1").save_all(
+        {"u1": UserProfile(uid="u1", nick="Alice", coins=100)}
+    )
+    svc = WorkService(
+        tmp_paths, config, locks,
+        lifespan_service=lifespan_service,
+    )
+    res = await svc.start_work("g1", "u1", "Alice", "normal", "2026-07-12")
+    assert res.ok is False
+    assert res.reason == "wife_dead"
+
+
+async def test_resolve_due_work_deducts_lifespan(tmp_paths, config, locks, lifespan_service):
+    """打工结算后扣寿命 + 不死亡（roll_seed=1.0）"""
+    from app.models.ownership import Ownership
+    from app.models.profile import UserProfile
+
+    os_store = OwnershipStore(tmp_paths, "g1")
+    # 模拟一个到期的打工
+    os_store.save_all([Ownership(
+        wid="w_w", uid="u1", is_primary=True,
+        is_working=True, work_mode="normal",
+        work_started_at=0, work_ends_at=1,  # 已到期
+        lifespan=100, is_dead=False,
+    )])
+    ProfileStore(tmp_paths, "g1").save_all(
+        {"u1": UserProfile(uid="u1", nick="Alice", coins=100)}
+    )
+
+    # lifespan_service 强制不死亡
+    from app.services.lifespan_service import LifespanService
+    forced_lifespan = LifespanService.__new__(LifespanService)
+    forced_lifespan._paths = tmp_paths
+    forced_lifespan._config = config
+    forced_lifespan._locks = locks
+    # roll 永远 = 1.0 → 不死
+    import random as _r
+    class _R:
+        def random(self):
+            return 1.0
+    forced_lifespan._rng = _R()
+
+    svc = WorkService(tmp_paths, config, locks, lifespan_service=forced_lifespan)
+    result = await svc.resolve_due_work("g1", "u1", "Alice", "2026-07-12")
+
+    assert result is not None
+    assert result.ok
+    # 默认 lifespan_loss_work.normal=5
+    assert result.lifespan_loss == 5
+    assert result.new_lifespan == 95
+    assert result.death_occurred is False
+
+    reloaded = OwnershipStore(tmp_paths, "g1").load_all()
+    assert reloaded[0].lifespan == 95
+    assert reloaded[0].is_dead is False
+
+
+async def test_resolve_due_work_can_trigger_death(tmp_paths, config, locks):
+    """打工结算后寿命=0 → 必死亡"""
+    from app.models.ownership import Ownership
+    from app.models.profile import UserProfile
+    from app.services.lifespan_service import LifespanService
+
+    os_store = OwnershipStore(tmp_paths, "g1")
+    os_store.save_all([Ownership(
+        wid="w_w", uid="u1", is_primary=True,
+        is_working=True, work_mode="normal",
+        work_started_at=0, work_ends_at=1,
+        lifespan=3, is_dead=False,  # 3 寿命，结算后 3-5 < 0 → 0 → 死
+    )])
+    ProfileStore(tmp_paths, "g1").save_all(
+        {"u1": UserProfile(uid="u1", nick="Alice", coins=100)}
+    )
+
+    lifespan = LifespanService(tmp_paths, config, locks)
+    svc = WorkService(tmp_paths, config, locks, lifespan_service=lifespan)
+    result = await svc.resolve_due_work("g1", "u1", "Alice", "2026-07-12")
+
+    assert result is not None
+    assert result.ok
+    assert result.death_occurred is True
+    assert result.lifespan_loss == 5
+
+    reloaded = OwnershipStore(tmp_paths, "g1").load_all()
+    assert reloaded[0].is_dead is True
+    assert reloaded[0].death_cause == "work_exhaustion"
+
+
+async def test_resolve_due_work_no_lifespan_service_no_lifespan_change(
+    tmp_paths, config, locks, mock_wife_service,
+):
+    """lifespan_service 未注入 → 寿命字段不变（兼容旧版本）"""
+    from app.models.ownership import Ownership
+    from app.models.profile import UserProfile
+
+    os_store = OwnershipStore(tmp_paths, "g1")
+    os_store.save_all([Ownership(
+        wid="w_w", uid="u1", is_primary=True,
+        is_working=True, work_mode="normal",
+        work_started_at=0, work_ends_at=1,
+        lifespan=100, is_dead=False,
+    )])
+    ProfileStore(tmp_paths, "g1").save_all(
+        {"u1": UserProfile(uid="u1", nick="Alice", coins=100)}
+    )
+    svc = WorkService(tmp_paths, config, locks)  # 不注入 lifespan
+    result = await svc.resolve_due_work("g1", "u1", "Alice", "2026-07-12")
+
+    assert result is not None
+    assert result.ok
+    assert result.lifespan_loss == 0
+    assert result.new_lifespan == -1
+    assert result.death_occurred is False
+
+    reloaded = OwnershipStore(tmp_paths, "g1").load_all()
+    assert reloaded[0].lifespan == 100
+    assert reloaded[0].is_dead is False

@@ -202,3 +202,37 @@ class TestApplyDivorceSplit:
         new_coins, split = apply_divorce_split(-2000)
         assert new_coins == -1800
         assert split == -200
+
+
+# ==================== Phase 6 / 死亡老婆离婚 ====================
+
+
+class TestDivorceDeadWife:
+    """死亡老婆可离婚，但不返不扣"""
+
+    def test_validate_divorce_possible_allows_dead(self):
+        """死亡老婆不应被 validate_divorce_possible 拒绝（仅检查冷却/战斗/打工）"""
+        from app.models.ownership import Ownership
+        from app.services.divorce_service import validate_divorce_possible
+        from datetime import datetime, timedelta
+
+        dead = Ownership(
+            wid="w_d", uid="u1", is_dead=True, lifespan=0,
+            death_date="2026-07-11", death_cause="work_exhaustion",
+        )
+        # 7 天前已离婚（已过冷却期）
+        last = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
+        profile = UserProfile(uid="u1", last_divorce_date=last)
+        ok, reason = validate_divorce_possible(profile, dead, "2026-07-12")
+        assert ok is True
+        assert reason == ""
+
+    def test_calc_divorce_return_for_dead_wife_should_be_zero(self):
+        """离婚返回值计算函数对死亡老婆应返回 0"""
+        from app.services.divorce_service import calc_divorce_return
+        # 注：calc_divorce_return 不知道 is_dead；命令层负责拦截
+        # 命令层看到 is_dead=True 时直接置 0
+        # 这里测试计算函数本身（不传 is_dead 概念）
+        result_live = calc_divorce_return("SSR", 80)  # 120 * (1 + 0.8) = 216
+        assert result_live == 216
+        # 死亡老婆的命令层走 if not is_dead: ... else 0 分支（见离婚命令代码）

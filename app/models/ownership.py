@@ -42,6 +42,13 @@ class Ownership:
     work_contract_mode: str = ""        # 适用的打工模式（normal/overtime/expedition）
     # Phase D / v3 离婚系统：战斗中标记（非 PK 专用，用于禁止离婚等操作）
     is_in_battle: bool = False          # 是否正在战斗中
+    # Phase 6 / 寿命系统：每条 ownership 独立的寿命值
+    # 新抽老婆 lifespan 默认 = lifespan_max（向后兼容：老数据反序列化时也按此回填）
+    lifespan: int = 100                 # 当前寿命（0 ~ lifespan_max）
+    lifespan_updated_date: str = ""     # YYYY-MM-DD，最后一次寿命变动日期
+    is_dead: bool = False               # 是否已死亡
+    death_date: str = ""                # YYYY-MM-DD，死亡日期
+    death_cause: str = ""               # 死亡原因：work_exhaustion/pk_exhaustion/impact/manual
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -66,6 +73,12 @@ class Ownership:
             "work_contract_mode": self.work_contract_mode,
             # Phase D / v3 离婚系统
             "is_in_battle": self.is_in_battle,
+            # Phase 6 / 寿命系统
+            "lifespan": self.lifespan,
+            "lifespan_updated_date": self.lifespan_updated_date,
+            "is_dead": self.is_dead,
+            "death_date": self.death_date,
+            "death_cause": self.death_cause,
         }
 
     @classmethod
@@ -96,4 +109,15 @@ class Ownership:
             work_contract_mode=str(data.get("work_contract_mode", "") or ""),
             # Phase D / v3 离婚系统
             is_in_battle=bool(data.get("is_in_battle", False)),
+            # Phase 6 / 寿命系统 — 缺字段时使用全血默认值（向后兼容）
+            # 注意：不能用 `or 100`，因为 lifespan=0 是合法值（"已死亡未复活"状态）
+            lifespan=(
+                int(data["lifespan"])
+                if data.get("lifespan") is not None
+                else 100
+            ),
+            lifespan_updated_date=str(data.get("lifespan_updated_date", "") or ""),
+            is_dead=bool(data.get("is_dead", False)),
+            death_date=str(data.get("death_date", "") or ""),
+            death_cause=str(data.get("death_cause", "") or ""),
         )

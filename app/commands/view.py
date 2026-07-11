@@ -15,6 +15,7 @@ from ..api.events import (
     parse_at_target,
 )
 from ..api.messaging import build_multi_image_chain
+from ..services.lifespan_service import format_lifespan_bar
 from ..storage.stores import OwnershipStore, WivesMasterStore
 from .context import CommandContext
 
@@ -115,6 +116,7 @@ async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
                 "expedition": "💼远征中",
             }.get(o.work_mode, "💼打工中")
             work_icon = f" {work_label}"
+        dead_icon = " ☠️" if o.is_dead else ""
         primary_icon = " 👑" if o.is_primary else ""
         if o.is_primary:
             primary_name = name
@@ -123,9 +125,15 @@ async def handle_view(event: AstrMessageEvent, ctx: CommandContext) -> AsyncGene
         stats = wife.base_stats
         base_power = stats.atk + stats.defense + int(stats.hp * 0.5)
         stats_str = f" ⚔️{stats.atk} 🛡️{stats.defense} ❤️{stats.hp} 💪{base_power}"
+        # Phase 6: 寿命条（死亡老婆显示 ☠️ 标记，常规老婆显示 ❤️ 条）
+        lifespan_max = getattr(ctx.config, "lifespan_max", 100)
+        if o.is_dead:
+            lifespan_str = " ☠️已离世"
+        else:
+            lifespan_str = f" ❤️{o.lifespan}/{lifespan_max}"
         lines.append(
             f"{i}. {emoji} {name} (❤️{o.intimacy}{intimacy_str})"
-            f"{stats_str}{lock_icon}{work_icon}{primary_icon}"
+            f"{lifespan_str}{stats_str}{lock_icon}{work_icon}{dead_icon}{primary_icon}"
         )
 
         # 收集当前页图片（去重）

@@ -1,5 +1,28 @@
 # 更新日志
 
+## v3.1.0 (2026-07-12) — Phase 6 老婆寿命 / 死亡 / 复活系统
+
+- ☠️ **寿命系统**：每个 Ownership 独立 `lifespan` 字段（默认 100）
+- 💀 **死亡机制**：打工/PK 损失寿命；寿命越低，猝死概率成指数级增长
+  - 公式：`p_death = base × (1 - lifespan/max)²`，base=0.50（lifespan=20 → 32% 死亡；lifespan=50 → 12.5%）
+  - lifespan=0 时**强制**死亡（不等概率）
+- 🕯️ **复活机制**：新命令 `老婆 休息` / `养老婆` / `老婆 复活`（三个 alias 同一 handler）
+  - 价格公式：`base[rarity] × (2 - lifespan/max)`，满血免费；死亡复活 = 2x 基础价
+  - 默认价格表：N=30 / R=60 / SR=120 / SSR=250 基础币
+  - 不指定编号时列价格预览，指定编号直接扣币修复
+- ⚰️ **死亡状态机**：死亡后老婆**仍在** ownership.json（不删除）
+  - 不能打工 / 不能 PK / 不能被 NTR / 不能亲密度互动
+  - **可离婚**（不返不扣任何币）
+  - **可花钱复活**（满血）
+- 🔌 **跨插件接口**：`WifeInterop.apply_lifespan_damage_from_impact(gid, wid, actor_uid, delta)`
+  - impact 插件调用：丁丁尺寸<30 → delta=0（不调本方法）；>=30 → impact 算 delta 后传进来
+  - 自动校验：自己 ri 自己的老婆 → skipped=self_ri
+- 🆕 **命令**：`老婆 休息` / `养老婆` / `老婆 复活`（不指定编号时列修复价格表）
+- 🆕 **配置**：8 个新 WebUI 配置项（lifespan_enabled/max、loss_work/pk、death_probability、revive_base_cost）
+- **验证**：801 单元测试通过（+52 新增）、51 寿命 QA 场景全过
+
+---
+
 ## v3.0.0 (2026-07-12) — 四大玩法升级
 
 - ⚔️ **4v4 编队接力战**：4v4 编队 PK，速度判定回合制、双层被动(12组合)、元素克制深化、4状态层、主动消息推送
