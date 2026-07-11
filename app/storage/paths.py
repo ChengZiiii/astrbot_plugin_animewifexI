@@ -94,6 +94,20 @@ class Paths:
         """PK 对对手记录文件（24h 同对手防刷）"""
         return os.path.join(self.group_dir(gid), "pk_pairs.json")
 
+    def pk_battles_dir_for(self, gid: str) -> str:
+        """v3 4v4 接力战：每群一个 ``pk_battles/`` 子目录，每个战斗一份 ``{battle_id}.json``。
+
+        与其他 ``group_xxx_file`` 不同：这里每个战斗一份文件而非整个群一份，
+        避免大文件原子写阻塞与其他战斗的并发读取。
+        """
+        path = os.path.join(self.group_dir(gid), "pk_battles")
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    def pk_battle_file(self, gid: str, battle_id: str) -> str:
+        """单个战斗的持久化文件路径"""
+        return os.path.join(self.pk_battles_dir_for(gid), f"{battle_id}.json")
+
     # ---------- 初始化 ----------
 
     def ensure_dirs(self) -> None:

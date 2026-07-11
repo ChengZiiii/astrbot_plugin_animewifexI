@@ -168,3 +168,127 @@ class TestGroupLocks:
             ["a-enter", "a-exit", "b-enter", "b-exit"],
             ["b-enter", "b-exit", "a-enter", "a-exit"],
         )
+
+
+# ==================== PkBattleStore（v3 接力战持久化） ====================
+
+
+class TestPkBattlePaths:
+    def test_pk_battles_dir_under_group_dir(self, tmp_paths):
+        from app.storage.paths import Paths
+
+        d = tmp_paths.pk_battles_dir_for("g1")
+        assert os.path.isdir(d)
+        assert os.path.dirname(d) == tmp_paths.group_dir("g1")
+
+
+class TestPkBattleStore:
+    def _make_member(self, wid="w_1", pos=1, **overrides):
+        from app.models.pk_battle import FormationMember
+
+        defaults = dict(
+            wid=wid, pos=pos, nickname="三笠", rarity="SSR",
+            element="力量", base_atk=80, base_def=60, base_hp=500,
+            intimacy=90, is_locked=False,
+            current_hp=500, is_alive=True, is_active=True,
+        )
+        defaults.update(overrides)
+        return FormationMember(**defaults)
+
+    def _make_battle(self, gid="g1", battle_id="b1", **overrides):
+        from app.models.pk_battle import PkBattle
+
+        defaults = dict(
+            gid=gid, battle_id=battle_id,
+            atk_uid="u1", atk_nick="alice",
+            def_uid="u2", def_nick="bob",
+        )
+        defaults.update(overrides)
+        return PkBattle(**defaults)
+
+    def test_save_and_load_round_trip(self, tmp_paths):
+        from app.storage.stores import PkBattleStore
+
+        store = PkBattleStore(tmp_paths, "g1")
+        m = self._make_member(wid="w_1", pos=1)
+        battle = self._make_battle(
+            gid="g1", battle_id="b1",
+            atk_formation=[m], def_formation=[m],
+        )
+
+        store.save("g1", "b1", battle)
+        loaded = store.load("g1", "b1")
+        assert loaded is not None
+        assert loaded.battle_id == "b1"
+        assert loaded.atk_uid == "u1"
+        assert loaded.def_uid == "u2"
+        assert len(loaded.atk_formation) == 1
+        assert loaded.atk_formation[0].wid == "w_1"
+        assert loaded.atk_formation[0].rarity == "SSR"
+
+    def test_load_missing_returns_none(self, tmp_paths):
+        from app.storage.stores import PkBattleStore
+
+        store = PkBattleStore(tmp_paths, "g1")
+        assert store.load("g1", "no_such_battle") is None
+
+    def test_save_persists_under_pk_battles_subdir(self, tmp_paths):
+        from app.storage.stores import PkBattleStore
+
+        store = PkBattleStore(tmp_paths, "g1")
+        battle = self._make_battle(gid="g1", battle_id="b_xyz")
+        store.save("g1", "b_xyz", battle)
+
+        expected = os.path.join(tmp_paths.pk_battles_dir_for("g1"), "b_xyz.json")
+        assert os.path.exists(expected)
+
+    def test_list_active_returns_all_saved_battles(self, tmp_paths):
+        from app.storage.stores import PkBattleStore
+
+        store = PkBattleStore(tmp_paths, "g1")
+        store.save("g1", "b1", self._make_battle(battle_id="b1"))
+        store.save("g1", "b2", self._make_battle(battle_id="b2"))
+        store.save("g1", "b3", self._make_battle(battle_id="b3"))
+
+        all_battles = store.list_active("g1")
+        ids = sorted(b.battle_id for b in all_battles)
+        assert ids == ["b1", "b2", "b3"]
+
+    def test_list_active_empty_when_dir_missing(self, tmp_paths):
+        from app.storage.stores import PkBattleStore
+
+        store = PkBattleStore(tmp_paths, "g_no_battles")
+        assert store.list_active("g_no_battles") == []
+
+    def test_delete_removes_battle_file(self, tmp_paths):
+        from app.storage.stores import PkBattleStore
+
+        store = PkBattleStore(tmp_paths, "g1")
+        store.save("g1", "b1", self._make_battle(battle_id="b1"))
+        assert store.load("g1", "b1") is not None
+
+        store.delete("g1", "b1")
+        assert store.load("g1", "b1") is None
+
+    def test_delete_nonexistent_battle_is_noop(self, tmp_paths):
+        from app.storage.stores import PkBattleStore
+
+        store = PkBattleStore(tmp_paths, "g1")
+        # 不应抛异常
+        store.delete("g1", "never_existed")
+
+    def test_list_active_skips_corrupt_files(self, tmp_paths):
+        """JSON 损坏的文件被静默跳过，不影响其他战斗加载"""
+        from app.storage.stores import PkBattleStore
+
+        store = PkBattleStore(tmp_paths, "g1")
+        store.save("g1", "b1", self._make_battle(battle_id="b1"))
+
+        # 写入一个损坏的 JSON 到 pk_battles 目录
+        bad_path = os.path.join(tmp_paths.pk_battles_dir_for("g1"), "bad.json")
+        with open(bad_path, "w", encoding="utf-8") as f:
+            f.write("{not valid json")
+
+        battles = store.list_active("g1")
+        ids = [b.battle_id for b in battles]
+        assert "b1" in ids

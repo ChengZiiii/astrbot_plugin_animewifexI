@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -27,6 +28,7 @@ except Exception:  # pragma: no cover
 
 from ..models import ActivityLog, Ownership, UserProfile, WifeMeta
 from ..models.enums import Action
+from ..models.pk_battle import PkBattle
 from . import json_store
 from .paths import Paths
 
@@ -38,6 +40,8 @@ __all__ = [
     "SwapRequestStore",
     "NtrStatusStore",
     "DailyCountStore",
+    "PkPairStore",
+    "PkBattleStore",
 ]
 
 
@@ -471,3 +475,87 @@ class PkPairStore:
         if attacker not in data:
             data[attacker] = {}
         data[attacker][defender] = now_ts()
+
+
+# ==================== v3 接力战 · 战斗持久化 ====================
+
+
+class PkBattleStore:
+    """v3 4v4 接力战的战斗会话持久化。
+
+    每个战斗单独一个文件 ``{battle_id}.json``，存放在 ``data/groups/{gid}/pk_battles/``。
+    这样可以让多个战斗并发更新互不阻塞（不同文件），也方便单独清理已完成战斗。
+
+    设计要点：
+
+    * 构造接受 ``Paths`` 和 ``gid``（沿用现有 Store 风格）；
+    * ``save`` 立即落盘（调用方负责群锁）；
+    * ``load`` 在文件不存在或 JSON 损坏时返回 ``None``；
+    * ``list_active`` 返回该群所有战斗，**包括已完成的**——调用方按
+      ``battle.status`` 过滤即可（保持 store 层职责单一）。
+    """
+
+    def __init__(self, paths: "Paths", gid: str):
+        self._paths = paths
+        self._gid = gid
+
+    def _path(self, battle_id: str) -> str:
+        return self._paths.pk_battle_file(self._gid, battle_id)
+
+    def save(self, gid: str, battle_id: str, battle: PkBattle) -> None:
+        """保存战斗快照到 ``pk_battles/{battle_id}.json``。"""
+        # 兼容调用方传不同 gid 与 self._gid 的情况（API 风格统一）
+        target_path = self._paths.pk_battle_file(gid, battle_id)
+        json_store.save_json(target_path, battle.to_dict())
+
+    def load(self, gid: str, battle_id: str) -> Optional[PkBattle]:
+        """加载战斗快照，文件不存在或损坏返回 ``None``。"""
+        target_path = self._paths.pk_battle_file(gid, battle_id)
+        if not os.path.exists(target_path):
+            return None
+        try:
+            data = json_store.load_json(target_path, default={})
+        except Exception:
+            _error(f"pk_battle 文件解析失败: {target_path}")
+            return None
+        if not isinstance(data, dict) or not data:
+            return None
+        try:
+            return PkBattle.from_dict(data)
+        except Exception:
+            _error(f"pk_battle 数据重建失败: {target_path}")
+            return None
+
+    def list_active(self, gid: str) -> List[PkBattle]:
+        """列出该群所有战斗快照（损坏文件静默跳过）。"""
+        d = self._paths.pk_battles_dir_for(gid)
+        results: List[PkBattle] = []
+        if not os.path.isdir(d):
+            return results
+        for fname in sorted(os.listdir(d)):
+            if not fname.endswith(".json"):
+                continue
+            p = os.path.join(d, fname)
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except (OSError, ValueError):
+                _error(f"pk_battle 文件解析失败，已跳过: {p}")
+                continue
+            if not isinstance(data, dict) or not data:
+                continue
+            try:
+                results.append(PkBattle.from_dict(data))
+            except Exception:
+                _error(f"pk_battle 数据重建失败，已跳过: {p}")
+                continue
+        return results
+
+    def delete(self, gid: str, battle_id: str) -> None:
+        """删除指定战斗文件，不存在时静默 no-op。"""
+        target_path = self._paths.pk_battle_file(gid, battle_id)
+        if os.path.exists(target_path):
+            try:
+                os.remove(target_path)
+            except OSError:
+                _error(f"pk_battle 文件删除失败: {target_path}")
