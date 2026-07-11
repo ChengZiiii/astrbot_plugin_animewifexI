@@ -22,11 +22,12 @@ __all__ = [
     "apply_divorce_split",
     "validate_divorce_possible",
     "DIVORCE_COOLDOWN_DAYS",
+    "RETURN_BASE",
 ]
 
 DIVORCE_COOLDOWN_DAYS = 7
 
-_RETURN_BASE = {
+RETURN_BASE = {
     "N": 10,
     "R": 25,
     "SR": 60,
@@ -47,7 +48,7 @@ def calc_divorce_return(rarity: str, intimacy: int) -> int:
     Raises:
         KeyError: 未知稀有度
     """
-    base = _RETURN_BASE[rarity]
+    base = RETURN_BASE[rarity]
     mult = 1 + intimacy / 100.0
     return int(base * mult)
 
@@ -110,8 +111,8 @@ def validate_divorce_possible(
         except ValueError:
             pass  # 日期格式异常，视为允许
 
-    # 2. 检查战斗中（is_in_battle 还未在 Ownership 实现，用 getattr 兼容）
-    if getattr(ownership, "is_in_battle", False):
+    # 2. 检查战斗中
+    if ownership.is_in_battle:
         return False, "她正在战斗中，结束后再说"
 
     # 3. 检查打工中

@@ -40,6 +40,8 @@ class Ownership:
     work_contract_amount: int = 0       # 投入的币数（100 = +100% 加成）
     work_contract_uid: str = ""         # 合约购买者 uid
     work_contract_mode: str = ""        # 适用的打工模式（normal/overtime/expedition）
+    # Phase D / v3 离婚系统：战斗中标记（非 PK 专用，用于禁止离婚等操作）
+    is_in_battle: bool = False          # 是否正在战斗中
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -62,6 +64,8 @@ class Ownership:
             "work_contract_amount": self.work_contract_amount,
             "work_contract_uid": self.work_contract_uid,
             "work_contract_mode": self.work_contract_mode,
+            # Phase D / v3 离婚系统
+            "is_in_battle": self.is_in_battle,
         }
 
     @classmethod
@@ -90,4 +94,6 @@ class Ownership:
             work_contract_amount=int(data.get("work_contract_amount", 0) or 0),
             work_contract_uid=str(data.get("work_contract_uid", "") or ""),
             work_contract_mode=str(data.get("work_contract_mode", "") or ""),
+            # Phase D / v3 离婚系统
+            is_in_battle=bool(data.get("is_in_battle", False)),
         )

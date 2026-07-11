@@ -12,6 +12,7 @@ from .admin import (
     handle_switch_ntr,
 )
 from .context import CommandContext
+from .divorce import handle_divorce
 from .draw import handle_draw, handle_draw_ten
 from .economy import (
     handle_backpack,
@@ -98,6 +99,9 @@ def build_registry() -> CommandRegistry:
     # ---------- 分组命令：打工 ----------
     registry.register_grouped("打工", handle_work)
     registry.register_grouped("合约", handle_contract_query)
+
+    # ---------- 分组命令：离婚（Phase D / v3 离婚系统）----------
+    registry.register_grouped("离婚", handle_divorce)
 
     # ---------- 管理员命令 ----------
     registry.register_grouped("重置本群", handle_admin_reset_group)
