@@ -20,6 +20,7 @@ from .economy import (
     handle_quest,
     handle_shop,
 )
+from .formation import handle_formation
 from .grouped_stubs import (
     NOT_IMPLEMENTED_SUBCOMMANDS,
     make_not_implemented_handler,
@@ -90,6 +91,9 @@ def build_registry() -> CommandRegistry:
     registry.register_grouped("PK", handle_pk)
     registry.register_grouped("图鉴", handle_collection)
     registry.register_grouped("面板", handle_panel)
+
+    # ---------- 分组命令：编队（v3 接力战 · Phase A）----------
+    registry.register_grouped("编队", handle_formation)
 
     # ---------- 分组命令：打工 ----------
     registry.register_grouped("打工", handle_work)
