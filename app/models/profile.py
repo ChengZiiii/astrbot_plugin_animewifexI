@@ -91,6 +91,8 @@ class UserProfile:
     # 长度 < 4 = 部分编队（PK 时按实际数量算 1vN 或 Nv1）
     formation: List[str] = field(default_factory=list)
     # Phase D / v3 离婚系统：离婚跟踪字段
+    # Phase F / v3 NTR 安慰币：被牛方累计收到的安慰币
+    total_ntr_comfort_received: int = 0           # 历史累计安慰币
     last_divorce_date: str = ""                    # 上次离婚日期（YYYY-MM-DD）
     total_divorces: int = 0                        # 历史离婚次数
     total_divorce_coins_earned: int = 0            # 累计离婚返还币
@@ -142,6 +144,8 @@ class UserProfile:
             "last_ntr_target_uid": self.last_ntr_target_uid,
             "same_target_ntr_streak": self.same_target_ntr_streak,
             "formation": list(self.formation),
+            # Phase F / v3 NTR 安慰币
+            "total_ntr_comfort_received": self.total_ntr_comfort_received,
             # Phase D / v3 离婚系统
             "last_divorce_date": self.last_divorce_date,
             "total_divorces": self.total_divorces,
@@ -219,6 +223,8 @@ class UserProfile:
             last_ntr_target_uid=str(data.get("last_ntr_target_uid", "") or ""),
             same_target_ntr_streak=int(data.get("same_target_ntr_streak", 0) or 0),
             formation=_sanitize_formation(data.get("formation")),
+            # Phase F / v3 NTR 安慰币
+            total_ntr_comfort_received=int(data.get("total_ntr_comfort_received", 0) or 0),
             # Phase D / v3 离婚系统
             last_divorce_date=str(data.get("last_divorce_date", "") or ""),
             total_divorces=int(data.get("total_divorces", 0) or 0),

@@ -240,6 +240,15 @@ class PluginConfig:
     debt_block_single_draw: bool = True          # 负债时不能用币单抽
     debt_allow_ticket_draw: bool = True          # 负债时仍可用券抽卡
 
+    # ---------- Phase F / v3 NTR 安慰币 ----------
+    ntr_comfort_base_N: int = 10                # N 卡安慰币基础
+    ntr_comfort_base_R: int = 25                # R 卡安慰币基础
+    ntr_comfort_base_SR: int = 60               # SR 卡安慰币基础
+    ntr_comfort_base_SSR: int = 120             # SSR 卡安慰币基础
+    ntr_comfort_intimacy_mult: float = 0.005    # 每点好感度加 0.5%
+    ntr_comfort_intimacy_mult_base: float = 1.0  # 基础倍率 1.0
+    revenge_is_free: bool = True                 # 复仇免费
+
     # ---------- 派生 ----------
     @property
     def normalized_image_base_url(self) -> str:
@@ -422,6 +431,14 @@ class PluginConfig:
             debt_block_shop=_as_bool(d.get("debt_block_shop"), True),
             debt_block_single_draw=_as_bool(d.get("debt_block_single_draw"), True),
             debt_allow_ticket_draw=_as_bool(d.get("debt_allow_ticket_draw"), True),
+            # Phase F / v3 NTR 安慰币
+            ntr_comfort_base_N=_as_int(d.get("ntr_comfort_base_N"), 10),
+            ntr_comfort_base_R=_as_int(d.get("ntr_comfort_base_R"), 25),
+            ntr_comfort_base_SR=_as_int(d.get("ntr_comfort_base_SR"), 60),
+            ntr_comfort_base_SSR=_as_int(d.get("ntr_comfort_base_SSR"), 120),
+            ntr_comfort_intimacy_mult=_as_float(d.get("ntr_comfort_intimacy_mult"), 0.005),
+            ntr_comfort_intimacy_mult_base=_as_float(d.get("ntr_comfort_intimacy_mult_base"), 1.0),
+            revenge_is_free=_as_bool(d.get("revenge_is_free"), True),
         )
 
     @classmethod
