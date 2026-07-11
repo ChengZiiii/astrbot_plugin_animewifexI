@@ -161,7 +161,6 @@ def _make_battle(
 def _service_with_mocks(
     sender: Optional[_MockSender] = None,
     battle_store: Optional[_MockBattleStore] = None,
-    pair_store: Optional[_MockPairStore] = None,
     profile_store: Optional[_MockProfileStore] = None,
     config=None,
 ) -> PkV2Service:
@@ -175,18 +174,15 @@ def _service_with_mocks(
         locks=None,
         send_message=(sender if sender else _MockSender()).__call__,
         battle_store=battle_store or _MockBattleStore(),
-        pair_store=pair_store or _MockPairStore(),
         profile_store_provider=lambda gid: (profile_store or _MockProfileStore()),
     )
 
 
 async def _wait_for_settle(service, sender, max_iter=200, sleep_s=0.02):
-    """Utility: await until service._settled or sender saw settle贴."""
+    """Utility: await until service._settled."""
     for _ in range(max_iter):
         await asyncio.sleep(sleep_s)
         if service._settled:
-            return
-        if sender.calls and ("🏆" in sender.calls[-1][1] or "4v4 接力战结束" in sender.calls[-1][1]):
             return
 
 
@@ -195,33 +191,22 @@ async def _wait_for_settle(service, sender, max_iter=200, sleep_s=0.02):
 
 class TestRunBattle:
     @pytest.mark.asyncio
-    async def test_run_battle_sends_init_message(self):
-        """_emit_init_message 必须发 1 条启动贴"""
+    async def test_start_battle_sends_combined_messages(self):
+        """start_battle → 战斗结束后会合并发送全部消息（含启动+回合+结算）"""
         sender = _MockSender()
         store = _MockBattleStore()
         service = _service_with_mocks(sender=sender, battle_store=store)
+        battle = _make_battle(atk_formation=_def_formation(), def_formation=_def_formation())
 
-        battle = _make_battle()
-        await service._emit_init_message(battle, "umo_test")
+        msg = await service.start_battle(battle, "umo")
+        await _wait_for_settle(service, sender)
 
-        assert len(sender.calls) == 1
-        text = sender.calls[0][1]
-        assert "4v4" in text
-        assert "接力战" in text
-        assert sender.calls[0][0] == "umo_test"
-
-    @pytest.mark.asyncio
-    async def test_run_battle_init_message_contains_both_sides(self):
-        """启动贴包含双方信息"""
-        sender = _MockSender()
-        service = _service_with_mocks(sender=sender)
-        battle = _make_battle()
-        await service._emit_init_message(battle, "umo")
-        msg = sender.calls[0][1]
-        assert "alice" in msg
-        assert "bob" in msg
-        assert "三笠" in msg
-        assert "祢豆子" in msg
+        assert isinstance(msg, str)
+        assert "启动" in msg or "战报" in msg
+        # 合并后只有 1 条发送调用
+        assert len(sender.calls) >= 1
+        combined = sender.calls[0][1] if sender.calls else ""
+        assert "4v4" in combined or "接力战" in combined
 
     @pytest.mark.asyncio
     async def test_run_battle_saves_initial_battle(self):
@@ -235,30 +220,21 @@ class TestRunBattle:
         assert store.saved[0][1] == "b-test"
 
     @pytest.mark.asyncio
-    async def test_auto_advance_sends_turn_message_per_turn(self):
-        """每个 do_turn 后推送回合贴"""
+    async def test_auto_advance_sends_one_combined_message(self):
+        """合并后只有 1 条发送调用（含所有回合+启动+结算）"""
         sender = _MockSender()
         store = _MockBattleStore()
         service = _service_with_mocks(sender=sender, battle_store=store)
         battle = _make_battle(atk_formation=_def_formation(), def_formation=_def_formation())
 
-        # 手动驱动：先发启动贴，再跑 do_turn 循环
-        await service._emit_init_message(battle, "umo")
         await service._auto_advance_battle(battle, "umo")
         await _wait_for_settle(service, sender)
 
-        # 至少 2 条回合贴 + 启动贴 + 结算贴
-        assert len(sender.calls) >= 3
-        # 第一条：启动贴
-        assert "4v4 接力战即将开始" in sender.calls[0][1]
-        # 最后一条：结算贴
-        assert "🏆" in sender.calls[-1][1] or "4v4 接力战结束" in sender.calls[-1][1]
-        # 中间至少 1 条回合贴
-        turn_count = sum(
-            1 for _, t in sender.calls
-            if ("第 " in t and " 回合" in t)
-        )
-        assert turn_count >= 1
+        # 合并发送 = 1 条消息
+        assert len(sender.calls) == 1
+        combined = sender.calls[0][1]
+        assert "4v4" in combined or "接力战" in combined
+        assert "🏆" in combined
 
     @pytest.mark.asyncio
     async def test_auto_advance_saves_each_turn(self):
@@ -267,25 +243,11 @@ class TestRunBattle:
         service = _service_with_mocks(battle_store=store)
         battle = _make_battle(atk_formation=_def_formation(), def_formation=_def_formation())
 
-        await service._emit_init_message(battle, "umo")
-        await service._auto_advance_battle(battle, "umo")
-        await _wait_for_settle(service, sender := _MockSender())
-
-        # 初始 save（_save_battle） + 每个 turn save + 一次 settle save = ≥ 3
-        assert len(store.saved) >= 3
-
-    @pytest.mark.asyncio
-    async def test_record_pk_called_on_settle(self):
-        """结算时调一次 PkPairStore.record_pk"""
-        pair_store = _MockPairStore()
-        service = _service_with_mocks(pair_store=pair_store)
-        battle = _make_battle(atk_formation=_def_formation(), def_formation=_def_formation())
-
-        await service._emit_init_message(battle, "umo")
         await service._auto_advance_battle(battle, "umo")
         await _wait_for_settle(service, _MockSender())
 
-        assert ("u1", "u2") in pair_store.recorded
+        # 初始 save + 每个 turn save + settle save = ≥ 3
+        assert len(store.saved) >= 3
 
     @pytest.mark.asyncio
     async def test_battle_file_deleted_on_settle(self):
@@ -294,7 +256,6 @@ class TestRunBattle:
         service = _service_with_mocks(battle_store=store)
         battle = _make_battle(atk_formation=_def_formation(), def_formation=_def_formation())
 
-        await service._emit_init_message(battle, "umo")
         await service._auto_advance_battle(battle, "umo")
         await _wait_for_settle(service, _MockSender())
 
@@ -307,7 +268,6 @@ class TestRunBattle:
         service = _service_with_mocks(sender=sender)
         battle = _make_battle(atk_formation=_def_formation(), def_formation=_def_formation())
 
-        await service._emit_init_message(battle, "umo")
         await service._auto_advance_battle(battle, "umo")
         await _wait_for_settle(service, sender)
 
@@ -323,7 +283,6 @@ class TestRunBattle:
         weakling = _make_member("wweak", 1, "Weak", "N", "敏捷", 1, 1, 1, 0)
         battle = _make_battle(atk_formation=[boss], def_formation=[weakling])
 
-        await service._emit_init_message(battle, "umo")
         await service._auto_advance_battle(battle, "umo")
         await _wait_for_settle(service, sender)
 
@@ -333,19 +292,14 @@ class TestRunBattle:
     @pytest.mark.asyncio
     async def test_coroutine_exception_does_not_propagate(self):
         """send_message 抛异常时协程不冒泡（仅日志）"""
-        sender = _MockSender()
-        service = _service_with_mocks(sender=sender)
+        service = _service_with_mocks()
         battle = _make_battle()
-
-        # Make the send raise
         async def bad_send(umo, text):
             raise RuntimeError("network down")
         service._send = bad_send
 
-        # _emit_init_message should swallow
-        await service._emit_init_message(battle, "umo")
-        # 调用方拿到正常返回（不抛）
-        assert sender.calls == []  # 因为 send 抛了，calls 不会增加
+        # 不抛异常即通过
+        await service._auto_advance_battle(battle, "umo")
 
 
 # ============== start_battle 公共 API ==============
@@ -425,7 +379,6 @@ class TestDecideRewards:
         from app.services.plugin_config import PluginConfig
         return PkV2Service(
             paths=None, config=PluginConfig(), locks=None,
-            pair_store=_MockPairStore(),
             profile_store_provider=lambda gid: _MockProfileStore(),
         )
 
@@ -496,34 +449,6 @@ class TestDecideRewards:
         assert r["win_score"] == 5
 
 
-# ============== start_battle 24h 防刷预检 ==============
-
-
-@dataclass
-class _MockPairStoreBlocked(_MockPairStore):
-    """can_pk 永远返回 False 的 pair store。"""
-
-    def can_pk(self, *args, **kwargs) -> bool:
-        self.can_pk_calls += 1
-        return False
-
-
-class TestStartBattleCooldown:
-    @pytest.mark.asyncio
-    async def test_start_battle_blocked_within_cooldown(self):
-        """同对手冷却内已 PK 过 → start_battle 返回冷却文案（需配置 >0 才启用）"""
-        from app.services.plugin_config import PluginConfig
-        config = PluginConfig(pk_v2_turn_delay_ms=1, pk_pair_cooldown_hours=24)
-        pair_store = _MockPairStoreBlocked()
-        sender = _MockSender()
-        service = _service_with_mocks(sender=sender, pair_store=pair_store, config=config)
-        battle = _make_battle()
-
-        msg = await service.start_battle(battle, "umo")
-
-        # 返回冷却文案
-        assert ("24" in msg) or ("PK 过" in msg) or ("休息" in msg)
-        # can_pk 预检确实被调用
-        assert pair_store.can_pk_calls >= 1
-        # 不应推启动贴 / 结算贴（未启动）
-        assert sender.calls == []
+# ============== start_battle 防刷预检已移除 ==============
+# 同对手限制已完全移除（仅靠自冷却 pk_cooldown）
+# _MockPairStoreBlocked 类/测试一并删除

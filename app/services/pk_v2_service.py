@@ -30,7 +30,7 @@ from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from ..models.pk_battle import BattleStatusLayer, FormationMember, PkBattle
-from ..storage.stores import PkBattleStore, PkPairStore, ProfileStore
+from ..storage.stores import PkBattleStore, ProfileStore
 from ..utils.time import now_ts
 from .pk_v2_battle import (
     PkV2Defaults,
@@ -79,7 +79,6 @@ class PkV2Service:
         *,
         send_message: Optional[SendMessage] = None,
         battle_store: Optional[Any] = None,   # 可注入 PkBattleStore 或 mock
-        pair_store: Optional[Any] = None,    # 可注入 PkPairStore 或 mock
         profile_store_provider: Optional[Callable[[str], Any]] = None,
         ownership_store_provider: Optional[Callable[[str], Any]] = None,
     ):
@@ -90,12 +89,14 @@ class PkV2Service:
 
         # 默认从 paths 构造；测试可注入 mock
         self._battle_store = battle_store
-        self._pair_store = pair_store
         self._profile_store_provider = profile_store_provider
         self._ownership_store_provider = ownership_store_provider
 
         # in-memory umo 派发表（bot 重启会丢失 — spec §S7.6 兜底）
         self._battle_umos: Dict[str, str] = {}
+
+        # 消息缓存：battle_id → 合并转发的文本列表
+        self._message_buffers: Dict[str, List[str]] = {}
 
         # 标记，便于测试断言
         self._settled: bool = False
@@ -109,13 +110,6 @@ class PkV2Service:
         if self._paths is not None:
             return PkBattleStore(self._paths, gid)
         raise RuntimeError("PkV2Service: neither battle_store nor paths provided")
-
-    def _get_pair_store(self, gid: str) -> Any:
-        if self._pair_store is not None:
-            return self._pair_store
-        if self._paths is not None:
-            return PkPairStore(self._paths, gid)
-        raise RuntimeError("PkV2Service: neither pair_store nor paths provided")
 
     def _get_profile_store(self, gid: str) -> Any:
         if self._profile_store_provider is not None:
@@ -140,36 +134,22 @@ class PkV2Service:
 
         流程：
 
-        0. 24h 同对手防刷预检（spec §S4.2#3 / §S7.3）：未满足冷却直接返回文案
-        1. 保存 ``battle`` 到 PkBattleStore（崩溃恢复用）
-        2. 推送启动贴（带 umo + 双方编队 + 战力）
-        3. ``asyncio.create_task(self._auto_advance_battle(battle, umo))``
+        1. 初始化消息缓存（battle_id → []）
+        2. 保存 ``battle`` 到 PkBattleStore（崩溃恢复用）
+        3. 推送启动贴 **到缓存**（合并后一次性发送）
+        4. ``asyncio.create_task(self._auto_advance_battle(battle, umo))``
            （无 running loop 时静默 try/except）
-        4. 返回 ``"✅ 4v4 接力战启动！请查看后续战报..."``
+        5. 返回 ``"✅ 4v4 接力战启动！请查看后续战报..."``
         """
-        # 0) 同对手防刷预检（配置 >0 小时时启用，默认 0 = 不限制）
-        pair_cd = self._config.pk_pair_cooldown_hours
-        if pair_cd > 0:
-            try:
-                pair_store = self._get_pair_store(battle.gid)
-                pairs = pair_store.load_all()
-                can_fight = pair_store.can_pk(
-                    pairs, battle.atk_uid, battle.def_uid, pair_cd
-                )
-            except Exception:
-                logger.exception("pk_v2 can_pk 预检失败，放行")
-                can_fight = True
-            if not can_fight:
-                return f"你们 {pair_cd} 小时内已经 PK 过，休息一下吧~"
-
-        # 1) 持 umo（in-memory dict）
+        # 1) 初始化消息缓存
+        self._message_buffers[battle.battle_id] = []
         self._battle_umos[battle.battle_id] = umo
 
-        # 2) 保存到 PkBattleStore
-        self._save_battle(battle)
+        # 2) 推送启动贴 → 缓存
+        await self._buffer_init_message(battle)
 
-        # 3) 推启动贴
-        await self._emit_init_message(battle, umo)
+        # 3) 保存到 PkBattleStore
+        self._save_battle(battle)
 
         # 4) 启动后台协程（defensive: 没有 loop 时静默失败）
         try:
@@ -180,21 +160,29 @@ class PkV2Service:
             )
             self._error = str(e)
 
-        return "✅ 4v4 接力战启动！请查看后续战报..."
+        return "✅ 4v4 接力战启动！正在生成战报..."
 
-    # ---------- 内部：消息推送 ----------
+    # ---------- 内部：消息缓存 + 合并发送 ----------
 
-    async def _safe_send(self, umo: str, text: str, *, tag: str = "") -> None:
-        """包了 try/except 的 send，避免协程因网络错误崩溃。"""
-        if self._send is None:
-            logger.debug(f"pk_v2 send skipped (no sender): {tag}")
+    def _buffer_append(self, battle_id: str, text: str) -> None:
+        """向合并转发缓存追加一条消息文本。"""
+        if battle_id in self._message_buffers:
+            self._message_buffers[battle_id].append(text)
+
+    async def _flush_buffer(self, battle_id: str, umo: str) -> None:
+        """将所有缓存消息合并为 1 条消息发送（替代原来的逐条推送）。"""
+        msgs = self._message_buffers.pop(battle_id, [])
+        if not msgs:
             return
-        try:
-            await self._send(umo, text)
-        except Exception:
-            logger.exception(f"pk_v2 send failed: {tag}, umo={umo}")
+        # 用分隔线合并所有消息为一条大消息
+        combined = "\n\n────────────\n\n".join(msgs)
+        if self._send is not None:
+            try:
+                await self._send(umo, combined)
+            except Exception:
+                logger.exception(f"pk_v2 flush_buffer send failed: battle_id={battle_id}")
 
-    async def _emit_init_message(self, battle: PkBattle, umo: str) -> None:
+    async def _buffer_init_message(self, battle: PkBattle) -> None:
         atk_f = list(battle.atk_formation)
         def_f = list(battle.def_formation)
         msg = render_init_message(
@@ -205,13 +193,12 @@ class PkV2Service:
             def_uid=battle.def_uid,
             def_nick=battle.def_nick,
         )
-        await self._safe_send(umo, msg, tag="init_message")
+        self._buffer_append(battle.battle_id, msg)
 
-    async def _emit_turn_message(
+    def _buffer_turn_message(
         self,
         battle: PkBattle,
         turn_idx: int,
-        umo: str,
         attack_events: Sequence[dict],
     ) -> None:
         atk_pos = battle.active_idx[0]
@@ -228,26 +215,24 @@ class PkV2Service:
             df_status=df_status,
             attack_results=attack_events,
         )
-        await self._safe_send(umo, msg, tag=f"turn_{turn_idx}")
+        self._buffer_append(battle.battle_id, msg)
 
-    async def _emit_death_message(
+    def _buffer_death_message(
         self,
         battle: PkBattle,
         victim: FormationMember,
         next_member: Optional[FormationMember],
         side: str,
     ) -> None:
-        umo = self._battle_umos.get(battle.battle_id, "")
-        # 死亡贴用 [侧·昵称] 标签（attack_results 已经是 +1 events）
         tag_victim = _side_tag(victim, side)
         tag_next = _side_tag(next_member, side) if next_member else ""
         if tag_next:
             text = f"💀 [{tag_victim}] 倒下了！\n   [{tag_next}] 上场接战！"
         else:
             text = f"💀 [{tag_victim}] 倒下了！"
-        await self._safe_send(umo, text, tag=f"death_{side}")
+        self._buffer_append(battle.battle_id, text)
 
-    async def _emit_settle_message(self, battle: PkBattle, umo: str) -> None:
+    def _buffer_settle_message(self, battle: PkBattle) -> None:
         # 单一奖励决策（显示与发放共用）
         rewards = self.decide_rewards(battle, self._config)
         is_tie = rewards["is_tie"]
@@ -259,7 +244,6 @@ class PkV2Service:
         atk_dmg_total = sum(m.damage_dealt for m in battle.atk_formation)
         def_dmg_total = sum(m.damage_dealt for m in battle.def_formation)
 
-        # 昵称
         if is_tie:
             winner_nick = battle.atk_nick
             loser_nick = battle.def_nick
@@ -267,7 +251,6 @@ class PkV2Service:
             winner_nick = battle.atk_nick if winner_uid == battle.atk_uid else battle.def_nick
             loser_nick = battle.def_nick if winner_uid == battle.def_uid else battle.atk_nick
 
-        # 段位
         from .pk_service import PkService
         atk_profile = self._load_profile(battle.gid, battle.atk_uid)
         def_profile = self._load_profile(battle.gid, battle.def_uid)
@@ -282,20 +265,17 @@ class PkV2Service:
         winner_rank = PkService.get_pk_rank(winner_score)
         loser_rank = PkService.get_pk_rank(loser_score)
 
-        # 双方出过战的成员（一览）
         formations_hero: List[Tuple[str, int, bool]] = []
         for m in battle.atk_formation:
             formations_hero.append((m.nickname, m.kills, True))
         for m in battle.def_formation:
             formations_hero.append((m.nickname, m.kills, False))
 
-        # 动态分母（Minor #5）
         atk_total = len(battle.atk_formation)
         def_total = len(battle.def_formation)
         atk_total_hp = sum(m.base_hp for m in battle.atk_formation)
         def_total_hp = sum(m.base_hp for m in battle.def_formation)
 
-        # 败方是否需提示设置编队（Minor #6）：败方编队长度 < 4
         if is_tie:
             target_needs_formation = False
         else:
@@ -321,7 +301,7 @@ class PkV2Service:
             atk_total=atk_total, def_total=def_total,
             atk_total_hp=atk_total_hp, def_total_hp=def_total_hp,
         )
-        await self._safe_send(umo, text, tag="settle_message")
+        self._buffer_append(battle.battle_id, text)
 
     # ---------- 持久化 ----------
 
@@ -338,15 +318,6 @@ class PkV2Service:
             store.delete(battle.gid, battle.battle_id)
         except Exception:
             logger.exception(f"pk_v2 delete battle 失败: {battle.battle_id}")
-
-    def _record_pk_pair(self, battle: PkBattle) -> None:
-        store = self._get_pair_store(battle.gid)
-        data = store.load_all()
-        try:
-            store.record_pk(data, battle.atk_uid, battle.def_uid)
-            store.save_all(data)
-        except Exception:
-            logger.exception("pk_v2 record_pk_pair 失败")
 
     def _load_profile(self, gid: str, uid: str):
         store = self._get_profile_store(gid)
@@ -489,6 +460,9 @@ class PkV2Service:
         异常保护：每条 send 包 try/except；整段逻辑被外层 try/except 包住，
         让协程崩了也不会影响其他协程。
         """
+        # 确保 buffer 存在（直接调 _auto_advance_battle 的测试场景）
+        if battle.battle_id not in self._message_buffers:
+            self._message_buffers[battle.battle_id] = []
         try:
             await self._auto_advance_battle_inner(battle, umo)
         except Exception:
@@ -505,7 +479,6 @@ class PkV2Service:
         from .pk_v2_battle import PkV2Defaults
 
         rng = random.Random(battle.rng_seed or now_ts())
-        delay_s = max(int(self._config.pk_v2_turn_delay_ms), 0) / 1000.0
 
         # 记录双方上回合 active，便于检测死亡换人
         prev_atk_pos = battle.active_idx[0]
@@ -520,14 +493,13 @@ class PkV2Service:
             result = do_turn(battle, turn_idx, rng)
             attack_events = result.get("attack_events", []) if isinstance(result, dict) else []
 
-            # ==== 推回合贴 ====
-            await self._emit_turn_message(battle, turn_idx, umo, attack_events)
+            # ==== 缓存回合贴 ====
+            self._buffer_turn_message(battle, turn_idx, attack_events)
 
-            # ==== 检测死亡换人 → 推死亡贴 ====
+            # ==== 检测死亡换人 → 缓存死亡贴 ====
             new_atk_pos = battle.active_idx[0]
             new_df_pos = battle.active_idx[1]
             if new_atk_pos != prev_atk_pos:
-                # prev_atk_pos 位置的成员死了
                 if 1 <= prev_atk_pos <= len(battle.atk_formation):
                     dead = battle.atk_formation[prev_atk_pos - 1]
                     if not dead.is_alive:
@@ -536,7 +508,7 @@ class PkV2Service:
                             if 1 <= new_atk_pos <= len(battle.atk_formation)
                             else None
                         )
-                        await self._emit_death_message(battle, dead, next_m, "atk")
+                        self._buffer_death_message(battle, dead, next_m, "atk")
             if new_df_pos != prev_df_pos:
                 if 1 <= prev_df_pos <= len(battle.def_formation):
                     dead = battle.def_formation[prev_df_pos - 1]
@@ -546,7 +518,7 @@ class PkV2Service:
                             if 1 <= new_df_pos <= len(battle.def_formation)
                             else None
                         )
-                        await self._emit_death_message(battle, dead, next_m, "def")
+                        self._buffer_death_message(battle, dead, next_m, "def")
 
             # ==== 持久化 ====
             self._save_battle(battle)
@@ -567,10 +539,8 @@ class PkV2Service:
             battle.turn_idx = turn_idx + 1
             prev_atk_pos = new_atk_pos
             prev_df_pos = new_df_pos
-            if delay_s > 0:
-                await asyncio.sleep(delay_s)
 
-        # 兜底：如果循环退出时没确定 winner（如某种 corner case），用 check_timeout 一次
+        # 兜底
         if not battle.winner_uid:
             winner_uid = check_timeout(battle)
             if winner_uid:
@@ -581,10 +551,12 @@ class PkV2Service:
         battle.status = "done"
         battle.finished_at = now_ts()
         self._apply_rewards(battle)
-        await self._emit_settle_message(battle, umo)
+        self._buffer_settle_message(battle)
 
-        # ==== 后置清理：record_pk + delete battle ====
-        self._record_pk_pair(battle)
+        # ==== 合并发送全部缓存（替代逐条推送） ====
+        await self._flush_buffer(battle.battle_id, umo)
+
+        # ==== 后置清理 ====
         self._delete_battle(battle)
         self._settled = True
         logger.debug(f"pk_v2 战斗结束: battle_id={battle.battle_id}, winner={battle.winner_uid}, end_reason={battle.end_reason}")
