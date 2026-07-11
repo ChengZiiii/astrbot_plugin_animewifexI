@@ -1,0 +1,310 @@
+"""v3 接力战 · 战斗引擎：速度判定 + 伤害公式（13 乘数）。
+
+对应 spec 章节：
+
+* ``v3_接力战_主线.md §S6.1`` —— 速度判定公式（双层被动 + 锁定扣速 + 狂暴扣速）。
+* ``v3_接力战_主线.md §S6.2`` —— 伤害公式（13 个乘数，顺序应用）。
+* ``v3_接力战_主线.md §S6.3`` —— 死亡换人（移到 B.4）。
+
+设计要点：
+
+* 所有随机调用都走注入的 ``rng``，测试可固定 seed 复现；
+* ``PkV2Defaults`` 集中保存 spec §S10 的所有魔法数字（Phase C 迁入 PluginConfig）；
+* 不依赖 astrbot —— 这是纯算法层。
+
+NOTE: 这里**暂不**应用状态层（qi_po / weak_point / bloodlust / frenzy），
+那些由 B.3 的 ``accumulate_status_layers`` 在战斗流程里更新状态后，
+这里只读取 ``status: BattleStatusLayer`` 字段。早期 B.2 阶段 ``status``
+可以是默认值（qi_po=0, bloodlust=0, frenzy=False）—— B.3 之后才接进伤害公式。
+"""
+
+from __future__ import annotations
+
+import random
+from typing import Any, Dict, Mapping, Optional
+
+from ..models.pk_battle import BattleStatusLayer, FormationMember
+
+__all__ = [
+    "PkV2Defaults",
+    "calc_speed",
+    "pick_first_striker",
+    "calc_raw_damage",
+    "ELEMENT_ADVANTAGE_MAP",
+]
+
+
+# ============== 常量（spec §S10） ==============
+
+
+class PkV2Defaults:
+    """v3 接力战常量。Phase C 接入 PluginConfig 后可被覆盖。"""
+
+    # 战斗节奏
+    MAX_TURNS = 12
+
+    # 命中 / 暴击 / 浮动
+    HIT_RATE = 0.90
+    CRIT_RATE_BASE = 0.10
+    CRIT_MULT = 1.50
+    JITTER = 0.20  # ±20%
+
+    # 双层被动（来自 pk_v2_passives）
+    POWER_ATK_MULT = 1.15        # 力量 atk ×1.15
+    AGILITY_SPEED_MULT = 1.10    # 敏捷 speed ×1.10
+    AGILITY_DODGE_RATE = 0.05    # 敏捷 dodge +5%（暂未接线，备用）
+    INTELLECT_CRIT_RATE = 0.05   # 智力 crit +5%
+    INTELLECT_TAKEN_CRIT_MULT = 0.85  # 智力受暴 -15%
+
+    # 元素克制（深化）
+    ELEMENT_ADVANTAGE = 1.30
+    ELEMENT_DISADVANTAGE = 0.75
+
+    # 状态层
+    QI_PO_MAX = 5
+    QI_PO_PER_LAYER = 0.03        # 每层 +3% atk
+    WEAK_POINT_MAX = 3
+    WEAK_POINT_PER_LAYER = 0.05   # 每层 +5% 受伤
+    BLOODLUST_LV1_TURN = 5
+    BLOODLUST_LV1_ATK = 0.10
+    BLOODLUST_LV2_TURN = 8
+    BLOODLUST_LV2_ATK = 0.15
+    FRENZY_HP_THRESHOLD = 0.30
+    FRENZY_ATK = 0.25
+    FRENZY_SPEED_PENALTY = 0.75
+
+    # 锁定 / 减伤
+    LOCKED_POWER_PENALTY = 0.85    # 锁定老婆 PK 战力 ×0.85
+    SR_DAMAGE_REDUCE = 0.90         # SR 被 SSR/SR 攻击时受击 -10%
+
+    # 打工惩罚
+    WORK_MULT_NORMAL = 0.85
+    WORK_MULT_OVERTIME = 0.75
+    WORK_MULT_EXPEDITION = 0.65
+
+    # N 卡连击
+    N_COMBO_CHANCE = 0.25
+
+
+# 元素克制表（按 spec §S3.6：力量 → 敏捷 → 智力 → 力量）
+ELEMENT_ADVANTAGE_MAP: Dict[tuple, float] = {
+    ("力量", "敏捷"): PkV2Defaults.ELEMENT_ADVANTAGE,
+    ("敏捷", "智力"): PkV2Defaults.ELEMENT_ADVANTAGE,
+    ("智力", "力量"): PkV2Defaults.ELEMENT_ADVANTAGE,
+    # 反向（被克制）
+    ("敏捷", "力量"): PkV2Defaults.ELEMENT_DISADVANTAGE,
+    ("智力", "敏捷"): PkV2Defaults.ELEMENT_DISADVANTAGE,
+    ("力量", "智力"): PkV2Defaults.ELEMENT_DISADVANTAGE,
+}
+
+
+# ============== 速度判定（spec §S6.1） ==============
+
+
+def calc_speed(
+    member: FormationMember,
+    status: BattleStatusLayer,
+    rng: Optional[random.Random] = None,
+) -> int:
+    """本回合在场老婆的速度。
+
+    叠加顺序（spec §S6.1）：
+      1) 基础速度 = atk × 0.3 + hp × 0.2
+      2) R 卡被动：speed ×1.10
+      3) 敏捷元素被动：speed ×1.10
+      4) 锁定老婆：speed ×0.85
+      5) 狂暴状态：speed ×0.75
+
+    ``rng`` 在此函数内未使用（速度公式本身无随机），保留参数为统一签名。
+    """
+    spd = int(member.base_atk * 0.3 + member.base_hp * 0.2)
+
+    if member.rarity == "R":
+        spd = int(spd * PkV2Defaults.AGILITY_SPEED_MULT)
+    if member.element == "敏捷":
+        spd = int(spd * PkV2Defaults.AGILITY_SPEED_MULT)
+    if member.is_locked:
+        spd = int(spd * PkV2Defaults.LOCKED_POWER_PENALTY)
+    if status.frenzy:
+        spd = int(spd * PkV2Defaults.FRENZY_SPEED_PENALTY)
+    return spd
+
+
+def pick_first_striker(
+    atk_member: FormationMember,
+    df_member: FormationMember,
+    atk_status: BattleStatusLayer,
+    df_status: BattleStatusLayer,
+    rng: random.Random,
+) -> str:
+    """速度判定后决定先手方。
+
+    * ``sa > sd`` → ``"atk"``（攻方先手）
+    * ``sd > sa`` → ``"def"``（守方先手）
+    * 平速度 → 50/50 随机（用 ``rng`` 保证公平 + 可复现）
+    """
+    sa = calc_speed(atk_member, atk_status, rng=rng)
+    sd = calc_speed(df_member, df_status, rng=rng)
+    if sa > sd:
+        return "atk"
+    if sd > sa:
+        return "def"
+    return "atk" if rng.random() < 0.5 else "def"
+
+
+# ============== 伤害公式（spec §S6.2 · 13 乘数） ==============
+
+
+def calc_raw_damage(
+    attacker: FormationMember,
+    defender: FormationMember,
+    atk_status: BattleStatusLayer,
+    df_status: BattleStatusLayer,
+    turn_idx: int,
+    rng: random.Random,
+    cfg: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    """严格按 spec §S6.2 顺序应用 13 个乘数，返回伤害结算 dict。
+
+    返回值（dict）：
+
+    * ``hit``: 是否命中（90%）
+    * ``dmg``: 最终伤害（至少 1，未命中时 0）
+    * ``crit``: 是否暴击
+    * ``combo``: 是否触发连击（N 卡专属，**B.2 阶段先返回 False**，B.4 再接线）
+    * ``jitter``: 实际应用的浮动系数（用于调试）
+    * ``multipliers``: 各乘数明细（用于消息模板 / 调试）
+
+    参数：
+
+    * ``cfg`` —— 预留配置注入。``None`` 时用 ``PkV2Defaults``。Phase C 会传入
+      ``PluginConfig`` 的 ``pk_v2_*`` 字段。
+    """
+    cfg = cfg if cfg is not None else _default_cfg()
+    hit_rate = float(cfg.get("hit_rate", PkV2Defaults.HIT_RATE))
+    crit_rate_base = float(cfg.get("crit_rate", PkV2Defaults.CRIT_RATE_BASE))
+    crit_mult_base = float(cfg.get("crit_mult", PkV2Defaults.CRIT_MULT))
+    jitter_amp = float(cfg.get("jitter", PkV2Defaults.JITTER))
+
+    # === 1. 命中 90% ===
+    if rng.random() > hit_rate:
+        return {
+            "hit": False,
+            "dmg": 0,
+            "crit": False,
+            "combo": False,
+            "jitter": 1.0,
+            "multipliers": {},
+        }
+
+    # === 2. 暴击率（基础 + SSR 被动 + 智力被动）===
+    crit_rate = crit_rate_base
+    if attacker.rarity == "SSR":
+        crit_rate += 0.10  # SSR 被动：暴击 +10%
+    if attacker.element == "智力":
+        crit_rate += PkV2Defaults.INTELLECT_CRIT_RATE  # 智力被动：暴击 +5%
+    is_crit = rng.random() < crit_rate
+
+    # === 3. 暴击倍率（智力受暴 -15%）===
+    if is_crit:
+        crit_mult = crit_mult_base
+        if defender.element == "智力":
+            crit_mult *= PkV2Defaults.INTELLECT_TAKEN_CRIT_MULT
+    else:
+        crit_mult = 1.0
+
+    # === 4. 元素克制倍率（深化 1.30 / 0.75）===
+    element_mult = ELEMENT_ADVANTAGE_MAP.get(
+        (attacker.element, defender.element), 1.0
+    )
+
+    # === 5. 攻击方 atk 倍率（力量元素 + 狂暴）===
+    atk_bonus_total = 0.0
+    if attacker.element == "力量":
+        atk_bonus_total += (PkV2Defaults.POWER_ATK_MULT - 1.0)
+    if atk_status.frenzy:
+        atk_bonus_total += PkV2Defaults.FRENZY_ATK
+
+    # === 6. 状态层（气魄 + 血性）作用于攻击方 atk ===
+    qi_po_bonus = min(atk_status.qi_po, PkV2Defaults.QI_PO_MAX) * PkV2Defaults.QI_PO_PER_LAYER
+    if turn_idx >= PkV2Defaults.BLOODLUST_LV2_TURN:
+        bloodlust_bonus = PkV2Defaults.BLOODLUST_LV2_ATK
+    elif turn_idx >= PkV2Defaults.BLOODLUST_LV1_TURN:
+        bloodlust_bonus = PkV2Defaults.BLOODLUST_LV1_ATK
+    else:
+        bloodlust_bonus = 0.0
+
+    atk_layer_mult = 1.0 + qi_po_bonus + bloodlust_bonus
+
+    # === 7. 防御方弱点层（受击 +5%/层）===
+    weak_point_mult = 1.0 + min(df_status.weak_point, PkV2Defaults.WEAK_POINT_MAX) * PkV2Defaults.WEAK_POINT_PER_LAYER
+
+    # === 8. 打工惩罚（沿用 Phase 4）===
+    work_mult = 1.0  # v3 接力战中"打工中的老婆"按 B.3 状态层处理；这里默认无惩罚
+    # 注：spec §S6.2 公式保留 work_mult 占位，本期暂取 1.0
+    # （编队开始时老婆在打工会被剔除，Phase C 接入后由调用方传入 work_mode）
+
+    # === 9. 亲密加成 ===
+    intimacy_mult = 1 + attacker.intimacy / 500.0
+
+    # === 10. 锁定惩罚 ===
+    lock_atk_mult = PkV2Defaults.LOCKED_POWER_PENALTY if attacker.is_locked else 1.0
+
+    # === 11. SR 减伤（被 SSR/SR 攻击时 -10%）===
+    if (
+        defender.rarity == "SR"
+        and attacker.rarity in ("SSR", "SR")
+    ):
+        damage_taken_mult = PkV2Defaults.SR_DAMAGE_REDUCE
+    else:
+        damage_taken_mult = 1.0
+
+    # === 12. 伤害合成 ===
+    atk_base = attacker.base_atk * (1.0 + atk_bonus_total) + attacker.base_def * 0.3
+    raw = (
+        atk_base
+        * atk_layer_mult
+        * crit_mult
+        * element_mult
+        * work_mult
+        * intimacy_mult
+        * lock_atk_mult
+        * damage_taken_mult
+        * weak_point_mult
+    )
+
+    # === 13. 浮动 ±20% ===
+    jitter = (1.0 - jitter_amp) + rng.random() * (2 * jitter_amp)
+    dmg = max(1, int(raw * jitter))
+
+    return {
+        "hit": True,
+        "dmg": dmg,
+        "crit": is_crit,
+        "combo": False,  # B.4 接线
+        "jitter": jitter,
+        "multipliers": {
+            "atk_bonus_total": atk_bonus_total,
+            "atk_layer_mult": atk_layer_mult,
+            "qi_po_bonus": qi_po_bonus,
+            "bloodlust_bonus": bloodlust_bonus,
+            "crit_rate": crit_rate,
+            "crit_mult": crit_mult,
+            "element_mult": element_mult,
+            "work_mult": work_mult,
+            "intimacy_mult": intimacy_mult,
+            "lock_atk_mult": lock_atk_mult,
+            "damage_taken_mult": damage_taken_mult,
+            "weak_point_mult": weak_point_mult,
+        },
+    }
+
+
+def _default_cfg() -> Dict[str, Any]:
+    """默认配置（Phase C 接入 PluginConfig 后此函数被替代）"""
+    return {
+        "hit_rate": PkV2Defaults.HIT_RATE,
+        "crit_rate": PkV2Defaults.CRIT_RATE_BASE,
+        "crit_mult": PkV2Defaults.CRIT_MULT,
+        "jitter": PkV2Defaults.JITTER,
+    }
