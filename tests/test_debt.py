@@ -219,7 +219,7 @@ class TestDebtWorkBlock:
 
         result = await svc.start_work("g1", "u1", "Alice", "normal", "2026-07-12")
         assert result.ok is False
-        assert "欠债" in result.reason
+        assert result.reason == "in_debt"
 
     async def test_start_work_succeeds_with_positive_balance(self, tmp_paths, config, locks):
         """正余额可正常启动打工。"""

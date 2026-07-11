@@ -233,6 +233,13 @@ class PluginConfig:
     pk_v2_enabled: bool = True                  # 4v4 接力战总开关（false 回退 1v1）
     pk_v2_turn_delay_ms: int = 1000             # 每回合间主动消息延迟（毫秒）
 
+    # ---------- Phase E / v3 负债经济 ----------
+    debt_floor: int = -500                      # 负债下限硬封顶
+    debt_block_work: bool = True                # 负债时不能打工
+    debt_block_shop: bool = True                # 负债时不能商城购买
+    debt_block_single_draw: bool = True          # 负债时不能用币单抽
+    debt_allow_ticket_draw: bool = True          # 负债时仍可用券抽卡
+
     # ---------- 派生 ----------
     @property
     def normalized_image_base_url(self) -> str:
@@ -409,6 +416,12 @@ class PluginConfig:
             # Phase 5 / v3 接力战
             pk_v2_enabled=_as_bool(d.get("pk_v2_enabled"), True),
             pk_v2_turn_delay_ms=_as_int(d.get("pk_v2_turn_delay_ms"), 1000),
+            # Phase E / v3 负债经济
+            debt_floor=_as_int(d.get("debt_floor"), -500),
+            debt_block_work=_as_bool(d.get("debt_block_work"), True),
+            debt_block_shop=_as_bool(d.get("debt_block_shop"), True),
+            debt_block_single_draw=_as_bool(d.get("debt_block_single_draw"), True),
+            debt_allow_ticket_draw=_as_bool(d.get("debt_allow_ticket_draw"), True),
         )
 
     @classmethod

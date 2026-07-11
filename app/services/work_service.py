@@ -365,6 +365,11 @@ class WorkService:
             )
 
             # 检查余额足够
+            if self._config.debt_block_work and profile.coins < 0:
+                return WorkStartResult(
+                    ok=False, reason="in_debt",
+                    coin_balance=profile.coins,
+                )
             start_cost = mode_config.get("start_cost", 0)
             if profile.coins < start_cost:
                 return WorkStartResult(
