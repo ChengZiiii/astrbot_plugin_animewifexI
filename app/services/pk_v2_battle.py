@@ -30,6 +30,8 @@ __all__ = [
     "calc_speed",
     "pick_first_striker",
     "calc_raw_damage",
+    "on_hit_apply_layers",
+    "accumulate_status_layers",
     "ELEMENT_ADVANTAGE_MAP",
 ]
 
@@ -308,3 +310,58 @@ def _default_cfg() -> Dict[str, Any]:
         "crit_mult": PkV2Defaults.CRIT_MULT,
         "jitter": PkV2Defaults.JITTER,
     }
+
+
+# ============== 状态层累积（spec §S6.5） ==============
+
+
+def on_hit_apply_layers(
+    attacker_status: BattleStatusLayer,
+    defender_status: BattleStatusLayer,
+    is_attacker_hit: bool = True,
+) -> None:
+    """每次攻击结算后调用：攻方+1 气魄、守方+1 弱点（命中时）。
+
+    参数：
+
+    * ``attacker_status`` / ``defender_status`` —— 当前攻击方向的两方状态层
+    * ``is_attacker_hit`` —— 攻击是否命中（未命中不累积）
+    """
+    if not is_attacker_hit:
+        return
+    if attacker_status.qi_po < PkV2Defaults.QI_PO_MAX:
+        attacker_status.qi_po += 1
+    if defender_status.weak_point < PkV2Defaults.WEAK_POINT_MAX:
+        defender_status.weak_point += 1
+
+
+def accumulate_status_layers(
+    member: FormationMember,
+    status: BattleStatusLayer,
+    turn_idx: int,
+) -> None:
+    """每回合结束后调用，更新血性 / 狂暴。
+
+    参数：
+
+    * ``member`` —— 当前在场老婆（用于读 current_hp / base_hp 判定狂暴）
+    * ``status`` —— 该老婆的状态层（in-place 修改）
+    * ``turn_idx`` —— 0-based 回合编号（spec §S6.4 / §S6.5）
+
+    注：气魄 / 弱点 不在这里处理（由 ``on_hit_apply_layers`` 实时维护）。
+    """
+    # 血性：5 / 8 回合激活
+    if turn_idx >= PkV2Defaults.BLOODLUST_LV2_TURN:
+        status.bloodlust = 2
+    elif turn_idx >= PkV2Defaults.BLOODLUST_LV1_TURN:
+        status.bloodlust = 1
+    else:
+        status.bloodlust = 0
+
+    # 狂暴：当前 HP < 30% 时激活（atk +25% / speed -25%）
+    if member.base_hp > 0:
+        hp_ratio = member.current_hp / member.base_hp
+        status.frenzy = hp_ratio < PkV2Defaults.FRENZY_HP_THRESHOLD
+    else:
+        # 防御性：base_hp=0 时不激活
+        status.frenzy = False
