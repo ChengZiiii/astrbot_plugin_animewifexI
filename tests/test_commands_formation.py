@@ -165,28 +165,58 @@ class TestFormationCommand:
             pass
 
         assert _get_formation(tmp_paths, gid, uid) == [wids[1], wids[0]]
-
     @pytest.mark.asyncio
-    async def test_formation_default_clears_to_empty(
+    async def test_formation_default_populates_from_holdings(
         self, tmp_paths, config, locks, mock_wife_service
     ):
+        """``老婆 编队 默认`` —— 按持有列表前 N 个填充 formation（N = min(持有数, 4)）。
+
+        spec §S4.1：
+          * 持有 ≥ 4 → 填 4 个（前 4 位）；
+          * 持有 < 4 → 填持有数；
+          * 持有 = 0 → 返回错误，不写入编队。
+        """
         from app.commands.formation import handle_formation
 
-        gid, uid, nick = "g1", "u1", "Alice"
-        wids = _seed_owned_wives(tmp_paths, gid, uid, nick, 4)
-
         ctx = _make_ctx(tmp_paths, config, locks, mock_wife_service)
-        # 先设置
-        event = _MockEvent(gid, uid, nick, "老婆 编队 1 2 3 4")
-        async for _ in handle_formation(event, ctx):
-            pass
-        assert len(_get_formation(tmp_paths, gid, uid)) == 4
 
-        # 默认 = 清空
-        event2 = _MockEvent(gid, uid, nick, "老婆 编队 默认")
+        # --- 场景 1：持有 5 → 填前 4 个（覆盖原 5 4 3 2 编队） ---
+        gid1, uid1, nick1 = "g1", "u1", "Alice"
+        wids5 = _seed_owned_wives(tmp_paths, gid1, uid1, nick1, 5)
+        # 先设一个非默认顺序
+        event0 = _MockEvent(gid1, uid1, nick1, "老婆 编队 5 4 3 2")
+        async for _ in handle_formation(event0, ctx):
+            pass
+        assert len(_get_formation(tmp_paths, gid1, uid1)) == 4
+
+        event1 = _MockEvent(gid1, uid1, nick1, "老婆 编队 默认")
+        async for _ in handle_formation(event1, ctx):
+            pass
+        formation1 = _get_formation(tmp_paths, gid1, uid1)
+        assert len(formation1) == 4
+        assert formation1 == [wids5[0], wids5[1], wids5[2], wids5[3]]
+        assert any("默认" in r for r in event1.replies)
+
+        # --- 场景 2：持有 3 → 填 3 个（持有数 < 4） ---
+        gid2, uid2, nick2 = "g2", "u2", "Bob"
+        wids3 = _seed_owned_wives(tmp_paths, gid2, uid2, nick2, 3)
+        event2 = _MockEvent(gid2, uid2, nick2, "老婆 编队 默认")
         async for _ in handle_formation(event2, ctx):
             pass
-        assert _get_formation(tmp_paths, gid, uid) == []
+        formation2 = _get_formation(tmp_paths, gid2, uid2)
+        assert len(formation2) == 3
+        assert formation2 == [wids3[0], wids3[1], wids3[2]]
+
+        # --- 场景 3：持有 0 → 返回错误，不写入编队 ---
+        gid3, uid3, nick3 = "g3", "u3", "Charlie"
+        # 不 seed ownership
+        event3 = _MockEvent(gid3, uid3, nick3, "老婆 编队 默认")
+        async for _ in handle_formation(event3, ctx):
+            pass
+        assert _get_formation(tmp_paths, gid3, uid3) == []
+        joined3 = " ".join(event3.replies)
+        assert any(kw in joined3 for kw in ("没有老婆", "先去抽"))
+
 
     @pytest.mark.asyncio
     async def test_formation_clear_alias(

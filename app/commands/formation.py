@@ -4,8 +4,9 @@
 
 * ``老婆 编队`` —— 查看当前编队，未设置时给出用法提示。
 * ``老婆 编队 <n1> [n2] [n3] [n4]`` —— 按用户指定顺序设置编队（1-4 位）。
-* ``老婆 编队 默认`` —— 清空编队（PK 时退化为"默认前 N 个"）。
-* ``老婆 编队 清除`` —— 同上，alias。
+* ``老婆 编队 默认`` —— 按持有列表前 N 个填充 formation（N = min(持有数, 4)）；
+  持有为空时返回错误提示，不写入编队。
+* ``老婆 编队 清除`` / ``清空`` —— 清空编队（PK 时退化为"默认前 N 个"）。
 
 校验：
 
@@ -51,8 +52,12 @@ async def handle_formation(
         return
 
     rest_norm = rest.strip()
-    # 清空 / 默认
-    if rest_norm in ("默认", "清除", "清空"):
+    # 默认 / 清除 / 清空
+    if rest_norm == "默认":
+        async for item in _default_formation(event, ctx, gid, uid, nick):
+            yield item
+        return
+    if rest_norm in ("清除", "清空"):
         async for item in _clear_formation(event, ctx, gid, uid, nick):
             yield item
         return
@@ -62,7 +67,8 @@ async def handle_formation(
     if numbers is None:
         yield event.plain_result(
             "格式：老婆 编队 <编号1> [编号2] [编号3] [编号4]（1-4 个不重复编号）\n"
-            "或：老婆 编队 默认（清空编队，使用默认顺序）"
+            "或：老婆 编队 默认（按持有列表前 N 个自动填充）\n"
+            "或：老婆 编队 清除（清空编队）"
         )
         return
 
@@ -121,7 +127,7 @@ async def _show_formation(
         yield event.plain_result(
             f"{nick}，你还没有设置编队。\n"
             f"使用 `老婆 编队 <编号1> [编号2] [编号3] [编号4]` 一次性设置 1-4 位出战老婆\n"
-            f"或 `老婆 编队 默认` 清空编队（PK 时用默认顺序）"
+            f"或 `老婆 编队 默认` 按持有列表前 N 个自动填充（持有 ≥ 4 时填 4 位）"
         )
         return
 
@@ -133,7 +139,7 @@ async def _show_formation(
     yield event.plain_result(
         f"{nick} 的当前编队：{nums_str}\n"
         f"（共 {len(formation)} 位，不足 4 位 PK 时按 Nv4 进行）\n"
-        f"💡 修改：`老婆 编队 <新编号...>` 或 `老婆 编队 默认` 清空"
+        f"💡 修改：`老婆 编队 <新编号...>` 或 `老婆 编队 默认` 重置为持有顺序"
     )
 
 
@@ -144,7 +150,7 @@ async def _clear_formation(
     uid: str,
     nick: str,
 ) -> AsyncGenerator:
-    """``老婆 编队 默认/清除`` → 清空编队"""
+    """``老婆 编队 清除/清空`` → 把 formation 清空（profile.formation = []）"""
     profile_store = ProfileStore(ctx.paths, gid)
     profiles = profile_store.load_all()
     profile = ProfileStore.get_or_create(profiles, uid, nick)
@@ -152,7 +158,42 @@ async def _clear_formation(
     profile_store.save_all(profiles)
 
     yield event.plain_result(
-        f"{nick}，已清空编队。下次 PK 将按默认顺序（持有列表前 4 位）出战。"
+        f"✅ 已清空编队（下次 PK 将用默认编队）"
+    )
+
+
+async def _default_formation(
+    event: AstrMessageEvent,
+    ctx: CommandContext,
+    gid: str,
+    uid: str,
+    nick: str,
+) -> AsyncGenerator:
+    """``老婆 编队 默认`` → 按持有列表前 N 个填充 formation（N = min(持有数, 4)）。
+
+    spec §S4.1：当持有老婆 ≥ 4 时填前 4 个，< 4 时填持有数，= 0 时返回错误。
+    """
+    ownership_store = OwnershipStore(ctx.paths, gid)
+    ownerships = ownership_store.load_all()
+    my_wives = ownership_store.list_by_user(uid, ownerships)
+    if not my_wives:
+        yield event.plain_result(
+            f"你还没有老婆，先去抽一个吧~"
+        )
+        return
+
+    take = min(len(my_wives), _MAX_FORMATION_SIZE)
+    wids: List[str] = [o.wid for o in my_wives[:take]]
+
+    profile_store = ProfileStore(ctx.paths, gid)
+    profiles = profile_store.load_all()
+    profile = ProfileStore.get_or_create(profiles, uid, nick)
+    profile.formation = list(wids)
+    profile_store.save_all(profiles)
+
+    nums_str = " ".join(str(i + 1) for i in range(take))
+    yield event.plain_result(
+        f"✅ 已按持有列表设置默认编队（前 {take} 个）：{nums_str}"
     )
 
 
