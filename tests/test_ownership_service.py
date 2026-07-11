@@ -601,3 +601,296 @@ class TestPrune:
             "g1", "2026-07-03"
         )
         assert changed is False
+
+
+# ==================== Phase F: NTR 安慰币 ====================
+
+
+class TestNtrComfortInService:
+    """try_ntr 中的 NTR 安慰币行为验证（Phase F / v3）"""
+
+    @pytest.mark.asyncio
+    async def test_ntr_success_attacker_balance_unchanged(
+        self, ownership_service, tmp_paths
+    ):
+        """Q-D 核心：NTR 成功后攻击方余额严格不变"""
+        # Setup: SSR wife with 50 intimacy
+        wid = ownership_service._ensure_wife_meta("作品!SSR50.jpg")
+        wives = ownership_service._wives_master.load_all()
+        wives[wid].rarity = "SSR"
+        ownership_service._wives_master.save_all(wives)
+
+        profile_store = ProfileStore(tmp_paths, "g1")
+        profiles = profile_store.load_all()
+        profiles["u_attacker"] = UserProfile(
+            uid="u_attacker", nick="攻击者", coins=500
+        )
+        profiles["u_victim"] = UserProfile(uid="u_victim", nick="受害者", coins=100)
+        profile_store.save_all(profiles)
+
+        ownership_store = OwnershipStore(tmp_paths, "g1")
+        ownerships = ownership_store.load_all()
+        ownerships.append(Ownership(
+            wid=wid, uid="u_victim", acquired_at=0,
+            acquired_via=AcquireVia.DRAW, is_primary=True, intimacy=50,
+        ))
+        # Attacker needs a wife (v2.x replacement)
+        a_wid = ownership_service._ensure_wife_meta("作品!A.jpg")
+        ownerships.append(Ownership(
+            wid=a_wid, uid="u_attacker", acquired_at=0,
+            acquired_via=AcquireVia.DRAW, is_primary=True,
+        ))
+        ownership_store.save_all(ownerships)
+
+        attacker_before = profile_store.load_all()["u_attacker"].coins
+
+        result = await ownership_service.try_ntr(
+            "g1", "u_attacker", "u_victim", "攻击者", "2026-07-12",
+            roll_seed=0.0, target_wid=wid,
+        )
+        assert result.ok and result.success
+
+        profiles_after = profile_store.load_all()
+        attacker_after = profiles_after["u_attacker"].coins
+        victim_after = profiles_after["u_victim"].coins
+
+        assert attacker_after == attacker_before, (
+            f"Q-D: attacker balance unchanged "
+            f"(before={attacker_before}, after={attacker_after})"
+        )
+        assert victim_after > 100, "victim should have received comfort coins"
+
+    @pytest.mark.asyncio
+    async def test_ntr_success_victim_receives_correct_comfort(
+        self, ownership_service, tmp_paths
+    ):
+        """Q-E 核心：被牛方收到正确计算的安慰币（SSR+100=180）"""
+        wid = ownership_service._ensure_wife_meta("作品!SSR100.jpg")
+        wives = ownership_service._wives_master.load_all()
+        wives[wid].rarity = "SSR"
+        ownership_service._wives_master.save_all(wives)
+
+        profile_store = ProfileStore(tmp_paths, "g1")
+        profiles = profile_store.load_all()
+        profiles["u_victim"] = UserProfile(uid="u_victim", nick="受害者", coins=100)
+        profiles["u_attacker"] = UserProfile(
+            uid="u_attacker", nick="攻击者", coins=500
+        )
+        profile_store.save_all(profiles)
+
+        ownership_store = OwnershipStore(tmp_paths, "g1")
+        ownerships = ownership_store.load_all()
+        ownerships.append(Ownership(
+            wid=wid, uid="u_victim", acquired_at=0,
+            acquired_via=AcquireVia.DRAW, is_primary=True, intimacy=100,
+        ))
+        a_wid = ownership_service._ensure_wife_meta("作品!B.jpg")
+        ownerships.append(Ownership(
+            wid=a_wid, uid="u_attacker", acquired_at=0,
+            acquired_via=AcquireVia.DRAW, is_primary=True,
+        ))
+        ownership_store.save_all(ownerships)
+
+        result = await ownership_service.try_ntr(
+            "g1", "u_attacker", "u_victim", "攻击者", "2026-07-12",
+            roll_seed=0.0, target_wid=wid,
+        )
+        assert result.ok and result.success
+
+        profiles_after = profile_store.load_all()
+        victim = profiles_after["u_victim"]
+        # SSR+100: 120 × 1.5 = 180, coins: 100+180 = 280
+        assert victim.coins == 280, (
+            f"expected victim coins=280, got {victim.coins}"
+        )
+        assert victim.total_ntr_comfort_received == 180, (
+            f"expected total_ntr_comfort_received=180, "
+            f"got {victim.total_ntr_comfort_received}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_ntr_success_victim_receives_debt_comfort(
+        self, ownership_service, tmp_paths
+    ):
+        """负债玩家被牛后余额增加（R+50=31, -300 → -269）"""
+        wid = ownership_service._ensure_wife_meta("作品!R50.jpg")
+        wives = ownership_service._wives_master.load_all()
+        wives[wid].rarity = "R"
+        ownership_service._wives_master.save_all(wives)
+
+        profile_store = ProfileStore(tmp_paths, "g1")
+        profiles = profile_store.load_all()
+        profiles["u_victim"] = UserProfile(
+            uid="u_victim", nick="受害者", coins=-300
+        )
+        profiles["u_attacker"] = UserProfile(
+            uid="u_attacker", nick="攻击者", coins=500
+        )
+        profile_store.save_all(profiles)
+
+        ownership_store = OwnershipStore(tmp_paths, "g1")
+        ownerships = ownership_store.load_all()
+        ownerships.append(Ownership(
+            wid=wid, uid="u_victim", acquired_at=0,
+            acquired_via=AcquireVia.DRAW, is_primary=True, intimacy=50,
+        ))
+        a_wid = ownership_service._ensure_wife_meta("作品!C.jpg")
+        ownerships.append(Ownership(
+            wid=a_wid, uid="u_attacker", acquired_at=0,
+            acquired_via=AcquireVia.DRAW, is_primary=True,
+        ))
+        ownership_store.save_all(ownerships)
+
+        result = await ownership_service.try_ntr(
+            "g1", "u_attacker", "u_victim", "攻击者", "2026-07-12",
+            roll_seed=0.0, target_wid=wid,
+        )
+        assert result.ok and result.success
+
+        profiles_after = profile_store.load_all()
+        victim = profiles_after["u_victim"]
+        # R+50: 25 × 1.25 = 31, coins: -300 + 31 = -269
+        assert victim.coins == -269, (
+            f"expected victim coins=-269, got {victim.coins}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_ntr_failed_no_deduction(
+        self, ownership_service, mock_wife_service
+    ):
+        """NTR 失败不扣攻击者任何币"""
+        mock_wife_service.set_images(["作品A!A.jpg"])
+        await ownership_service.draw_or_get_primary(
+            "g1", "u_victim", "受害者", "2026-07-12"
+        )
+        mock_wife_service.set_images(["作品B!B.jpg"])
+        await ownership_service.draw_or_get_primary(
+            "g1", "u_attacker", "攻击者", "2026-07-12"
+        )
+
+        attacker_before = ownership_service.get_profile(
+            "g1", "u_attacker", "攻击者"
+        ).coins
+
+        result = await ownership_service.try_ntr(
+            "g1", "u_attacker", "u_victim", "攻击者", "2026-07-12",
+            roll_seed=1.0,  # 必失败
+        )
+        assert result.ok and not result.success
+
+        attacker_after = ownership_service.get_profile(
+            "g1", "u_attacker", "攻击者"
+        ).coins
+        assert attacker_after == attacker_before, (
+            f"failed NTR should not deduct attacker "
+            f"(before={attacker_before}, after={attacker_after})"
+        )
+
+    @pytest.mark.asyncio
+    async def test_revenge_success_no_comfort(
+        self, ownership_service, tmp_paths
+    ):
+        """复仇成功：不调安慰币，攻击方余额不变，被复仇方余额不变"""
+        wid = ownership_service._ensure_wife_meta("作品!复仇.jpg")
+        wives = ownership_service._wives_master.load_all()
+        wives[wid].rarity = "SSR"
+        ownership_service._wives_master.save_all(wives)
+
+        profile_store = ProfileStore(tmp_paths, "g1")
+        profiles = profile_store.load_all()
+        # attacker 之前被 u_victim 牛过，现在复仇
+        profiles["u_attacker"] = UserProfile(
+            uid="u_attacker", nick="攻击者", coins=500,
+            last_ntr_by={"uid": "u_victim", "ts": 1000000, "wid": wid},
+        )
+        profiles["u_victim"] = UserProfile(
+            uid="u_victim", nick="受害者", coins=200,
+        )
+        profile_store.save_all(profiles)
+
+        ownership_store = OwnershipStore(tmp_paths, "g1")
+        ownerships = ownership_store.load_all()
+        # victim currently holds the wife
+        ownerships.append(Ownership(
+            wid=wid, uid="u_victim", acquired_at=0,
+            acquired_via=AcquireVia.NTR, is_primary=True, intimacy=80,
+        ))
+        a_wid = ownership_service._ensure_wife_meta("作品!D.jpg")
+        ownerships.append(Ownership(
+            wid=a_wid, uid="u_attacker", acquired_at=0,
+            acquired_via=AcquireVia.DRAW, is_primary=True,
+        ))
+        ownership_store.save_all(ownerships)
+
+        attacker_before = profile_store.load_all()["u_attacker"].coins
+        victim_before = profile_store.load_all()["u_victim"].coins
+
+        result = await ownership_service.try_ntr(
+            "g1", "u_attacker", "u_victim", "攻击者", "2026-07-12",
+            roll_seed=0.0, target_wid=wid, is_revenge=True,
+        )
+        assert result.ok and result.success
+
+        profiles_after = profile_store.load_all()
+        assert profiles_after["u_attacker"].coins == attacker_before, (
+            "revenge success: attacker coins unchanged"
+        )
+        assert profiles_after["u_victim"].coins == victim_before, (
+            "revenge success: victim coins unchanged"
+        )
+        # 被复仇方的 total_ntr_comfort_received 不应增加（不是被牛）
+        assert profiles_after["u_victim"].total_ntr_comfort_received == 0, (
+            "revenge success should not give comfort"
+        )
+
+    @pytest.mark.asyncio
+    async def test_revenge_fail_gives_consolation(
+        self, ownership_service, tmp_paths, config
+    ):
+        """复仇失败：沿用 Phase 4 规则，给攻击者安慰币，但不调 NTR 安慰币"""
+        wid = ownership_service._ensure_wife_meta("作品!复仇失败.jpg")
+        wives = ownership_service._wives_master.load_all()
+        wives[wid].rarity = "SSR"
+        ownership_service._wives_master.save_all(wives)
+
+        from app.utils.time import now_ts as _now_ts
+        profile_store = ProfileStore(tmp_paths, "g1")
+        profiles = profile_store.load_all()
+        profiles["u_attacker"] = UserProfile(
+            uid="u_attacker", nick="攻击者", coins=500,
+            last_ntr_by={"uid": "u_victim", "ts": _now_ts() - 100, "wid": wid},
+        )
+        profiles["u_victim"] = UserProfile(
+            uid="u_victim", nick="受害者", coins=200,
+        )
+        profile_store.save_all(profiles)
+
+        ownership_store = OwnershipStore(tmp_paths, "g1")
+        ownerships = ownership_store.load_all()
+        ownerships.append(Ownership(
+            wid=wid, uid="u_victim", acquired_at=0,
+            acquired_via=AcquireVia.NTR, is_primary=True, intimacy=80,
+        ))
+        a_wid = ownership_service._ensure_wife_meta("作品!E.jpg")
+        ownerships.append(Ownership(
+            wid=a_wid, uid="u_attacker", acquired_at=0,
+            acquired_via=AcquireVia.DRAW, is_primary=True,
+        ))
+        ownership_store.save_all(ownerships)
+
+        result = await ownership_service.try_ntr(
+            "g1", "u_attacker", "u_victim", "攻击者", "2026-07-12",
+            roll_seed=1.0, target_wid=wid, is_revenge=True,
+        )
+        assert result.ok and not result.success
+
+        profiles_after = profile_store.load_all()
+        # 复仇失败：攻击者收到安慰币（Phase 4）+ 清零 last_ntr_by
+        consolation = config.revenge_fail_consolation_coins  # 5
+        assert profiles_after["u_attacker"].coins == 500 + consolation, (
+            f"revenge fail: attacker should receive {consolation} consolation"
+        )
+        # 被复仇方不应收到 NTR 安慰币
+        assert profiles_after["u_victim"].total_ntr_comfort_received == 0, (
+            "revenge fail should not give NTR comfort to victim"
+        )

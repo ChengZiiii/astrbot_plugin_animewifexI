@@ -931,13 +931,17 @@ class OwnershipService:
                 transferred.intimacy = old_intimacy - lost_intimacy
                 transferred.intimacy_updated_date = ""
 
-                # 补偿币 = lost_intimacy * per_intimacy，封顶 max
-                compensation = min(
-                    lost_intimacy * self._config.ntr_coin_compensation_per_intimacy,
-                    self._config.ntr_coin_compensation_max,
-                )
-                if compensation > 0:
-                    target_profile.coins += compensation
+                # Phase F: NTR 安慰币（替代原 Phase 4 intimacy × 2 补偿）
+                # 攻击者零代价（Q-D），被牛方按稀有度+好感度收安慰币（Q-E）
+                # 注意：必须使用 target_intimacy（pre-transfer 值），而非
+                # transferred.intimacy（transfer() 已将其清零）
+                # 复仇路径跳过安慰币（spec §S5.5）
+                if not is_revenge:
+                    from .ntr_comfort import apply_ntr_comfort_inner
+                    target_rarity = meta.rarity if meta else "N"
+                    apply_ntr_comfort_inner(
+                        target_profile, target_rarity, target_intimacy
+                    )
 
                 # T22: 保护符消耗（NTR 结算后消耗 1 个）
                 if has_protection_charm:
