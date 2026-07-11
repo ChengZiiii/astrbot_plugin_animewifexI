@@ -189,14 +189,14 @@ def render_turn_message(
     first_side = first_event.get("side", "atk")
     second_side = "def" if first_side == "atk" else "atk"
 
-    lines.extend(_render_side_block(first_side, atk_member, df_member, atk_status, df_status, first_event))
+    lines.extend(_render_side_block(first_side, atk_member, df_member, atk_status, df_status, first_event, role_label="先手"))
     lines.append("")
     second_event = next(
         (e for e in attack_results if e.get("side") == second_side),
         None,
     )
     if second_event:
-        lines.extend(_render_side_block(second_side, atk_member, df_member, atk_status, df_status, second_event))
+        lines.extend(_render_side_block(second_side, atk_member, df_member, atk_status, df_status, second_event, role_label="反击"))
         lines.append("")
 
     # 状态层
@@ -222,18 +222,22 @@ def _render_side_block(
     atk_status: BattleStatusLayer,
     df_status: BattleStatusLayer,
     event: dict,
+    role_label: str = "先手",
 ) -> List[str]:
-    """回合贴里单侧（先手 or 反击）的小块描述。"""
+    """回合贴里单侧（先手 or 反击）的小块描述。
+
+    ``role_label`` 由调用方传入 ``"先手"`` 或 ``"反击"`` ——
+    .. 之前写死 ``side=="def"`` → 反击，但 def 也可以先手（speed 更高时）。
+    """
     if side == "atk":
         attacker = atk_member
         defender = df_member
         attacker_status = atk_status
-        role = "先手"
     else:
         attacker = df_member
         defender = atk_member
         attacker_status = df_status
-        role = "反击"
+    role = role_label
 
     emoji = "🐱" if side == "atk" else "🐰"
     # 计算速度（含双层被动 + 狂暴扣速）
@@ -281,23 +285,24 @@ def _element_relationship_text(
 def render_death_message(
     victim_member: FormationMember,
     next_member: Optional[FormationMember] = None,
+    side_char: str = "?",
 ) -> str:
-    """死亡贴：单行倒下 + （可选）接战。"""
-    pos_label = "victim"
+    """死亡贴：单行倒下 + （可选）接战。
+
+    ``side_char`` 是 ``"攻"`` 或 ``"守"``，默认 ``"?"`` 用于未接线场景。
+    """
     lines: List[str] = [
-        f"💀 [{_format_member_tag(victim_member)}] 倒下了！",
+        f"💀 [{_format_member_tag(victim_member, side_char)}] 倒下了！",
     ]
     if next_member is not None:
-        lines.append(f"   [{_format_member_tag(next_member)}] 上场接战！")
+        lines.append(f"   [{_format_member_tag(next_member, side_char)}] 上场接战！")
     return "\n".join(lines)
 
 
-def _format_member_tag(m: FormationMember) -> str:
+def _format_member_tag(m: FormationMember, side_char: str = "?") -> str:
     """简短的 [守·祢豆子 SR ❤️70] 标签。"""
-    side = "?"
-    side_char = "?"
     intimacy = m.intimacy if m.intimacy else 0
-    return f"{side}·{m.nickname} {m.rarity} ❤️{intimacy}"
+    return f"{side_char}·{m.nickname} {m.rarity} ❤️{intimacy}"
 
 
 # ============== §S8.4 结算贴 ==============
