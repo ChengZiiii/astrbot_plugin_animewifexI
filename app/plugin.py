@@ -77,6 +77,7 @@ class WifePluginCore(Star):
             wife_service=self.wife_service,
             cooldown_service=self.cooldown_service,
             tz=self.tz,
+            context=self.context,  # AstrBot Context — 主动消息推送用（PkV2Service 等）
         )
 
         # 启动零点清理任务

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
 from ..services.cooldown_service import CooldownService
@@ -36,6 +37,7 @@ class CommandContext:
     wife_service: WifeService
     cooldown_service: CooldownService
     tz: ZoneInfo
+    context: Optional[Any] = None  # AstrBot Context — 主动消息推送用，由 plugin.py 注入
 
     def today(self) -> str:
         """获取当前时区的今日日期字符串"""

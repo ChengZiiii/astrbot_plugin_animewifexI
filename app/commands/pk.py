@@ -134,13 +134,21 @@ async def _handle_pk_v2_4v4(
 
     # 调 PkV2Service.start_battle（构造 service + 发启动贴）
     umo = event.unified_msg_origin or ""
+
+    # Phase C.3: 从 ctx.context（AstrBot Context）构造 send_message 闭包
+    if ctx.context is not None:
+        async def _pk_v2_send(umo_arg: str, text: str) -> None:
+            from astrbot.api.event import MessageChain
+            chain = MessageChain().message(text)
+            await ctx.context.send_message(umo_arg, chain)
+    else:
+        _pk_v2_send = None
+
     service = PkV2Service(
         paths=ctx.paths,
         config=ctx.config,
         locks=ctx.locks,
-        # 注：send_message 由 service 通过构造时被设置
-        # Phase C.3 阶段允许外部注入；如果 ctx 提供就用，否则 no-op
-        send_message=getattr(ctx, "_pk_v2_send_message", None),
+        send_message=_pk_v2_send,
     )
     try:
         ack = await service.start_battle(battle, umo)

@@ -2,10 +2,20 @@
 
 # astrbot_plugin_animewifexI
 
-> ✅ **Phase 4 玩法已落地**
+> ✅ **v3.0.0 — 四大玩法升级 + 完整经济闭环**
 >
-> 当前版本已包含：连续签到、对话/约会、NTR 失败/被牛补偿、打工系统、PK/排行榜扩展、图鉴/面板、管理员测试与重置工具。
-> 规划与实现细节见 [ROADMAP.md](ROADMAP.md)、[ROADMAP_PHASE4_DETAILED.md](ROADMAP_PHASE4_DETAILED.md) 与 [CHANGELOG.md](CHANGELOG.md)。
+> 当前版本已包含：4v4 编队接力战、离婚系统、负债经济、NTR 安慰币、连续签到、对话/约会、打工系统、PK/排行榜扩展、图鉴/面板、管理员测试与重置工具。
+>
+> #### 新增核心系统
+>
+> | 系统 | 说明 |
+> |---|---|
+> | ⚔️ **4v4 编队接力战** | 4v4 编队 PK，速度判定回合制、双层被动（12 组合）、元素克制深化、4 状态层、主动消息推送 |
+> | 💔 **离婚系统** | 老婆离婚返还公式 + 双向平分家产（±200 封顶）+ 7 天冷却 + 二次确认 |
+> | 💳 **负债经济** | 余额可达 -500、0 利息、优先抵债、打工/商城负债限制 |
+> | 🪙 **NTR 安慰币** | 攻击者零代价、被牛方获安慰币（与离婚返还基础对齐）、复仇免费 |
+>
+> 规划与实现细节见 [ROADMAP.md](ROADMAP.md) 与 [CHANGELOG.md](CHANGELOG.md)。
 >
 > **升级注意（Phase 1 不兼容变更）**：
 > - 旧 v2.x 数据启动时自动归档到 `data/archive_v1/<时间戳>/`，**不做语义迁移**。
@@ -20,7 +30,7 @@
 - 排行榜：日榜/周榜/总榜/收集榜
 - 亲密度：摸头/送礼/每日递增/等级展示
 - 复仇机制：被牛后 24 小时内复仇，成功率翻倍
-- 完整单元测试覆盖（362 用例，脱离 AstrBot 框架本地可跑）
+- 完整单元测试覆盖（749 用例，脱离 AstrBot 框架本地可跑）
 - 命令级 QA 脚本已补齐全量与深度验证（`data_qa/`）
 - 路线图驱动开发：Phase 1 ✅ / Phase 2 ✅ / Phase 3 ✅ / Phase 4 ✅（详见 [ROADMAP.md](ROADMAP.md)）
 
@@ -54,6 +64,11 @@ https://cdn.jsdmirror.com/gh/monbed/wife@main/
 | Phase 2 | 冷却 + 榜单 + 亲密度 + 复仇 | ✅ 已完成 | `v3.0.0-phase2` |
 | Phase 3 | 经济 + 稀有度 + 锁定 + PK + 图鉴 + 面板 | ✅ 已完成 | `v3.0.0-phase3-gacha` |
 | Phase 4 | 连签 + 对话/约会 + 打工 + NTR补偿 + 排行扩展 | ✅ 已完成 | `v3.0.0-phase4` |
+| Phase A | PK v2（编队、速度判定、状态层、被动、换人、超时判定） | ✅ 已完成 | — |
+| Phase B | 离婚系统（返还公式 + 平分家产 + 7天冷却 + 二次确认） | ✅ 已完成 | — |
+| Phase C | 负债经济（-500 底线 + 0 利息 + 优先抵债） | ✅ 已完成 | — |
+| Phase D/E | NTR 零代价 + 安慰币（复仇免费、被牛补偿） | ✅ 已完成 | — |
+| Phase F/G | 负债查询/警告 + 面板 NTR 统计 | ✅ 已完成 | — |
 
 详见 [ROADMAP.md](ROADMAP.md)。
 
@@ -65,7 +80,7 @@ https://cdn.jsdmirror.com/gh/monbed/wife@main/
 # 安装测试依赖
 pip install pytest pytest-asyncio tzdata
 
-# 跑全部测试（362 用例）
+# 跑全部测试（749 用例）
 PYTHONPATH=. python -m pytest
 ```
 

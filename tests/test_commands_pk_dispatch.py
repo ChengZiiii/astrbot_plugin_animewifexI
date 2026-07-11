@@ -97,6 +97,9 @@ class TestPkDispatch4v4:
         ctx = _make_ctx(tmp_paths, config, locks, ownership_service, mock_wife_service)
         event = _MockEvent("g1", "u1", "alice", "老婆 PK @bob", at_target="u2")
 
+        # 给 ctx 装配 mock AstrBot context（生产环境下由 plugin.py 注入）
+        ctx.context = object()  # 任意非 None 值，仅驱动 _send_message 闭包创建
+
         called_kwargs = {}
 
         async def fake_start_battle(battle, umo):
@@ -105,10 +108,10 @@ class TestPkDispatch4v4:
             called_kwargs["gid"] = battle.gid
             return "✅ 4v4 接力战启动！请查看后续战报..."
 
-        # 把 PkV2Service 整个类换掉
+        # 把 PkV2Service 整个类换掉，捕获构造参数
         class FakePkV2:
             def __init__(self, *a, **kw):
-                pass
+                called_kwargs["send_message"] = kw.get("send_message")
             async def start_battle(self, battle, umo):
                 return await fake_start_battle(battle, umo)
 
@@ -139,6 +142,8 @@ class TestPkDispatch4v4:
         assert called_kwargs["gid"] == "g1"
         assert called_kwargs["umo"] == "aiocqhttp:group_message:g1"
         assert any("✅" in r for r in event.replies)
+        # Phase C.3: send_message 必须非 None，保证战斗消息不被吞
+        assert called_kwargs["send_message"] is not None, "PkV2Service 的 send_message 必须被正确注入"
 
 
 # ============== 1v1 dispatch（带编号） ==============
