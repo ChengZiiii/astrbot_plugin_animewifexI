@@ -268,14 +268,27 @@ def _extract_args_after_pk(msg: str) -> str:
 
 
 def _has_legacy_pk_indices(args: str) -> bool:
-    """args 中是否含 1～2 个数字（推测为 1v1 编号）"""
+    """args 中是否含 1～2 个数字（推测为 1v1 编号）。
+
+    关键：QQ @mention 会以 ``[At:QQ]`` 或 ``@QQ`` 形式出现在 message_str 中，
+    其中的 QQ 号（9~10 位数字）绝不能误判为老婆编号。
+    方案：只检查：a) 小数值（≤ 持有上限 30）且 b) 不在 @ 标记内。
+    """
     if not args:
         return False
-    nums = re.findall(r"\b\d+\b", args)
+    # 排除 @mention（QQ 号）
+    clean = re.sub(r"\[At:\d+\]", "", args)  # [At:QQ]
+    clean = re.sub(r"@\d+", "", clean)  # @QQ
+    clean = clean.strip()
+    if not clean:
+        return False
+    nums = re.findall(r"\b(\d+)\b", clean)
     if not nums:
         return False
-    # 1 个或 2 个数字 → 1v1 语法
-    return len(nums) <= 2
+    # 1 个或 2 个数字，且都是小数值（≤ 30，合理的老婆编号范围）
+    if len(nums) > 2:
+        return False
+    return all(int(n) <= 30 for n in nums)
 
 
 def _resolve_target(
