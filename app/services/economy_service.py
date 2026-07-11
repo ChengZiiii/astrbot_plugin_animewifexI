@@ -20,7 +20,27 @@ from .plugin_config import PluginConfig
 
 logger = logging.getLogger("astrbot_plugin_animewifex.economy")
 
-__all__ = ["EconomyService", "WeeklySurpriseBoxResult"]
+DEBT_FLOOR = -500  # 硬封顶：余额永远 ≥ -500
+
+
+def try_deduct(current_coins: int, amount: int) -> tuple[bool, int]:
+    """扣款后余额不能 < DEBT_FLOOR (-500)。
+
+    Returns:
+        (success: bool, new_balance: int)
+        如果会触底，返回 (False, current_coins) 且不做任何操作。
+    """
+    if current_coins - amount < DEBT_FLOOR:
+        return False, current_coins
+    return True, current_coins - amount
+
+
+def apply_income(current_coins: int, income: int) -> int:
+    """优先抵债：余额为负时收入先填坑，再入正余额。"""
+    return current_coins + income
+
+
+__all__ = ["DEBT_FLOOR", "try_deduct", "apply_income", "EconomyService", "WeeklySurpriseBoxResult"]
 
 
 @dataclass
@@ -69,7 +89,7 @@ class EconomyService:
         profile = ProfileStore.get_or_create(
             profiles, uid, nick, self._config.initial_coins
         )
-        profile.coins += amount
+        profile.coins = apply_income(profile.coins, amount)
         store.save_all(profiles)
 
         logger.debug("earn: gid=%s uid=%s amount=%d reason=%s -> balance=%d",
@@ -100,12 +120,13 @@ class EconomyService:
             profiles, uid, nick, self._config.initial_coins
         )
 
-        if profile.coins < amount:
-            logger.debug("spend: gid=%s uid=%s amount=%d reason=%s -> INSUFFICIENT (balance=%d)",
-                         gid, uid, amount, reason, profile.coins)
+        success, new_balance = try_deduct(profile.coins, amount)
+        if not success:
+            logger.debug("spend: gid=%s uid=%s amount=%d reason=%s -> INSUFFICIENT (balance=%d, floor=%d)",
+                         gid, uid, amount, reason, profile.coins, DEBT_FLOOR)
             return False
 
-        profile.coins -= amount
+        profile.coins = new_balance
         store.save_all(profiles)
 
         logger.debug("spend: gid=%s uid=%s amount=%d reason=%s -> balance=%d",
@@ -245,16 +266,17 @@ class EconomyService:
         self, profile: UserProfile, amount: int
     ) -> UserProfile:
         """直接给 profile 加币（不落盘，调用方负责 save）。"""
-        profile.coins += amount
+        profile.coins = apply_income(profile.coins, amount)
         return profile
 
     def deduct_coins_from_profile(
         self, profile: UserProfile, amount: int
     ) -> bool:
-        """直接从 profile 扣币（不落盘）。余额不足返回 False。"""
-        if profile.coins < amount:
+        """直接从 profile 扣币（不落盘）。余额不足或触底返回 False。"""
+        success, new_balance = try_deduct(profile.coins, amount)
+        if not success:
             return False
-        profile.coins -= amount
+        profile.coins = new_balance
         return True
 
     # ---------- 同步别名（测试/无锁场景兼容） ----------

@@ -95,10 +95,10 @@ class TestSpend:
         assert economy.balance("g1", "u1") == 70
 
     def test_spend_insufficient_balance(self, economy):
-        """余额不足返回 False，不扣款。"""
+        """余额不足但未触底时允许变负。"""
         economy.earn_sync("g1", "u1", 20, nick="Alice")
-        assert economy.spend_sync("g1", "u1", 30) is False
-        assert economy.balance("g1", "u1") == 20
+        assert economy.spend_sync("g1", "u1", 30) is True  # 允许多扣到负
+        assert economy.balance("g1", "u1") == -10
 
     def test_spend_exact_balance(self, economy):
         """余额刚好够时扣款成功。"""
@@ -119,8 +119,9 @@ class TestSpend:
         assert economy.balance("g1", "u1") == 50
 
     def test_spend_nonexistent_user(self, economy):
-        """不存在的用户扣款失败。"""
-        assert economy.spend_sync("g1", "u1", 10) is False
+        """不存在的用户创建 profile 后扣款（0 币 → 允许变负）。"""
+        assert economy.spend_sync("g1", "u1", 10) is True
+        assert economy.balance("g1", "u1") == -10
 
 
 class TestDailyCheckin:
@@ -241,9 +242,9 @@ class TestProfileManipulation:
         assert profile.coins == 20
 
     def test_deduct_coins_from_profile_insufficient(self, economy):
-        """直接从 profile 扣币余额不足。"""
+        """直接从 profile 扣币（余额不足但未触底则变负）。"""
         from app.models.profile import UserProfile
 
         profile = UserProfile(uid="u1", nick="Alice", coins=20)
-        assert economy.deduct_coins_from_profile(profile, 30) is False
-        assert profile.coins == 20  # 不变
+        assert economy.deduct_coins_from_profile(profile, 30) is True
+        assert profile.coins == -10
