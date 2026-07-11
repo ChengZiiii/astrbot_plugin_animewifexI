@@ -23,7 +23,7 @@ from __future__ import annotations
 import random
 from typing import Any, Dict, Mapping, Optional
 
-from ..models.pk_battle import BattleStatusLayer, FormationMember
+from ..models.pk_battle import BattleStatusLayer, FormationMember, PkBattle
 
 __all__ = [
     "PkV2Defaults",
@@ -32,6 +32,8 @@ __all__ = [
     "calc_raw_damage",
     "on_hit_apply_layers",
     "accumulate_status_layers",
+    "swap_if_dead",
+    "do_turn",
     "ELEMENT_ADVANTAGE_MAP",
 ]
 
@@ -365,3 +367,205 @@ def accumulate_status_layers(
     else:
         # 防御性：base_hp=0 时不激活
         status.frenzy = False
+
+
+# ============== 死亡换人（spec §S6.3） ==============
+
+
+def swap_if_dead(battle: "PkBattle", side: str) -> bool:
+    """如果 ``side`` 当前 active 成员已死，标记下一个存活的为 active。
+
+    参数：
+
+    * ``side`` —— ``"atk"`` 或 ``"def"``
+
+    返回：是否实际换了人（False = 当前 active 还活着 / 无下一个）
+    """
+    if side == "atk":
+        formation = battle.atk_formation
+        idx_pos = 0
+    elif side == "def":
+        formation = battle.def_formation
+        idx_pos = 1
+    else:
+        raise ValueError(f"side must be 'atk' or 'def', got {side!r}")
+
+    if not formation:
+        return False
+
+    active_pos = battle.active_idx[idx_pos]  # 1-based
+    active_idx_zero = active_pos - 1
+    if active_idx_zero < 0 or active_idx_zero >= len(formation):
+        return False
+
+    current = formation[active_idx_zero]
+    if current.is_alive:
+        # 当前还活着 → 不换
+        return False
+
+    # 找下一个存活的（从 active_pos+1 开始，到队尾）
+    next_idx = None
+    for i in range(active_pos, len(formation)):
+        if formation[i].is_alive:
+            next_idx = i
+            break
+
+    if next_idx is None:
+        # 没有下一个：调用方负责判胜负
+        return False
+
+    # 标记新的 active
+    formation[next_idx].is_active = True
+    formation[active_idx_zero].is_active = False
+    new_active_idx = list(battle.active_idx)
+    new_active_idx[idx_pos] = next_idx + 1  # 转回 1-based
+    battle.active_idx = (new_active_idx[0], new_active_idx[1])
+    return True
+
+
+# ============== 单回合 do_turn（spec §S6.4） ==============
+
+
+def do_turn(
+    battle: "PkBattle",
+    turn_idx: int,
+    rng: random.Random,
+) -> Dict[str, Any]:
+    """单回合完整流程（spec §S6.4）。
+
+    1. 速度判定
+    2. 先手攻击（含 on_hit_apply_layers）
+    3. 后手反击（如存活）
+    4. 死亡换人（双方）
+    5. 状态层累积（双方 active）
+    6. 检查胜负（一方无存活则结束）
+
+    返回 dict：
+
+    * ``turn_finished`` —— bool，本回合正常推进完
+    * ``battle_ended`` —— bool，是否本回合后战斗结束
+    * ``winner_uid`` —— 战斗结束时，胜方 uid
+    * ``end_reason`` —— ``"all_dead"`` / ``""``
+    * ``atk_swapped_to`` / ``def_swapped_to`` —— 死亡换人后的 active pos（1-based）
+    * ``first_striker`` —— ``"atk"`` / ``"def"``
+    * ``attack_events`` —— list of {``side``, ``hit``, ``dmg``, ``crit``, ``combo``}
+    """
+    atk_pos = battle.active_idx[0]
+    df_pos = battle.active_idx[1]
+    if atk_pos < 1 or atk_pos > len(battle.atk_formation):
+        return {"turn_finished": False, "battle_ended": True, "winner_uid": battle.def_uid, "end_reason": "all_dead"}
+    if df_pos < 1 or df_pos > len(battle.def_formation):
+        return {"turn_finished": False, "battle_ended": True, "winner_uid": battle.atk_uid, "end_reason": "all_dead"}
+
+    atk_member = battle.atk_formation[atk_pos - 1]
+    df_member = battle.def_formation[df_pos - 1]
+    atk_status = battle.atk_status_layers[atk_pos - 1]
+    df_status = battle.def_status_layers[df_pos - 1]
+
+    attack_events: list = []
+
+    # === 1. 速度判定 ===
+    first = pick_first_striker(atk_member, df_member, atk_status, df_status, rng)
+
+    # === 2. 先手攻击 ===
+    if first == "atk":
+        result = calc_raw_damage(atk_member, df_member, atk_status, df_status, turn_idx, rng)
+        attack_events.append({"side": "atk", **result})
+        _apply_attack_result(atk_member, df_member, atk_status, df_status, result)
+        # === 3. 后手反击（如存活）===
+        if df_member.is_alive:
+            result2 = calc_raw_damage(df_member, atk_member, df_status, atk_status, turn_idx, rng)
+            attack_events.append({"side": "def", **result2})
+            _apply_attack_result(df_member, atk_member, df_status, atk_status, result2)
+    else:
+        # def 先手
+        result = calc_raw_damage(df_member, atk_member, df_status, atk_status, turn_idx, rng)
+        attack_events.append({"side": "def", **result})
+        _apply_attack_result(df_member, atk_member, df_status, atk_status, result)
+        if atk_member.is_alive:
+            result2 = calc_raw_damage(atk_member, df_member, atk_status, df_status, turn_idx, rng)
+            attack_events.append({"side": "atk", **result2})
+            _apply_attack_result(atk_member, df_member, atk_status, df_status, result2)
+
+    # === 4. 死亡换人 ===
+    swap_if_dead(battle, "atk")
+    swap_if_dead(battle, "def")
+
+    # === 5. 状态层累积（双方当前 active） ===
+    # 注意：换人后 active 可能已变；这里对换人后的 active 应用 turn-end 状态
+    atk_pos_after = battle.active_idx[0]
+    df_pos_after = battle.active_idx[1]
+    if 1 <= atk_pos_after <= len(battle.atk_formation):
+        accumulate_status_layers(
+            battle.atk_formation[atk_pos_after - 1],
+            battle.atk_status_layers[atk_pos_after - 1],
+            turn_idx,
+        )
+    if 1 <= df_pos_after <= len(battle.def_formation):
+        accumulate_status_layers(
+            battle.def_formation[df_pos_after - 1],
+            battle.def_status_layers[df_pos_after - 1],
+            turn_idx,
+        )
+
+    # === 6. 检查胜负 ===
+    atk_any_alive = any(m.is_alive for m in battle.atk_formation)
+    df_any_alive = any(m.is_alive for m in battle.def_formation)
+
+    battle_ended = False
+    winner_uid = ""
+    end_reason = ""
+    if not atk_any_alive and not df_any_alive:
+        # 双方同归于尽：判防守方胜（spec §S6.3 默认）
+        battle_ended = True
+        winner_uid = battle.def_uid
+        end_reason = "all_dead"
+    elif not atk_any_alive:
+        battle_ended = True
+        winner_uid = battle.def_uid
+        end_reason = "all_dead"
+    elif not df_any_alive:
+        battle_ended = True
+        winner_uid = battle.atk_uid
+        end_reason = "all_dead"
+
+    return {
+        "turn_finished": True,
+        "battle_ended": battle_ended,
+        "winner_uid": winner_uid,
+        "end_reason": end_reason,
+        "first_striker": first,
+        "atk_swapped_to": battle.active_idx[0],
+        "def_swapped_to": battle.active_idx[1],
+        "attack_events": attack_events,
+    }
+
+
+def _apply_attack_result(
+    attacker: FormationMember,
+    defender: FormationMember,
+    attacker_status: BattleStatusLayer,
+    defender_status: BattleStatusLayer,
+    result: Dict[str, Any],
+) -> None:
+    """把单次攻击的结果应用到双方 HP + 状态层。
+
+    * 命中 → 扣 HP；HP ≤ 0 → 标记 is_alive=False
+    * 命中 → 累积 qi_po / weak_point
+    * 击杀 → 累 attacker.kills
+    * 双方各自累 damage_dealt / damage_taken
+    """
+    if not result.get("hit", False):
+        return
+
+    dmg = int(result.get("dmg", 0) or 0)
+    defender.current_hp = max(0, defender.current_hp - dmg)
+    if defender.current_hp <= 0:
+        defender.is_alive = False
+        attacker.kills += 1
+
+    attacker.damage_dealt += dmg
+    defender.damage_taken += dmg
+
+    # 状态层累积（气魄 / 弱点）
+    on_hit_apply_layers(attacker_status, defender_status, is_attacker_hit=True)
