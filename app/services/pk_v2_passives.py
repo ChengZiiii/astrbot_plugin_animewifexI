@@ -138,6 +138,12 @@ def derive_element(base_stats: Mapping[str, object]) -> str:
     """
     a, d, h = _extract_stats(base_stats)
 
+    # spec 字面是 `if a >= d and a >= h` 然后 `if h >= a and h >= d`。
+    # 第二分支因为第一个分支已经排除了 ``a >= d and a >= h``，等价于
+    # ``h > a or (h >= a and h >= d)``，可化简为 ``h >= d``（当 h >= a 时第一分支
+    # 已被排除）；若 h < a，则靠第三个分支 ``return "智力"`` 兜底。已通过
+    # tests/test_pk_v2_passives.py::TestDeriveElement 的 7 个用例覆盖（含 a==d、
+    # a==h、h==d 等并列情形）。
     if a >= d and a >= h:
         return "力量"
     if h >= d:

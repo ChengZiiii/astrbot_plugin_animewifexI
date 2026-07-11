@@ -78,6 +78,7 @@ class FormationMember:
     damage_dealt: int = 0
     damage_taken: int = 0
     passive_id: str = ""
+    work_mode: str = ""  # 打工模式（"normal"/"overtime"/"expedition"，空 = 不在打工）
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -98,6 +99,7 @@ class FormationMember:
             "damage_dealt": self.damage_dealt,
             "damage_taken": self.damage_taken,
             "passive_id": self.passive_id,
+            "work_mode": self.work_mode,
         }
 
     @classmethod
@@ -120,6 +122,7 @@ class FormationMember:
             damage_dealt=int(data.get("damage_dealt", 0) or 0),
             damage_taken=int(data.get("damage_taken", 0) or 0),
             passive_id=str(data.get("passive_id", "") or ""),
+            work_mode=str(data.get("work_mode", "") or ""),
         )
 
 

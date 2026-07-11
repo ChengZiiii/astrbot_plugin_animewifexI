@@ -34,12 +34,14 @@ def _make_member(
     intimacy: int = 0,
     is_locked: bool = False,
     current_hp: int = 200,
+    work_mode: str = "",
 ) -> FormationMember:
     return FormationMember(
         wid=wid, pos=1, nickname=f"W{wid}", rarity=rarity, element=element,
         base_atk=atk, base_def=defense, base_hp=hp,
         intimacy=intimacy, is_locked=is_locked,
         current_hp=current_hp, is_alive=True, is_active=True,
+        work_mode=work_mode,
     )
 
 
@@ -283,10 +285,38 @@ class TestCalcRawDamageMultipliers:
         result = calc_raw_damage(atk, df, fresh_status, fresh_status, 0, rng)
         assert result["multipliers"]["element_mult"] == pytest.approx(1.30)
 
+    def test_element_advantage_agility_vs_intellect(self, fresh_status, rng):
+        """敏捷 → 智力 = 1.30（克制）"""
+        atk = _make_member("a", rarity="N", element="敏捷")
+        df = _make_member("i", rarity="N", element="智力")
+        result = calc_raw_damage(atk, df, fresh_status, fresh_status, 0, rng)
+        assert result["multipliers"]["element_mult"] == pytest.approx(1.30)
+
+    def test_element_advantage_intellect_vs_power(self, fresh_status, rng):
+        """智力 → 力量 = 1.30（克制）"""
+        atk = _make_member("i", rarity="N", element="智力")
+        df = _make_member("p", rarity="N", element="力量")
+        result = calc_raw_damage(atk, df, fresh_status, fresh_status, 0, rng)
+        assert result["multipliers"]["element_mult"] == pytest.approx(1.30)
+
     def test_element_disadvantage_agility_vs_power(self, fresh_status, rng):
         """敏捷 → 力量 = 0.75（被克制）"""
         atk = _make_member("a", rarity="N", element="敏捷")
         df = _make_member("p", rarity="N", element="力量")
+        result = calc_raw_damage(atk, df, fresh_status, fresh_status, 0, rng)
+        assert result["multipliers"]["element_mult"] == pytest.approx(0.75)
+
+    def test_element_disadvantage_intellect_vs_agility(self, fresh_status, rng):
+        """智力 → 敏捷 = 0.75（被克制）"""
+        atk = _make_member("i", rarity="N", element="智力")
+        df = _make_member("a", rarity="N", element="敏捷")
+        result = calc_raw_damage(atk, df, fresh_status, fresh_status, 0, rng)
+        assert result["multipliers"]["element_mult"] == pytest.approx(0.75)
+
+    def test_element_disadvantage_power_vs_intellect(self, fresh_status, rng):
+        """力量 → 智力 = 0.75（被克制）"""
+        atk = _make_member("p", rarity="N", element="力量")
+        df = _make_member("i", rarity="N", element="智力")
         result = calc_raw_damage(atk, df, fresh_status, fresh_status, 0, rng)
         assert result["multipliers"]["element_mult"] == pytest.approx(0.75)
 
@@ -338,6 +368,73 @@ class TestCalcRawDamageMultipliers:
         df = _make_member("d")
         result = calc_raw_damage(atk, df, fresh_status, fresh_status, 0, rng)
         assert result["multipliers"]["intimacy_mult"] == pytest.approx(1.20)
+
+
+class TestCalcRawDamageWorkMult:
+    """work_mult 乘数（spec §S6.2 §8 / Phase 4 打工惩罚）
+
+    work_mult 按 attacker.work_mode 查表：
+    * ``normal``     → 0.85
+    * ``overtime``   → 0.75
+    * ``expedition`` → 0.65
+    * 空 / 未知模式 → 1.0
+    """
+
+    def test_work_mult_normal_0_85(self, fresh_status, rng):
+        """work_mode="normal" → work_mult = 0.85"""
+        atk = _make_member("n1", work_mode="normal")
+        df = _make_member("d1")
+        result = calc_raw_damage(atk, df, fresh_status, fresh_status, 0, rng)
+        assert result["multipliers"]["work_mult"] == pytest.approx(0.85)
+
+    def test_work_mult_overtime_0_75(self, fresh_status, rng):
+        """work_mode="overtime" → work_mult = 0.75"""
+        atk = _make_member("o1", work_mode="overtime")
+        df = _make_member("d1")
+        result = calc_raw_damage(atk, df, fresh_status, fresh_status, 0, rng)
+        assert result["multipliers"]["work_mult"] == pytest.approx(0.75)
+
+    def test_work_mult_expedition_0_65(self, fresh_status, rng):
+        """work_mode="expedition" → work_mult = 0.65"""
+        atk = _make_member("e1", work_mode="expedition")
+        df = _make_member("d1")
+        result = calc_raw_damage(atk, df, fresh_status, fresh_status, 0, rng)
+        assert result["multipliers"]["work_mult"] == pytest.approx(0.65)
+
+    def test_work_mult_empty_string_default_1_0(self, fresh_status, rng):
+        """work_mode=""（默认）→ work_mult = 1.0（不在打工）"""
+        atk = _make_member("z1", work_mode="")
+        df = _make_member("d1")
+        result = calc_raw_damage(atk, df, fresh_status, fresh_status, 0, rng)
+        assert result["multipliers"]["work_mult"] == pytest.approx(1.0)
+
+    def test_work_mult_unknown_mode_default_1_0(self, fresh_status, rng):
+        """work_mode=未知字符串 → work_mult = 1.0（兜底）"""
+        atk = _make_member("u1", work_mode="bogus_mode")
+        df = _make_member("d1")
+        result = calc_raw_damage(atk, df, fresh_status, fresh_status, 0, rng)
+        assert result["multipliers"]["work_mult"] == pytest.approx(1.0)
+
+    def test_work_mult_propagates_to_raw_damage(self, fresh_status):
+        """work_mult 实际参与伤害合成（normal 模式下 dmg 至少小于无惩罚基准）"""
+        # 固定命中 + 不暴击 + jitter=1.0（jitter=0.5 → factor=1.0）
+        class _Hit:
+            def random(self) -> float:
+                return 0.5
+
+        atk_normal = _make_member("n2", work_mode="normal")
+        atk_idle = _make_member("i2", work_mode="")
+        df = _make_member("d2")
+
+        r_normal = calc_raw_damage(atk_normal, df, fresh_status, fresh_status, 0, _Hit())
+        r_idle = calc_raw_damage(atk_idle, df, fresh_status, fresh_status, 0, _Hit())
+        # 0.85 倍率应该反映在 dmg 上（两次随机性相同 → dmg_normal = int(raw*0.85)）
+        assert r_normal["dmg"] < r_idle["dmg"]
+        # 同 raw 比例 0.85（±jitter 之前；此处 jitter=1.0 固定）
+        # 严格的算式：dmg_normal / dmg_idle ≈ 0.85
+        # 但 raw 包含 jitter=1.0, int() 截断可能让比例偏离一点
+        ratio = r_normal["dmg"] / max(r_idle["dmg"], 1)
+        assert 0.7 <= ratio <= 0.95, f"work_mult not propagated: ratio={ratio}"
 
 
 class TestCalcRawDamageStatusLayers:

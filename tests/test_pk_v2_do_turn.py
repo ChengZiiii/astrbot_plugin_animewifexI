@@ -15,6 +15,7 @@ import pytest
 
 from app.models.pk_battle import BattleStatusLayer, FormationMember, PkBattle
 from app.services.pk_v2_battle import (
+    PkV2Defaults,
     accumulate_status_layers,
     do_turn,
     swap_if_dead,
@@ -42,6 +43,24 @@ def _make_member(
         intimacy=0, is_locked=is_locked,
         current_hp=current_hp, is_alive=is_alive, is_active=is_active,
     )
+
+
+class _ScriptedRNG:
+    """按固定序列返回 random() 值的脚本化 RNG（用于精确控制概率分支）。
+
+    用法：传入一个 float 列表，每次调用 ``random()`` 顺序消费一个值。
+    """
+
+    def __init__(self, values):
+        self._values = list(values)
+        self._n = 0
+        self.calls = []
+
+    def random(self) -> float:
+        v = self._values[self._n]
+        self._n += 1
+        self.calls.append(v)
+        return v
 
 
 def _make_battle(
@@ -368,3 +387,143 @@ class TestDoTurnStatusAccumulation:
 
         assert battle.atk_status_layers[0].frenzy is True
         assert battle.def_status_layers[0].frenzy is False
+
+
+# ============== N 卡连击（spec §S3.5 N 卡被动） ==============
+
+
+class TestDoTurnCombo:
+    """N 卡连击：击杀后 25% 概率追加 1 次普通攻击（spec §S3.5 N 卡被动）。
+
+    接线要求：
+
+    * ``do_turn`` 当 ``attacker.rarity == "N"`` 且本次攻击击杀守方（hp → 0）且
+      ``rng.random() < 0.25`` 时：
+      - 标记连击（attack_events 加 ``combo: True`` 条目）
+      - 立即对守方再执行一次 ``calc_raw_damage``
+      - 二次伤害记入 attacker.damage_dealt 并扣 defender.current_hp
+    """
+
+    def test_combo_triggers_on_n_kill_within_25pct(self):
+        """N 卡一击毙命 + rng 序列让 combo 检查通过 → 2 个攻击事件（普通 + combo）"""
+        # 攻方 N 卡（必须）一击毙命；守方一击毙命 → 攻方先手
+        attacker = _make_member(
+            wid="a1", pos=1, rarity="N", element="力量",
+            atk=10000, defense=1, hp=200,
+        )
+        defender = _make_member(
+            wid="d1", pos=1, rarity="N", element="智力",
+            atk=1, defense=1, hp=50,
+        )
+        battle = _make_battle(atk_members=[attacker], df_members=[defender], active_idx=(1, 1))
+
+        # rng 序列：
+        # 1) 先手 hit (atk→df):   0.5  (< 0.90 → 命中)
+        # 2) 先手 crit (atk→df):  0.95 (> 0.10 N 卡 crit_rate → 不暴击)
+        # 3) 先手 jitter:         0.5  (jitter=1.0)
+        # 4) combo check:         0.1  (< 0.25 → 触发 combo)
+        # 5) combo hit:           0.5  (命中)
+        # 6) combo crit:          0.95 (不暴击)
+        # 7) combo jitter:        0.5
+        # 8) 后手反击 → df 已死 → 跳过
+        rng = _ScriptedRNG([0.5, 0.95, 0.5, 0.1, 0.5, 0.95, 0.5])
+
+        result = do_turn(battle, turn_idx=0, rng=rng)
+
+        attack_events = result["attack_events"]
+        # 应该有 2 条：先手一击 + combo 补刀
+        assert len(attack_events) == 2, f"expected 2 attack_events, got {len(attack_events)}"
+
+        # 第 1 条：普通攻击，combo=False
+        evt0 = attack_events[0]
+        assert evt0["side"] == "atk"
+        assert evt0["hit"] is True
+        assert evt0["combo"] is False
+        dmg0 = evt0["dmg"]
+
+        # 第 2 条：combo 补刀，combo=True, combo_followup=True
+        evt1 = attack_events[1]
+        assert evt1["side"] == "atk"
+        assert evt1["combo"] is True
+        assert evt1["hit"] is True
+        dmg1 = evt1["dmg"]
+
+        # 攻方 damage_dealt = 两次 dmg 之和
+        assert attacker.damage_dealt == dmg0 + dmg1, (
+            f"damage_dealt={attacker.damage_dealt}, expected {dmg0 + dmg1}"
+        )
+
+    def test_combo_not_triggered_when_rng_above_threshold(self):
+        """N 卡一击毙命，但 rng 序列让 combo 检查不通过 → 只有 1 个攻击事件"""
+        attacker = _make_member(
+            wid="a1", pos=1, rarity="N", element="力量",
+            atk=10000, defense=1, hp=200,
+        )
+        defender = _make_member(
+            wid="d1", pos=1, rarity="N", element="智力",
+            atk=1, defense=1, hp=50,
+        )
+        battle = _make_battle(atk_members=[attacker], df_members=[defender], active_idx=(1, 1))
+
+        # rng 序列：combo check = 0.5 (>= 0.25 → 不触发)
+        rng = _ScriptedRNG([0.5, 0.95, 0.5, 0.5])
+
+        result = do_turn(battle, turn_idx=0, rng=rng)
+
+        attack_events = result["attack_events"]
+        assert len(attack_events) == 1, (
+            f"expected 1 attack_event (no combo), got {len(attack_events)}"
+        )
+        assert attack_events[0]["combo"] is False
+        # damage_dealt = 单次 dmg
+        assert attacker.damage_dealt == attack_events[0]["dmg"]
+
+    def test_combo_only_for_n_rarity(self):
+        """非 N 卡击杀 → 不触发 combo（即使 rng < 0.25 也会）"""
+        attacker = _make_member(
+            wid="a1", pos=1, rarity="SSR", element="力量",
+            atk=10000, defense=1, hp=200,
+        )
+        defender = _make_member(
+            wid="d1", pos=1, rarity="N", element="智力",
+            atk=1, defense=1, hp=50,
+        )
+        battle = _make_battle(atk_members=[attacker], df_members=[defender], active_idx=(1, 1))
+
+        # 极端：把 rng 阈值设得很小；如果 combo 检查被错误触发，会看到多余 random() 调用
+        rng = _ScriptedRNG([0.5, 0.95, 0.5])
+
+        result = do_turn(battle, turn_idx=0, rng=rng)
+
+        assert len(result["attack_events"]) == 1, (
+            f"SSR attacker should not trigger combo: got {len(result['attack_events'])} events"
+        )
+        # 也没调用额外的 random()（combo check 不存在）
+        assert len(rng.calls) == 3, f"rng calls={rng.calls}"
+
+    def test_combo_does_not_trigger_if_defender_not_killed(self):
+        """N 卡没击杀 → 不触发 combo（即使 rng < 0.25）"""
+        # 攻方 N 卡，但伤害不足以秒杀
+        attacker = _make_member(
+            wid="a1", pos=1, rarity="N", element="力量",
+            atk=10, defense=1, hp=200,
+        )
+        defender = _make_member(
+            wid="d1", pos=1, rarity="N", element="智力",
+            atk=1, defense=1, hp=9999,
+        )
+        battle = _make_battle(atk_members=[attacker], df_members=[defender], active_idx=(1, 1))
+
+        # 强制命中 + 不暴击；def 不死 → combo 不触发
+        # 然后后手反击也要命中，但反击的伤害用尽 rng 即可
+        # 序列：atk hit/crit/jitter, df hit/crit/jitter
+        rng = _ScriptedRNG([0.5, 0.95, 0.5, 0.5, 0.95, 0.5])
+
+        result = do_turn(battle, turn_idx=0, rng=rng)
+
+        # 没有击杀 → 不应触发 combo
+        assert defender.is_alive is True
+        # 事件数：先手 1 + 后手 1 = 2；没有 combo 补刀
+        assert len(result["attack_events"]) == 2
+        for evt in result["attack_events"]:
+            assert evt["combo"] is False

@@ -245,9 +245,12 @@ def calc_raw_damage(
     weak_point_mult = 1.0 + min(df_status.weak_point, PkV2Defaults.WEAK_POINT_MAX) * PkV2Defaults.WEAK_POINT_PER_LAYER
 
     # === 8. 打工惩罚（沿用 Phase 4）===
-    work_mult = 1.0  # v3 接力战中"打工中的老婆"按 B.3 状态层处理；这里默认无惩罚
-    # 注：spec §S6.2 公式保留 work_mult 占位，本期暂取 1.0
-    # （编队开始时老婆在打工会被剔除，Phase C 接入后由调用方传入 work_mode）
+    # spec §S6.2 公式：work_mult 按 attacker.work_mode 查表，空 / 未知模式 = 1.0
+    work_mult = {
+        "normal": PkV2Defaults.WORK_MULT_NORMAL,
+        "overtime": PkV2Defaults.WORK_MULT_OVERTIME,
+        "expedition": PkV2Defaults.WORK_MULT_EXPEDITION,
+    }.get(getattr(attacker, "work_mode", "") or "", 1.0)
 
     # === 9. 亲密加成 ===
     intimacy_mult = 1 + attacker.intimacy / 500.0
@@ -473,20 +476,34 @@ def do_turn(
         result = calc_raw_damage(atk_member, df_member, atk_status, df_status, turn_idx, rng)
         attack_events.append({"side": "atk", **result})
         _apply_attack_result(atk_member, df_member, atk_status, df_status, result)
+        # === 2.5 N 卡连击（击杀后 25% 概率追加 1 次普通攻击）===
+        _try_combo_on_kill(
+            "atk", atk_member, df_member, atk_status, df_status, turn_idx, rng, attack_events,
+        )
         # === 3. 后手反击（如存活）===
         if df_member.is_alive:
             result2 = calc_raw_damage(df_member, atk_member, df_status, atk_status, turn_idx, rng)
             attack_events.append({"side": "def", **result2})
             _apply_attack_result(df_member, atk_member, df_status, atk_status, result2)
+            # 后手反击若是 N 卡也击杀攻方，触发连击
+            _try_combo_on_kill(
+                "def", df_member, atk_member, df_status, atk_status, turn_idx, rng, attack_events,
+            )
     else:
         # def 先手
         result = calc_raw_damage(df_member, atk_member, df_status, atk_status, turn_idx, rng)
         attack_events.append({"side": "def", **result})
         _apply_attack_result(df_member, atk_member, df_status, atk_status, result)
+        _try_combo_on_kill(
+            "def", df_member, atk_member, df_status, atk_status, turn_idx, rng, attack_events,
+        )
         if atk_member.is_alive:
             result2 = calc_raw_damage(atk_member, df_member, atk_status, df_status, turn_idx, rng)
             attack_events.append({"side": "atk", **result2})
             _apply_attack_result(atk_member, df_member, atk_status, df_status, result2)
+            _try_combo_on_kill(
+                "atk", atk_member, df_member, atk_status, df_status, turn_idx, rng, attack_events,
+            )
 
     # === 4. 死亡换人 ===
     swap_if_dead(battle, "atk")
@@ -570,6 +587,52 @@ def _apply_attack_result(
 
     # 状态层累积（气魄 / 弱点）
     on_hit_apply_layers(attacker_status, defender_status, is_attacker_hit=True)
+
+
+def _try_combo_on_kill(
+    side: str,
+    attacker: FormationMember,
+    defender: FormationMember,
+    atk_status: BattleStatusLayer,
+    df_status: BattleStatusLayer,
+    turn_idx: int,
+    rng: random.Random,
+    attack_events: list,
+) -> None:
+    """N 卡连击（spec §S3.5 N 卡被动）：击杀后 25% 概率追加 1 次普通攻击。
+
+    触发条件（**全部**满足）：
+
+    1. ``attacker.rarity == "N"``
+    2. 本次攻击造成了击杀（``defender.is_alive == False``）
+    3. ``rng.random() < PkV2Defaults.N_COMBO_CHANCE``（25%）
+
+    触发行为：
+
+    * 立即对同一守方再执行一次 ``calc_raw_damage``（不重走先手判定）
+    * 二次伤害记入 ``attacker.damage_dealt``，并扣 ``defender.current_hp``
+      （HP 已 ≤ 0 → max(0, hp-dmg)=0，无副作用，但保持数值合法）
+    * ``attack_events`` 追加一条 ``{"side": side, "combo_followup": True, ...}`` 事件，
+      其中 ``combo=True``（与首击的 ``combo=False`` 区分）
+    * 不再累 ``kills``（已死，不再计数）；不再累积 qi_po / weak_point（已死不再累积）
+    """
+    if attacker.rarity != "N":
+        return
+    if defender.is_alive:
+        return
+    if rng.random() >= PkV2Defaults.N_COMBO_CHANCE:
+        return
+
+    combo_result = calc_raw_damage(attacker, defender, atk_status, df_status, turn_idx, rng)
+    combo_result["combo"] = True
+    attack_events.append({"side": side, "combo_followup": True, **combo_result})
+
+    # 二次伤害扣 HP + 累 damage_dealt（不累 kills / 不累状态层 —— 已死不再累积）
+    if combo_result.get("hit"):
+        dmg = int(combo_result.get("dmg", 0) or 0)
+        attacker.damage_dealt += dmg
+        defender.damage_taken += dmg
+        defender.current_hp = max(0, defender.current_hp - dmg)
 
 
 # ============== 战斗超时 / HP 比判定（spec §S7.1） ==============
