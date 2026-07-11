@@ -229,6 +229,10 @@ class PluginConfig:
     work_partner_daily_limit: int = 1
     intimacy_decay: int = 0
 
+    # ---------- Phase 5 / v3 接力战（Phase C 接入）----------
+    pk_v2_enabled: bool = True                  # 4v4 接力战总开关（false 回退 1v1）
+    pk_v2_turn_delay_ms: int = 1000             # 每回合间主动消息延迟（毫秒）
+
     # ---------- 派生 ----------
     @property
     def normalized_image_base_url(self) -> str:
@@ -402,6 +406,9 @@ class PluginConfig:
             work_partner_bonus=_as_float(d.get("work_partner_bonus"), 0.20),
             work_partner_daily_limit=_as_int(d.get("work_partner_daily_limit"), 1),
             intimacy_decay=_as_int(d.get("intimacy_decay"), 0),
+            # Phase 5 / v3 接力战
+            pk_v2_enabled=_as_bool(d.get("pk_v2_enabled"), True),
+            pk_v2_turn_delay_ms=_as_int(d.get("pk_v2_turn_delay_ms"), 1000),
         )
 
     @classmethod
