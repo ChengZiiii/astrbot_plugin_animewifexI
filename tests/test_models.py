@@ -290,6 +290,67 @@ class TestProfileFormation:
         assert p.formation == []
 
 
+class TestProfileDivorceFields:
+    """Phase D / v3 离婚系统：UserProfile 新增 5 个离婚跟踪字段"""
+
+    def test_defaults(self):
+        p = UserProfile(uid="u1", nick="test")
+        assert p.last_divorce_date == ""
+        assert p.total_divorces == 0
+        assert p.total_divorce_coins_earned == 0
+        assert p.total_divorce_property_lost == 0
+        assert p.total_divorce_debt_relieved == 0
+
+    def test_round_trip(self):
+        p = UserProfile(
+            uid="u1", nick="test",
+            last_divorce_date="2026-07-12",
+            total_divorces=3,
+            total_divorce_coins_earned=620,
+            total_divorce_property_lost=100,
+            total_divorce_debt_relieved=200,
+        )
+        data = p.to_dict()
+        assert data["last_divorce_date"] == "2026-07-12"
+        assert data["total_divorces"] == 3
+        assert data["total_divorce_coins_earned"] == 620
+        assert data["total_divorce_property_lost"] == 100
+        assert data["total_divorce_debt_relieved"] == 200
+        p2 = UserProfile.from_dict(data)
+        assert p2.last_divorce_date == "2026-07-12"
+        assert p2.total_divorces == 3
+        assert p2.total_divorce_coins_earned == 620
+        assert p2.total_divorce_property_lost == 100
+        assert p2.total_divorce_debt_relieved == 200
+
+    def test_legacy_profile_missing_fields_default_to_zero(self):
+        """旧档案没有离婚字段时，默认为空字符串/0（兼容）"""
+        d = {"uid": "u1", "nick": "old_player", "coins": 100}
+        p = UserProfile.from_dict(d)
+        assert p.last_divorce_date == ""
+        assert p.total_divorces == 0
+        assert p.total_divorce_coins_earned == 0
+        assert p.total_divorce_property_lost == 0
+        assert p.total_divorce_debt_relieved == 0
+
+    def test_legacy_profile_none_values_handled(self):
+        """旧档案含 None 值（如长期空 union）时，兜底为默认值"""
+        d = {
+            "uid": "u1",
+            "last_divorce_date": None,
+            "total_divorces": None,
+            "total_divorce_coins_earned": None,
+            "total_divorce_property_lost": None,
+            "total_divorce_debt_relieved": None,
+        }
+        p = UserProfile.from_dict(d)
+        assert p.last_divorce_date == ""
+        assert p.total_divorces == 0
+        assert p.total_divorce_coins_earned == 0
+        assert p.total_divorce_property_lost == 0
+        assert p.total_divorce_debt_relieved == 0
+
+
 # ==================== v3 接力战 数据模型 ====================
 
 
