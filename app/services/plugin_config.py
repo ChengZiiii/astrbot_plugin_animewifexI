@@ -239,9 +239,9 @@ class PluginConfig:
             "expedition": 20,
         }
     )
-    lifespan_loss_pk_winner: int = 5                   # PK 胜方参战老婆扣寿命
-    lifespan_loss_pk_loser: int = 15                   # PK 败方参战老婆扣寿命
     lifespan_loss_pk_tie: int = 8                      # PK 平局各扣
+    pk_loser_defeat_penalty: int = 5                   # PK 败方战败老婆（is_alive=False）扣寿命
+    hp_loss_per_point: float = 2.0                     # 败方存活老婆：每损失 1% 血量=折算寿命/上限×此值
     death_probability_base: float = 0.50               # 寿命=0 时的死亡概率
                                                        # 实际公式: p = base * (1 - lifespan/max)^2
     revive_base_cost: dict = field(                    # 复活/修复基础价（按稀有度）
@@ -461,9 +461,9 @@ class PluginConfig:
             lifespan_enabled=_as_bool(d.get("lifespan_enabled"), True),
             lifespan_max=_as_int(d.get("lifespan_max"), 100),
             lifespan_loss_work=lifespan_loss_work,
-            lifespan_loss_pk_winner=_as_int(d.get("lifespan_loss_pk_winner"), 5),
-            lifespan_loss_pk_loser=_as_int(d.get("lifespan_loss_pk_loser"), 15),
             lifespan_loss_pk_tie=_as_int(d.get("lifespan_loss_pk_tie"), 8),
+            pk_loser_defeat_penalty=_as_int(d.get("pk_loser_defeat_penalty"), 5),
+            hp_loss_per_point=_as_float(d.get("hp_loss_per_point"), 2.0),
             death_probability_base=_as_float(d.get("death_probability_base"), 0.50),
             revive_base_cost=revive_base_cost,
             # Phase 5 / v3 接力战

@@ -570,23 +570,23 @@
             "expedition": {"type": "int", "default": 20, "hint": "远征损失"}
         }
     },
-    "lifespan_loss_pk_winner": {
-        "description": "PK胜方参战老婆寿命损失",
-        "type": "int",
-        "default": 5,
-        "hint": "Phase 6: 4v4 接力战中胜方每个上场老婆损失多少寿命"
-    },
-    "lifespan_loss_pk_loser": {
-        "description": "PK败方参战老婆寿命损失",
-        "type": "int",
-        "default": 15,
-        "hint": "Phase 6: 4v4 接力战中败方每个上场老婆损失多少寿命"
-    },
     "lifespan_loss_pk_tie": {
         "description": "PK平局寿命损失",
         "type": "int",
         "default": 8,
         "hint": "Phase 6: 4v4 接力战平局时双方各扣多少寿命"
+    },
+    "pk_loser_defeat_penalty": {
+        "description": "PK败方战败老婆战败费",
+        "type": "int",
+        "default": 5,
+        "hint": "Phase 6: 4v4 接力战中败方被打死的参战老婆额外扣多少寿命（is_alive=False）；存活老婆按 hp 损失折算，上限为此值的 2 倍"
+    },
+    "hp_loss_per_point": {
+        "description": "PK败方存活老婆寿命折算系数",
+        "type": "float",
+        "default": 2.0,
+        "hint": "Phase 6: 败方存活老婆按生命损失比例折算寿命。公式：损失 = min(max(1, int(损失hp/基础hp × 此值/100 × 寿命上限)), pk_loser_defeat_penalty×2)"
     },
     "death_probability_base": {
         "description": "猝死概率基础值",

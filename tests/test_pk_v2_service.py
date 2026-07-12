@@ -574,3 +574,195 @@ class TestDecideRewards:
 # ============== start_battle 防刷预检已移除 ==============
 # 同对手限制已完全移除（仅靠自冷却 pk_cooldown）
 # _MockPairStoreBlocked 类/测试一并删除
+
+
+# ============== _apply_lifespan_damage v2 算法 ==============
+
+
+class TestApplyLifespanDamageV2:
+    """PK lifespan V2: 胜方不扣 / 败方按 hp 损失折算"""
+
+    def test_winner_not_deducted(self, tmp_paths, config, locks, lifespan_service):
+        """胜方参战老婆不扣寿命"""
+        from app.storage.stores import OwnershipStore
+        from app.models.ownership import Ownership
+
+        atk_wid, def_wid = "w_atk", "w_def"
+        store = OwnershipStore(tmp_paths, "g1")
+        store.save_all([
+            Ownership(uid="u1", wid=atk_wid, lifespan=100, is_dead=False),
+            Ownership(uid="u2", wid=def_wid, lifespan=100, is_dead=False),
+        ])
+
+        atk_m = _make_member(atk_wid, 1, "AtkHero", "SSR", "力量", hp=200, current_hp=160)
+        atk_m.damage_taken = 40  # 受伤但活着
+        def_m = _make_member(def_wid, 1, "DefHero", "N", "敏捷", hp=100, current_hp=0, is_alive=False)
+
+        battle = PkBattle(
+            gid="g1", battle_id="b-test", atk_uid="u1", atk_nick="alice",
+            def_uid="u2", def_nick="bob",
+            atk_formation=[atk_m], def_formation=[def_m],
+            atk_status_layers=[BattleStatusLayer()], def_status_layers=[BattleStatusLayer()],
+            winner_uid="u1", end_reason="all_dead",
+        )
+        svc = PkV2Service(
+            paths=tmp_paths, config=config, locks=locks,
+            lifespan_service=lifespan_service,
+            battle_store=_MockBattleStore(),
+            profile_store_provider=lambda gid: _MockProfileStore(),
+        )
+        svc._apply_lifespan_damage(battle)
+
+        reloaded = OwnershipStore(tmp_paths, "g1").load_all()
+        atk_ow = next(o for o in reloaded if o.wid == atk_wid)
+        def_ow = next(o for o in reloaded if o.wid == def_wid)
+        assert atk_ow.lifespan == 100, f"胜方不扣寿命，但实际={atk_ow.lifespan}"
+        assert def_ow.lifespan == 95, f"败方战败扣5，但实际={def_ow.lifespan}"
+
+    def test_loser_defeated_fixed_penalty(self, tmp_paths, config, locks, lifespan_service):
+        """败方战败（is_alive=False）扣 pk_loser_defeat_penalty=5"""
+        from app.storage.stores import OwnershipStore
+        from app.models.ownership import Ownership
+
+        atk_wid, def_wid = "w_atk2", "w_def2"
+        store = OwnershipStore(tmp_paths, "g2")
+        store.save_all([
+            Ownership(uid="u1", wid=atk_wid, lifespan=100, is_dead=False),
+            Ownership(uid="u2", wid=def_wid, lifespan=100, is_dead=False),
+        ])
+
+        atk_m = _make_member(atk_wid, 1, "A", "SSR", "力量", hp=500, current_hp=500)
+        def_m = _make_member(def_wid, 1, "D", "N", "敏捷", hp=100, current_hp=0, is_alive=False)
+
+        battle = PkBattle(
+            gid="g2", battle_id="b2", atk_uid="u1", atk_nick="a",
+            def_uid="u2", def_nick="b",
+            atk_formation=[atk_m], def_formation=[def_m],
+            atk_status_layers=[BattleStatusLayer()], def_status_layers=[BattleStatusLayer()],
+            winner_uid="u1", end_reason="all_dead",
+        )
+        svc = PkV2Service(
+            paths=tmp_paths, config=config, locks=locks,
+            lifespan_service=lifespan_service,
+            battle_store=_MockBattleStore(),
+            profile_store_provider=lambda gid: _MockProfileStore(),
+        )
+        svc._apply_lifespan_damage(battle)
+
+        reloaded = OwnershipStore(tmp_paths, "g2").load_all()
+        def_ow = next(o for o in reloaded if o.wid == def_wid)
+        assert def_ow.lifespan == 95, f"败方战败扣5，实际={def_ow.lifespan}"
+
+    def test_loser_survived_hp_ratio(self, tmp_paths, config, locks, lifespan_service):
+        """败方存活：按 hp 损失比例折算"""
+        from app.storage.stores import OwnershipStore
+        from app.models.ownership import Ownership
+
+        def_wid = "w_def3"
+        store = OwnershipStore(tmp_paths, "g3")
+        store.save_all([
+            Ownership(uid="u1", wid="w_atk3", lifespan=100, is_dead=False),
+            Ownership(uid="u2", wid=def_wid, lifespan=100, is_dead=False),
+        ])
+
+        atk_m = _make_member("w_atk3", 1, "A", "SSR", "力量", hp=500, current_hp=500)
+        # 损失 30/100 = 30% hp → raw = 0.3 * 2/100 * 100 = 0.6 → int=0 → max(1,0)=1
+        def_m = _make_member(def_wid, 1, "D", "N", "敏捷", hp=100, current_hp=70)
+        def_m.damage_taken = 30
+
+        battle = PkBattle(
+            gid="g3", battle_id="b3", atk_uid="u1", atk_nick="a",
+            def_uid="u2", def_nick="b",
+            atk_formation=[atk_m], def_formation=[def_m],
+            atk_status_layers=[BattleStatusLayer()], def_status_layers=[BattleStatusLayer()],
+            winner_uid="u1", end_reason="all_dead",
+        )
+        svc = PkV2Service(
+            paths=tmp_paths, config=config, locks=locks,
+            lifespan_service=lifespan_service,
+            battle_store=_MockBattleStore(),
+            profile_store_provider=lambda gid: _MockProfileStore(),
+        )
+        svc._apply_lifespan_damage(battle)
+
+        reloaded = OwnershipStore(tmp_paths, "g3").load_all()
+        def_ow = next(o for o in reloaded if o.wid == def_wid)
+        # raw = 30/100 * 2/100 * 100 = 0.6 → int 0 → max(1,0)=1
+        assert def_ow.lifespan == 99, f"损失30%hp: 期望扣1, 实际={def_ow.lifespan}"
+
+    def test_loser_survived_heavy_damage_capped(self, tmp_paths, config, locks, lifespan_service):
+        """败方存活但重伤：扣减被上限 clamp 到 defeat_penalty*2=10"""
+        from app.storage.stores import OwnershipStore
+        from app.models.ownership import Ownership
+
+        def_wid = "w_def4"
+        store = OwnershipStore(tmp_paths, "g4")
+        store.save_all([
+            Ownership(uid="u1", wid="w_atk4", lifespan=100, is_dead=False),
+            Ownership(uid="u2", wid=def_wid, lifespan=100, is_dead=False),
+        ])
+
+        atk_m = _make_member("w_atk4", 1, "A", "SSR", "力量", hp=500, current_hp=500)
+        # 损失 90/100 = 90% hp → raw = 0.9 * 2/100 * 100 = 1.8 → int=1
+        # 但上限是 defeat_penalty*2 = 10, 所以 min=1, max=10 最终=1
+        # 实际上 max(1, min(1, 10)) = 1
+        def_m = _make_member(def_wid, 1, "D", "N", "敏捷", hp=100, current_hp=10)
+        def_m.damage_taken = 90
+
+        battle = PkBattle(
+            gid="g4", battle_id="b4", atk_uid="u1", atk_nick="a",
+            def_uid="u2", def_nick="b",
+            atk_formation=[atk_m], def_formation=[def_m],
+            atk_status_layers=[BattleStatusLayer()], def_status_layers=[BattleStatusLayer()],
+            winner_uid="u1", end_reason="all_dead",
+        )
+        svc = PkV2Service(
+            paths=tmp_paths, config=config, locks=locks,
+            lifespan_service=lifespan_service,
+            battle_store=_MockBattleStore(),
+            profile_store_provider=lambda gid: _MockProfileStore(),
+        )
+        svc._apply_lifespan_damage(battle)
+
+        reloaded = OwnershipStore(tmp_paths, "g4").load_all()
+        def_ow = next(o for o in reloaded if o.wid == def_wid)
+        # raw = 90/100 * 2/100 * 100 = 1.8 → int=1 → max(1, min(1,10))=1
+        assert def_ow.lifespan <= 99, f"重伤但存活: 扣1, 实际={def_ow.lifespan}"
+
+    def test_tie_each_side_deducted_fixed(self, tmp_paths, config, locks, lifespan_service):
+        """平局：双方各扣 lifespan_loss_pk_tie=8"""
+        from app.storage.stores import OwnershipStore
+        from app.models.ownership import Ownership
+
+        atk_wid, def_wid = "w_atk5", "w_def5"
+        store = OwnershipStore(tmp_paths, "g5")
+        store.save_all([
+            Ownership(uid="u1", wid=atk_wid, lifespan=100, is_dead=False),
+            Ownership(uid="u2", wid=def_wid, lifespan=100, is_dead=False),
+        ])
+
+        atk_m = _make_member(atk_wid, 1, "A", "SSR", "力量", hp=200, current_hp=100)
+        atk_m.damage_taken = 100
+        def_m = _make_member(def_wid, 1, "D", "N", "敏捷", hp=200, current_hp=100)
+        def_m.damage_taken = 100
+
+        battle = PkBattle(
+            gid="g5", battle_id="b5", atk_uid="u1", atk_nick="a",
+            def_uid="u2", def_nick="b",
+            atk_formation=[atk_m], def_formation=[def_m],
+            atk_status_layers=[BattleStatusLayer()], def_status_layers=[BattleStatusLayer()],
+            winner_uid="", end_reason="tie",
+        )
+        svc = PkV2Service(
+            paths=tmp_paths, config=config, locks=locks,
+            lifespan_service=lifespan_service,
+            battle_store=_MockBattleStore(),
+            profile_store_provider=lambda gid: _MockProfileStore(),
+        )
+        svc._apply_lifespan_damage(battle)
+
+        reloaded = OwnershipStore(tmp_paths, "g5").load_all()
+        atk_ow = next(o for o in reloaded if o.wid == atk_wid)
+        def_ow = next(o for o in reloaded if o.wid == def_wid)
+        assert atk_ow.lifespan == 92, f"平局各扣8, 实际={atk_ow.lifespan}"
+        assert def_ow.lifespan == 92, f"平局各扣8, 实际={def_ow.lifespan}"

@@ -487,10 +487,16 @@ class PkV2Service:
     def _apply_lifespan_damage(self, battle: PkBattle) -> None:
         """Phase 6: 战斗结束后对所有参战老婆扣寿命 + 死亡检查。
 
-        - 胜方参战老婆: lifespan_loss_pk_winner（默认 5）
-        - 败方参战老婆: lifespan_loss_pk_loser（默认 15）
-        - 平局: lifespan_loss_pk_tie（默认 8）
-        - 死亡检查走 lifespan_service.apply_damage
+        新算法（v2，按 hp 损失比例折算）：
+
+        - 胜方参战老婆：不扣寿命（打赢了不受惩罚）
+        - 平局每个参战老婆：扣 lifespan_loss_pk_tie（默认 8）
+        - 败方被击败老婆（is_alive=False）：扣 pk_loser_defeat_penalty（默认 5）
+        - 败方存活老婆：按 hp 损失比例折算
+            loss = max(1, min(int(hp_ratio * hp_loss_per_point / 100 * lifespan_max),
+                              pk_loser_defeat_penalty * 2))
+
+        死亡检查走 lifespan_service.apply_damage。
         """
         if not self._lifespan:
             return
@@ -499,27 +505,41 @@ class PkV2Service:
 
         from .lifespan_service import DEATH_CAUSE_PK
 
-        # 决定每边的 loss
         is_tie = bool(battle.end_reason == "tie" or (
             battle.winner_uid == battle.atk_uid and battle.winner_uid == battle.def_uid
         ))
-        if is_tie:
-            atk_loss = self._config.lifespan_loss_pk_tie
-            df_loss = self._config.lifespan_loss_pk_tie
-        else:
-            if battle.winner_uid == battle.atk_uid:
-                atk_loss = self._config.lifespan_loss_pk_winner
-                df_loss = self._config.lifespan_loss_pk_loser
-            elif battle.winner_uid == battle.def_uid:
-                atk_loss = self._config.lifespan_loss_pk_loser
-                df_loss = self._config.lifespan_loss_pk_winner
-            else:
-                # winner 未定：按平局处理
-                atk_loss = self._config.lifespan_loss_pk_tie
-                df_loss = self._config.lifespan_loss_pk_tie
+        lifespan_max = int(getattr(self._config, "lifespan_max", 100))
+        defeat_penalty = int(getattr(self._config, "pk_loser_defeat_penalty", 5))
+        hp_loss_per_point = float(getattr(self._config, "hp_loss_per_point", 2.0))
+        tie_loss = int(getattr(self._config, "lifespan_loss_pk_tie", 8))
 
-        # 收集参战老婆 wid（去重），用 in-place 版本（pk_v2_service 持锁，
-        # 直接 load ownerships、mutate、save）
+        def _is_winner_side(member: FormationMember) -> bool:
+            """判断 member 是否在胜方编队中"""
+            if is_tie:
+                return False
+            if not battle.winner_uid:
+                return False
+            if battle.winner_uid == battle.atk_uid:
+                return member in battle.atk_formation
+            return member in battle.def_formation
+
+        def _calc_loss(member: FormationMember) -> int:
+            """返回单个参战老婆的寿命扣减值"""
+            if is_tie:
+                return tie_loss
+            # 胜方不扣
+            if _is_winner_side(member):
+                return 0
+            # 败方：被打死的固定战败费
+            if not member.is_alive:
+                return defeat_penalty
+            # 败方存活：按 hp 损失折算
+            if member.base_hp <= 0:
+                return defeat_penalty
+            hp_ratio = member.damage_taken / member.base_hp
+            raw = int(hp_ratio * hp_loss_per_point / 100 * lifespan_max)
+            return max(1, min(raw, defeat_penalty * 2))
+
         today = datetime.now().strftime("%Y-%m-%d")
         try:
             os_store = self._get_ownership_store(battle.gid)
@@ -529,8 +549,14 @@ class PkV2Service:
                 tgt = next((o for o in ownerships if o.wid == w), None)
                 if tgt is None or tgt.is_dead:
                     continue
+                member = next((m for m in battle.atk_formation if m.wid == w), None)
+                if member is None:
+                    continue
+                loss = _calc_loss(member)
+                if loss <= 0:
+                    continue
                 damage = self._lifespan.apply_damage_inplace(
-                    tgt, atk_loss, cause=DEATH_CAUSE_PK, today=today,
+                    tgt, loss, cause=DEATH_CAUSE_PK, today=today,
                 )
                 if damage.death_occurred:
                     any_dead.append(tgt)
@@ -538,8 +564,14 @@ class PkV2Service:
                 tgt = next((o for o in ownerships if o.wid == w), None)
                 if tgt is None or tgt.is_dead:
                     continue
+                member = next((m for m in battle.def_formation if m.wid == w), None)
+                if member is None:
+                    continue
+                loss = _calc_loss(member)
+                if loss <= 0:
+                    continue
                 damage = self._lifespan.apply_damage_inplace(
-                    tgt, df_loss, cause=DEATH_CAUSE_PK, today=today,
+                    tgt, loss, cause=DEATH_CAUSE_PK, today=today,
                 )
                 if damage.death_occurred:
                     any_dead.append(tgt)
